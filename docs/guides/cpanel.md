@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop and current-metrics actions. Initialization offers five fixed workload presets. Historical metrics, existing-instance configuration editing, credentials, backups, and restore remain unimplemented.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, current-metrics and bounded configuration actions. Initialization offers five fixed workload presets. Historical metrics, credential management, backups and restore remain unimplemented.
 
 ## Overview
 
@@ -15,7 +15,7 @@ The account page should show service/backend state, allocated and used memory, c
 
 ## Configuration and apps
 
-Use the [configuration and presets guide](configuration-presets.md). The current page offers initial workload presets and PhpRedis, node-redis and redis-py examples. The application helper still needs WordPress, LiteSpeed Cache, Laravel, and Magento snippets.
+Use the [configuration and presets guide](configuration-presets.md). The page offers initial workload presets, controls for memory, eviction policy, clients and timeout, and PhpRedis, node-redis and redis-py examples. The application helper still needs WordPress, LiteSpeed Cache, Laravel and Magento specific snippets.
 
 ## Backups and diagnostics
 

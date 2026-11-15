@@ -18,7 +18,7 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
 
-Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account provision/status/start/stop plus fixed cPanel setup presets. PR #16 merged the lifecycle slice; live disposable cPanel validation is still required before production use.
+Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account lifecycle, live metrics, fixed setup presets and bounded configuration. PR #16 merged the initial lifecycle slice; live disposable cPanel validation is still required before production use.
 
 ## Pull request plan
 
@@ -31,5 +31,5 @@ Open a feature branch and pull request for each coherent implementation incremen
 - GitHub: milestone #1 and issues #1–#7 are created.
 - PRs #8–#16 have been merged to `main`.
 - PR #16 added account-private Unix sockets, an account-owned systemd template, WHM backend selection, and cPanel provision/status/start/stop actions. Linux CI passes; live disposable-host lifecycle validation remains open.
-- Initial setup presets and current metrics are implemented; existing-instance configuration/credentials, metric history, backups/restore, migration, package/reseller controls, and broad WHM operations remain open. Issues #1–#7 remain open.
+- Initial setup presets, current metrics, and a bounded existing-instance configuration editor are implemented. Credential management, metric history, backups/restore, migration, package/reseller controls, and broad WHM operations remain open. Issues #1–#7 remain open.
 - Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.

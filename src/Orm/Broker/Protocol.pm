@@ -20,6 +20,19 @@ sub parse_request {
     if ($frame =~ /\A\{"operation":"instance\.provision","preset":"(wordpress|laravel|magento|session|generic)","version":1\}\n\z/) {
         return { operation => 'instance.provision', preset => $1, version => 1 };
     }
+    if ($frame =~ /\A\{"maxclients":([1-9][0-9]{0,2}),"maxmemory_policy":"(allkeys-lru|allkeys-lfu|allkeys-random|volatile-lru|volatile-lfu|volatile-random|volatile-ttl|noeviction)","memory_mib":([1-9][0-9]{0,2}),"operation":"instance\.configure","timeout":(0|[1-9][0-9]{0,2}),"version":1\}\n\z/) {
+        my ($maxclients, $policy, $memory_mib, $timeout) = (0 + $1, $2, 0 + $3, 0 + $4);
+        return undef if $maxclients < 10 || $maxclients > 100
+            || $memory_mib < 8 || $memory_mib > 64 || $timeout > 300;
+        return {
+            maxclients => $maxclients,
+            maxmemory_policy => $policy,
+            memory_mib => $memory_mib,
+            operation => 'instance.configure',
+            timeout => $timeout,
+            version => 1,
+        };
+    }
     return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop)","version":1\}\n\z/;
 
     my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;

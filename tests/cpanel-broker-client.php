@@ -40,6 +40,24 @@ $unexpectedPreset = new BrokerClient(static fn (string $request): string =>
     "{\"preset\":\"../root\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
 );
 $assert($unexpectedPreset->request('instance.status') === null, 'Reject an invalid preset in a broker response.');
+$config = ['memory_mib' => 48, 'maxmemory_policy' => 'allkeys-lru', 'maxclients' => 50, 'timeout' => 60];
+$expectedConfig = ['maxclients' => 50, 'maxmemory_policy' => 'allkeys-lru', 'memory_mib' => 48, 'timeout' => 60];
+$configRequests = [];
+$configClient = new BrokerClient(static function (string $request) use (&$configRequests): string {
+    $configRequests[] = $request;
+    return "{\"config\":{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":48,\"timeout\":60},\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n";
+});
+$configured = $configClient->request('instance.configure', null, $config);
+$assert($configured['config'] === $expectedConfig, 'Parse a bounded configuration status response.');
+$assert($configRequests[0] === "{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":48,\"operation\":\"instance.configure\",\"timeout\":60,\"version\":1}\n",
+    'Serialize configuration fields in the canonical fixed schema.');
+$assert($configClient->request('instance.configure', null, [...$config, 'memory_mib' => 65]) === null,
+    'Reject an over-cap memory request before broker I/O.');
+$assert(count($configRequests) === 1, 'Do not send invalid configuration values.');
+$badConfigResponse = new BrokerClient(static fn (string $request): string =>
+    "{\"config\":{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":65,\"timeout\":60},\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($badConfigResponse->request('instance.status') === null, 'Reject over-cap settings in a broker response.');
 $metricResponse = "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n";
 $metricsClient = new BrokerClient(static function (string $request) use (&$requests, $metricResponse): string {
     $requests[] = $request;
@@ -66,6 +84,15 @@ $assert($failed->request('instance.provision') === [
     'error' => 'backend_policy_required',
     'version' => 1,
 ], 'Parse a known failure response.');
+
+$configurationUnavailable = new BrokerClient(static fn (string $request): string =>
+    "{\"error\":\"configuration_unavailable\",\"success\":false,\"version\":1}\n"
+);
+$assert($configurationUnavailable->request('instance.configure', null, $config) === [
+    'success' => false,
+    'error' => 'configuration_unavailable',
+    'version' => 1,
+], 'Parse a failure when current runtime settings cannot be read.');
 
 $extraField = new BrokerClient(static fn (string $request): string =>
     "{\"success\":true,\"state\":\"running\",\"version\":1,\"username\":\"other\"}\n"
