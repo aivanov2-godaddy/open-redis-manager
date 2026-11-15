@@ -6,7 +6,7 @@ This catalog records the public product behavior observed on the reference site 
 
 | Feature | Expected behavior | Prototype |
 |---|---|---|
-| Status and lifecycle | Show online, stopped, degraded or unavailable state; initialize, start and stop only the current account instance. | Authenticated cPanel entry point supports backend-gated initialize, status, start and stop through the peer-credential broker. Uses account-private Unix socket; no metrics yet. |
+| Status and lifecycle | Show online, stopped, degraded or unavailable state; initialize, start and stop only the current account instance. | Authenticated cPanel entry point supports backend-gated initialize, status, start and stop through the peer-credential broker. Linux CI passes; live lifecycle behavior remains unverified. Uses account-private Unix socket; no metrics yet. |
 | Connection details | Show host, port, database and credential with the secret hidden by default; copy values on explicit request. | Connection |
 | Health and preflight | Explain whether an instance exists, is running and has authentication configured; link each warning to a remedy. | Dashboard |
 | Metrics | Present memory, peak memory, connected clients, uptime, command rate and hit/miss ratio with a selectable time window. Mark stale samples. | Monitoring |
@@ -18,7 +18,7 @@ This catalog records the public product behavior observed on the reference site 
 | Diagnostics export | Download a support bundle with configuration and health context while redacting credentials and private values. | Diagnostics |
 | Health guidance | Summarize the state with actionable suggestions for memory pressure, weak cache hit ratio, connection issues and disabled runtime clients. | Dashboard |
 | Safe live configuration | Apply an account-level memory change live where supported; preserve account ownership and report apply failures instead of implying the saved file took effect. | Configuration |
-| Authenticated account context | Derive the current account from the cPanel session and use it for all account-scoped reads and writes. | The cPanel page cross-checks the LiveAPI username with a Linux peer-credential broker. No instance access is wired, and the process UID mapping awaits cPanel-host validation. |
+| Authenticated account context | Derive the current account from the cPanel session and use it for all account-scoped reads and writes. | The cPanel page cross-checks the LiveAPI username with the peer-credential broker, and lifecycle operations use that broker-derived account. A single-host identity smoke passed; lifecycle operations and the supported host matrix still need cPanel validation. |
 
 ## WHM server administration
 
