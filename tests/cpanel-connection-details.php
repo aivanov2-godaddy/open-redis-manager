@@ -38,4 +38,19 @@ $assert(str_contains($details['python_example'], "unix_socket_path='/var/lib/orm
 $assert(!str_contains($details['node_example'], 'password') && !str_contains($details['python_example'], 'password'),
     'Node and Python snippets contain no password');
 
+$page = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
+$assert(is_string($page), 'read the installed cPanel page template');
+foreach ([
+    'orm-example-php' => 'Copy PHP with PhpRedis example',
+    'orm-example-node' => 'Copy Node.js with node-redis example',
+    'orm-example-python' => 'Copy Python with redis-py example',
+] as $target => $label) {
+    $assert(str_contains($page, 'data-copy-target="' . $target . '"'), 'provide a copy button for ' . $target);
+    $assert(str_contains($page, 'id="' . $target . '"'), 'provide a matching copy target for ' . $target);
+    $assert(str_contains($page, 'aria-label="' . $label . '"'), 'give the ' . $target . ' copy action a specific accessible name');
+}
+$assert(str_contains($page, 'navigator.clipboard?.writeText'), 'copy through the browser clipboard API after a click');
+$assert(str_contains($page, 'role="status" aria-live="polite"'), 'announce copy success and failure accessibly');
+$assert(str_contains($page, 'Select and copy the example manually.'), 'explain the manual copy fallback');
+
 fwrite(STDOUT, "cPanel connection details checks passed: {$checks}\n");
