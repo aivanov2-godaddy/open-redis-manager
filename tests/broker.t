@@ -243,7 +243,7 @@ my $stopped_for_restart_test = $manager->stop($account);
 ok($stopped_for_restart_test->{success}, 'stop the test instance before checking restart guards');
 my $restart_calls_before_stopped = scalar grep { $_->[0] eq 'restart' } @systemctl_calls;
 is($manager->restart($account)->{error}, 'instance_unavailable', 'refuse restart when the instance is not running');
-is(scalar grep { $_->[0] eq 'restart' } @systemctl_calls, $restart_calls_before_stopped,
+is(scalar(grep { $_->[0] eq 'restart' } @systemctl_calls), $restart_calls_before_stopped,
     'do not invoke systemd restart for a stopped instance');
 ok($manager->start($account)->{success}, 'start the test instance again after the restart guard check');
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },

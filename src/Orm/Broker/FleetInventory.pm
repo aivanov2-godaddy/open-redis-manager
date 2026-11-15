@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Fcntl qw(:mode);
 use JSON::PP ();
-use Sys::Syslog qw(:standard);
+use Sys::Syslog qw(:standard :macros);
 
 # Status checks use systemctl with a five-second timeout; four checks stay below the 35-second WHM client timeout.
 my $PAGE_SIZE = 4;
