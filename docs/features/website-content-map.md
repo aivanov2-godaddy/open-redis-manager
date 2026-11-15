@@ -42,3 +42,5 @@ The page separates features presented as currently available from security/licen
 ## Site sections outside the feature UI
 
 The page also includes a version and release status, license pricing, FAQs, application examples, documentation links, upgrade guidance, and support/product links. The [FAQ reference summary](../faq-reference.md) and [roadmap reference](../roadmap-reference.md) capture those areas in separate files. Purchasing and licensing are vendor-specific and are not part of ORM's open-source core.
+
+The captured site displayed version **2.6.11** and advertised per-server pricing of **$4.95 monthly** or **$49.50 yearly**, linked to the vendor's billing portal. The update page describes upgrades through WHM and asks administrators to verify the displayed version, account visibility, branding, and available workflows after an update. These are time-sensitive vendor claims, so ORM should not present them as ORM pricing, licensing, release status, or guarantees. Capture provenance is in the [REA evidence ledger](../rea-evidence.md).

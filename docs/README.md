@@ -11,6 +11,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Reference FAQ summary](faq-reference.md)
 - [Reference release and roadmap summary](roadmap-reference.md)
 - [Research notes and limitations](source-notes.md)
+- [REA evidence and coverage ledger](rea-evidence.md)
 
 ## Operator guides
 

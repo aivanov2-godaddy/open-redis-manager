@@ -1,6 +1,6 @@
 # Feature catalog
 
-This catalog records the public product behavior observed on the reference site and separates it from what this repository currently implements. Descriptions are summarized in our own words. Source pages and observation limits are in [source notes](../docs/source-notes.md).
+This catalog records the public product behavior observed on the reference site and separates it from what this repository currently implements. Descriptions are summarized in our own words. Source pages and observation limits are in [source notes](../source-notes.md).
 
 ## cPanel account experience
 

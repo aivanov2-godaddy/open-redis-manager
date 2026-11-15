@@ -2,6 +2,8 @@
 
 The reference site uses these product surfaces to explain its cPanel and WHM scope. The descriptions below are paraphrased from public accessible text; images and logos remain with their owner and are not redistributed here.
 
+The public gallery has three cPanel and nine WHM screenshots. Its cards open an accessible lightbox with previous, next, and close controls. The cPanel dashboard is also reused as a hero image. See the [REA evidence ledger](../rea-evidence.md) for capture identity and limitations.
+
 | Surface | Information shown or workflow conveyed |
 |---|---|
 | cPanel overview | Service state, endpoint, AUTH controls, memory/database details and lifecycle shortcuts. |
