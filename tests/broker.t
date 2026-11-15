@@ -65,6 +65,11 @@ print {$file} ('x' x 1_048_577);
 close($file) or die "close oversized fixture: $!";
 chmod(0644, $account_file) or die "chmod oversized fixture: $!";
 ok(!defined($resolver->resolve_uid(43210)), 'reject oversized account file');
+unlink($account_file) or die "remove oversized account fixture: $!";
+open($file, '>', $account_file) or die "restore account fixture: $!";
+print {$file} "SHELL=/bin/bash\n";
+close($file) or die "close restored account fixture: $!";
+chmod(0644, $account_file) or die "chmod restored account fixture: $!";
 
 my $unsafe_resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
@@ -78,8 +83,6 @@ like($denied, qr/"success":false/, 'handler denies root peer identity');
 my $invalid = Orm::Broker::Handler->handle_frame('{}' . "\n", 43210, $resolver);
 like($invalid, qr/"error":"invalid_request"/, 'handler returns a generic invalid-request response');
 
-my @groups = split /\s+/, $);
-my $test_gid = 0 + ($groups[0] // $<);
 my $etc_instances = "$tmp/etc/instances";
 my $data_instances = "$tmp/var/lib/instances";
 make_path($etc_instances, $data_instances);
