@@ -1,6 +1,6 @@
-# Open Redis Manager (ORM)
+<h1 align="center">Open Redis Manager (ORM)</h1>
 
-![Open Redis Manager logo](assets/orm-mark.svg)
+<p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager logo"></p>
 
 An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, read-only connection guidance, WHM backend discovery, and root-only per-account service controls. Production readiness still requires live cPanel validation.
 
