@@ -27,4 +27,4 @@ Open a feature branch and pull request for each coherent implementation incremen
 - Upstream repository: public; it was empty when this work started.
 - Local repository: `main` and `origin` now target the repo; implementation is prepared on `codex/orm-foundation`.
 - GitHub: milestone #1 and issues #1–#7 are created.
-- PR: the initial foundation PR is being opened as a draft.
+- PR: [#8 — Add ORM prototype, docs, and planning foundation](https://github.com/aivanov2-godaddy/open-redis-manager/pull/8) is open as a draft.
