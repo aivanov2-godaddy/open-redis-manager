@@ -26,7 +26,9 @@ cleanup_on_error() {
         if [[ "$installed_files" -eq 1 ]]; then
             rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png" \
                 "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" \
-                "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" "$ORM_CPanel_LIVE/index.live.php"
+                "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" \
+                "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
+                "$ORM_CPanel_LIVE/index.live.php"
             orm_remove_empty_owned_directories
         fi
     fi
@@ -41,13 +43,14 @@ registered_cpanel=1
 
 umask 022
 mkdir -p -- "$ORM_CPanel_LIVE" "$ORM_WHM_CGI" "$ORM_WHM_ICONS" \
-    "$ORM_3RDPARTY/src/Orm/Backend" "$ORM_3RDPARTY/src/Orm/Security"
+    "$ORM_3RDPARTY/src/Orm/Backend" "$ORM_3RDPARTY/src/Orm/Security" "$ORM_3RDPARTY/src/Orm/Cpanel"
 installed_files=1
 install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/files/orm/index.live.php" "$ORM_CPanel_LIVE/index.live.php"
 install -m 0644 "$ORM_PACKAGE_ROOT/whm/cgi/addon_open_redis_manager.php" "$ORM_WHM_CGI/addon_open_redis_manager.php"
 install -m 0644 "$ORM_PACKAGE_ROOT/whm/icons/orm-whm.png" "$ORM_WHM_ICONS/orm-whm.png"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Backend/BackendDiscovery.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Security/WhmAcl.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php"
+install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php"
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
-printf 'Open Redis Manager installed. The current UI provides read-only WHM backend discovery; account management is not implemented yet.\n'
+printf 'Open Redis Manager installed. The current UI provides read-only WHM backend discovery and displays the authenticated cPanel account; account instance management is not implemented yet.\n'

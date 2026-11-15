@@ -52,6 +52,7 @@ orm_install_paths_are_clear() {
         "$ORM_WHM_ICONS/orm-whm.png" \
         "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" \
         "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" \
+        "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
         "$ORM_APPCONFIG"; do
         [[ ! -e "$path" && ! -L "$path" ]] || orm_die "refusing to overwrite existing path: $path"
     done
@@ -63,6 +64,7 @@ orm_remove_empty_owned_directories() {
     for path in \
         "$ORM_3RDPARTY/src/Orm/Backend" \
         "$ORM_3RDPARTY/src/Orm/Security" \
+        "$ORM_3RDPARTY/src/Orm/Cpanel" \
         "$ORM_3RDPARTY/src/Orm" \
         "$ORM_3RDPARTY/src" \
         "$ORM_3RDPARTY" \
@@ -83,5 +85,6 @@ $ORM_PACKAGE_ROOT/whm/cgi/addon_open_redis_manager.php|$ORM_WHM_CGI/addon_open_r
 $ORM_PACKAGE_ROOT/whm/icons/orm-whm.png|$ORM_WHM_ICONS/orm-whm.png
 $ORM_REPO_ROOT/src/Orm/Backend/BackendDiscovery.php|$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php
 $ORM_REPO_ROOT/src/Orm/Security/WhmAcl.php|$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php
+$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php|$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php
 EOF
 }

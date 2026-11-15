@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The prototype renders this workflow with sample data. A production account-safe implementation is planned.
+> The standalone prototype renders sample data. The installed cPanel entry point now reads and displays only the current authenticated username from cPanel LiveAPI; the Redis account manager remains unimplemented.
 
 ## Overview
 
@@ -23,4 +23,6 @@ Create account-scoped snapshots within provider retention. Before restore, expla
 
 ## Account boundary
 
-Derive the account identity from cPanel's authenticated context on the server. Ignore or reject a user-submitted account name. Never expose WHM-only controls in the cPanel route.
+The cPanel entry point derives the account identity from cPanel's LiveAPI `$user` value and validates it before rendering. It does not accept an account name from query parameters or form fields. Never expose WHM-only controls in the cPanel route. cPanel currently deprecates `cpanelprint()` in favor of its UAPI Variables functions; ORM uses this documented method in this development slice pending validation of the replacement response format across supported cPanel versions.
+
+This identity check does not yet provide account instance isolation because there is no instance registry or service adapter. See the [cPanel LiveAPI guide](https://api.docs.cpanel.net/guides/guide-to-the-liveapi-system/guide-to-the-liveapi-system-php-class) and [cPanel variables reference](https://api.docs.cpanel.net/guides/guide-to-cpanel-variables).

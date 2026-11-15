@@ -3,7 +3,7 @@
 This folder contains the cPanel and WHM registration files, authenticated UI entry points, and the first manual installer lifecycle for Open Redis Manager:
 
 - `cpanel/install.json` registers one feature group and one Jupiter interface link.
-- `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer.
+- `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer, and displays the validated current account username from LiveAPI.
 - `whm/open_redis_manager.conf` registers a root-level WHM AppConfig entry guarded by `acls=all`.
 - `whm/cgi/addon_open_redis_manager.php` renders the WHM interface and repeats an ACL check before showing it.
 - `cpanel/icons/` and `whm/icons/` hold original ORM registration artwork.
@@ -31,7 +31,7 @@ The scripts have not been run on a cPanel host. No supported cPanel/WHM version 
 
 ## Current limits
 
-These are authenticated entry points, not a complete Redis control plane. The WHM page requires root-level access and checks the authenticated `REMOTE_USER` against `/var/cpanel/resellers`; missing identity, unreadable ACL data, malformed names, oversized ACL data, and unknown permissions fail closed. The ACL file path is fixed. Once authorized, WHM calls the read-only backend discovery class and displays binary/version/systemd observations; it does not inspect account metadata or modify the host. The cPanel page remains a LiveAPI shell and does not access account data yet.
+These are authenticated entry points, not a complete Redis control plane. The WHM page requires root-level access and checks the authenticated `REMOTE_USER` against `/var/cpanel/resellers`; missing identity, unreadable ACL data, malformed names, oversized ACL data, and unknown permissions fail closed. The ACL file path is fixed. Once authorized, WHM calls the read-only backend discovery class and displays binary/version/systemd observations; it does not inspect account metadata or modify the host. The cPanel page reads only the authenticated username from LiveAPI; it does not access Redis instance data or perform service operations. cPanel deprecates the `cpanelprint()` method used for the username; move to the recommended UAPI Variables function after validating its response on supported cPanel versions. The account isolation adapter remains unimplemented.
 
 The cPanel `install.json` follows cPanel's documented groups/features model and points to a `.live.php` LiveAPI interface. WHM uses AppConfig with an explicit `all` ACL. The manual scripts in this folder now install the cPanel entry with `install_plugin`, place the interface/code/icon files in fixed documented locations, and register WHM through AppConfig. Uninstall uses `uninstall_plugin` and `unregister_appconfig` and only removes exact matching ORM files. The lifecycle has not been exercised on an actual cPanel server; do not use it on a production server.
 

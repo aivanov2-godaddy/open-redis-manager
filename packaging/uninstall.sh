@@ -18,7 +18,8 @@ orm_verify_installed_files
 rm -f -- "$ORM_CPanel_LIVE/index.live.php"
 rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png" \
     "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" \
-    "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php"
+    "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" \
+    "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php"
 orm_remove_empty_owned_directories
 
 if orm_registration_state; then "$ORM_UNREGISTER_APPCONFIG" open_redis_manager; fi
