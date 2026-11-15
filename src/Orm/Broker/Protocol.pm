@@ -33,7 +33,7 @@ sub parse_request {
             version => 1,
         };
     }
-    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop)","version":1\}\n\z/;
+    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop|backup\.create|backup\.list)","version":1\}\n\z/;
 
     my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;
     return undef if !defined($operation);

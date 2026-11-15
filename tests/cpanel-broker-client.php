@@ -84,6 +84,37 @@ $badStaleMetrics = new BrokerClient(static fn (string $request): string =>
     "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":\"1794760000\",\"stale\":1,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n"
 );
 $assert($badStaleMetrics->request('instance.metrics') === null, 'Reject malformed timestamp and stale marker types.');
+$backupId = 'snapshot-1794760000-a1b2c3d4.rdb';
+$backupRow = ['created_at' => 1794760000, 'id' => $backupId, 'size_bytes' => 4096];
+$backupRequests = [];
+$backupClient = new BrokerClient(static function (string $request) use (&$backupRequests, $backupRow): string {
+    $backupRequests[] = $request;
+    if (str_contains($request, 'backup.create')) {
+        return json_encode(['backup' => $backupRow, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n";
+    }
+    return json_encode(['backups' => [$backupRow], 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n";
+});
+$assert($backupClient->request('backup.list')['backups'] === [$backupRow], 'Parse a validated account backup listing.');
+$assert($backupRequests[0] === "{\"operation\":\"backup.list\",\"version\":1}\n", 'Backup list requests contain no account identity or paths.');
+$assert($backupClient->request('backup.create')['backup'] === $backupRow, 'Parse a validated created backup receipt.');
+$assert($backupRequests[1] === "{\"operation\":\"backup.create\",\"version\":1}\n", 'Backup create requests contain no account identity or paths.');
+$malformedBackup = new BrokerClient(static fn (string $request): string =>
+    "{\"backups\":[{\"created_at\":1794760000,\"id\":\"../other.rdb\",\"size_bytes\":4096}],\"success\":true,\"version\":1}\n"
+);
+$assert($malformedBackup->request('backup.list') === null, 'Reject unsafe backup identifiers from the broker.');
+$oversizedBackup = new BrokerClient(static fn (string $request): string =>
+    "{\"backup\":{\"created_at\":1794760000,\"id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"size_bytes\":134217729},\"success\":true,\"version\":1}\n"
+);
+$assert($oversizedBackup->request('backup.create') === null, 'Reject snapshots above the transfer size cap.');
+$badBackupOrder = new BrokerClient(static fn (string $request): string =>
+    "{\"backups\":[{\"created_at\":1794760000,\"id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"size_bytes\":4096},{\"created_at\":1794760001,\"id\":\"snapshot-1794760001-a1b2c3d4.rdb\",\"size_bytes\":4096}],\"success\":true,\"version\":1}\n"
+);
+$assert($badBackupOrder->request('backup.list') === null, 'Reject a backup list that is not newest-first.');
+$backupFailure = new BrokerClient(static fn (string $request): string =>
+    "{\"error\":\"backup_failed\",\"success\":false,\"version\":1}\n"
+);
+$assert($backupFailure->request('backup.create') === ['success' => false, 'error' => 'backup_failed', 'version' => 1],
+    'Parse a generic failed snapshot transfer without exposing command output.');
 $before = count($requests);
 $assert($client->request('instance.delete') === null, 'Reject unrecognized operations.');
 $assert(count($requests) === $before, 'Do not send an unrecognized operation to the broker.');

@@ -17,6 +17,8 @@ final class BrokerClient
         'instance.configure',
         'instance.start',
         'instance.stop',
+        'backup.list',
+        'backup.create',
     ];
     private const MEMORY_POLICIES = [
         'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
@@ -31,7 +33,7 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
+    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
     public function request(string $operation, ?string $preset = null, ?array $config = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
@@ -89,6 +91,25 @@ final class BrokerClient
             }
             $keys = array_keys($decoded);
             sort($keys);
+            if ($operation === 'backup.list') {
+                if ($keys !== ['backups', 'success', 'version'] || !is_array($decoded['backups'])
+                    || !array_is_list($decoded['backups']) || count($decoded['backups']) > 3) {
+                    return null;
+                }
+                $lastCreatedAt = PHP_INT_MAX;
+                foreach ($decoded['backups'] as $backup) {
+                    if (!self::validBackup($backup) || $backup['created_at'] > $lastCreatedAt) {
+                        return null;
+                    }
+                    $lastCreatedAt = $backup['created_at'];
+                }
+                return $decoded;
+            }
+            if ($operation === 'backup.create') {
+                return $keys === ['backup', 'success', 'version'] && self::validBackup($decoded['backup'] ?? null)
+                    ? $decoded
+                    : null;
+            }
             if (in_array('memory_used_bytes', $keys, true)) {
                 $metricKeys = ['commands_per_second', 'connected_clients', 'keyspace_hits', 'keyspace_misses',
                     'memory_peak_bytes', 'memory_used_bytes', 'retained', 'sampled_at', 'stale', 'success', 'uptime_seconds', 'version'];
@@ -148,6 +169,8 @@ final class BrokerClient
                 'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
                 'configuration_unavailable', 'configuration_failed', 'configuration_storage_unavailable',
                 'configuration_uncertain',
+                'backup_failed', 'backup_invalid', 'backup_in_progress', 'backup_retention_failed',
+                'backup_storage_unavailable',
             ], true)) {
             return null;
         }
@@ -168,6 +191,22 @@ final class BrokerClient
             && is_int($config['maxclients']) && $config['maxclients'] >= 10 && $config['maxclients'] <= 100
             && is_int($config['timeout']) && $config['timeout'] >= 0 && $config['timeout'] <= 300
             && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
+    }
+
+    private static function validBackup(mixed $backup): bool
+    {
+        if (!is_array($backup)) {
+            return false;
+        }
+        $keys = array_keys($backup);
+        sort($keys);
+        if ($keys !== ['created_at', 'id', 'size_bytes'] || !is_string($backup['id'])
+            || preg_match('/\Asnapshot-([0-9]{10})-[a-f0-9]{8}[.]rdb\z/', $backup['id'], $matches) !== 1
+            || !is_int($backup['created_at']) || $backup['created_at'] !== (int) $matches[1]
+            || !is_int($backup['size_bytes']) || $backup['size_bytes'] < 1 || $backup['size_bytes'] > 134_217_728) {
+            return false;
+        }
+        return true;
     }
 
     /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */

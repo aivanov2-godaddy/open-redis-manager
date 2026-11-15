@@ -22,6 +22,10 @@ for my $operation (qw(instance.status instance.provision instance.start instance
 }
 is(parse_request('{"operation":"instance.metrics","version":1}' . "\n")->{operation},
     'instance.metrics', 'accept the fixed instance metrics request');
+for my $operation (qw(backup.list backup.create)) {
+    is(parse_request('{"operation":"' . $operation . '","version":1}' . "\n")->{operation},
+        $operation, "accept fixed $operation request");
+}
 my $config_request = '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n";
 my $parsed_config = parse_request($config_request);
 ok($parsed_config && $parsed_config->{operation} eq 'instance.configure'
@@ -132,6 +136,7 @@ my $fail_config_once;
 my $fail_config_always;
 my $fail_config_commit_once;
 my $fail_metrics_commit_once;
+my $fail_backup_once;
 my $fail_config_get;
 my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
 my $manager = Orm::Broker::InstanceManager->new(
@@ -144,6 +149,20 @@ my $manager = Orm::Broker::InstanceManager->new(
     metrics_probe => sub {
         push @metrics_calls, [@_];
         return $metrics_info;
+    },
+    backup_create => sub {
+        my ($backend, $socket, $path) = @_;
+        if ($fail_backup_once) {
+            $fail_backup_once = 0;
+            open(my $partial, '>', $path) or return 0;
+            print {$partial} 'partial RDB fixture';
+            close($partial);
+            return 0;
+        }
+        open(my $snapshot, '>', $path) or return 0;
+        binmode($snapshot);
+        print {$snapshot} 'synthetic RDB snapshot';
+        return close($snapshot) ? 1 : 0;
     },
     config_set => sub {
         my ($backend, $socket, $parameter, $value) = @_;
@@ -213,6 +232,44 @@ ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
     'return validated saved settings in the instance status');
+my $backup_root_path = "$data_instances/.orm-backups";
+my $account_backup_path = "$backup_root_path/ormtest";
+my $created_backup = $manager->dispatch('backup.create', $account);
+ok($created_backup->{success} && $created_backup->{backup}->{size_bytes} > 0,
+    'create an account-scoped RDB snapshot for a running instance');
+like($created_backup->{backup}->{id}, qr/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/, 'return only the generated snapshot identifier');
+my @backup_root_stat = stat($backup_root_path);
+is($backup_root_stat[4], $<, 'shared backup root is controlled by the privileged manager');
+is($backup_root_stat[2] & 0777, 0711, 'shared backup root cannot be listed or modified by accounts');
+my @account_backup_stat = stat($account_backup_path);
+is($account_backup_stat[4], $<, 'per-account backup directory is root-owned');
+is($account_backup_stat[5], $account->{gid}, 'per-account backup directory is group-readable only by its account');
+is($account_backup_stat[2] & 0777, 0750, 'account can list backups but cannot replace them');
+my $backup_file_path = "$account_backup_path/$created_backup->{backup}->{id}";
+my @backup_file_stat = stat($backup_file_path);
+is($backup_file_stat[4], $<, 'snapshot is owned by the privileged manager');
+is($backup_file_stat[5], $account->{gid}, 'snapshot is readable by its cPanel account group');
+is($backup_file_stat[2] & 0777, 0640, 'snapshot is not writable by the cPanel account');
+my $listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 1
+    && $listed_backups->{backups}->[0]->{id} eq $created_backup->{backup}->{id},
+    'list only validated account snapshots with their metadata');
+for (1 .. 3) {
+    sleep 1;
+    my $additional_backup = $manager->dispatch('backup.create', $account);
+    ok($additional_backup->{success}, 'create a subsequent bounded retained backup');
+}
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 3,
+    'retain only the three most recent account snapshots');
+ok(!(grep { $_->{id} eq $created_backup->{backup}->{id} } @{$listed_backups->{backups}}),
+    'remove the oldest snapshot only after its replacements complete');
+$fail_backup_once = 1;
+is($manager->dispatch('backup.create', $account)->{error}, 'backup_failed',
+    'reject a failed RDB transfer and remove its partial temporary file');
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 3,
+    'preserve existing snapshots after a failed backup');
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],

@@ -21,7 +21,7 @@ For every configured instance, the page requests a read-only metric sample throu
 
 ## Not implemented yet
 
-The installed cPanel page displays the account's Unix socket path, database 0, connection examples for PhpRedis, node-redis and redis-py, live current metrics while the service runs, and controls for a bounded set of saved configuration values. This build does not configure Redis AUTH or expose a TCP endpoint; access is controlled by the account-owned, mode-0700 socket directory. The account owns its Redis process and can change runtime values through that socket, so broker-saved settings are not package enforcement and direct changes can remain until a restart. Framework-specific configuration, historical graphs, application discovery, backups, restore, recovery, migration, package/reseller limits, and audit history still need implementation.
+The installed cPanel page displays the account's Unix socket path, database 0, connection examples for PhpRedis, node-redis and redis-py, live current metrics while the service runs, and controls for a bounded set of saved configuration values. This build does not configure Redis AUTH or expose a TCP endpoint; access is controlled by the account-owned, mode-0700 socket directory. The account owns its Redis process and can change runtime values through that socket, so broker-saved settings are not package enforcement and direct changes can remain until a restart. Explicit RDB snapshots can be created, listed and downloaded from the cPanel page; ORM keeps the newest three per account. Restore, historical graphs, application discovery, recovery, migration, package/reseller limits, and audit history still need implementation.
 
 ## Validation status
 

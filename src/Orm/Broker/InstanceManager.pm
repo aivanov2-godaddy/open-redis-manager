@@ -1,9 +1,10 @@
 package Orm::Broker::InstanceManager;
 use strict;
 use warnings;
-use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW :mode);
+use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
 use JSON::PP ();
+use POSIX qw(WNOHANG _exit);
 use Orm::Broker::BackendPolicy;
 
 my %SERVER_BINARIES = (
@@ -17,6 +18,9 @@ my %CLIENT_BINARIES = (
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
+my $MAX_BACKUPS_PER_ACCOUNT = 3;
+my $MAX_BACKUP_BYTES = 128 * 1024 * 1024;
+my $BACKUP_TIMEOUT_SECONDS = 60;
 my @METRIC_FIELDS = qw(
     commands_per_second connected_clients keyspace_hits keyspace_misses memory_peak_bytes memory_used_bytes uptime_seconds
 );
@@ -56,6 +60,7 @@ sub new {
         redis_cli_call => $args{redis_cli_call},
         config_get => $args{config_get},
         config_set => $args{config_set},
+        backup_create => $args{backup_create},
         atomic_commit => $args{atomic_commit},
     }, $class;
 }
@@ -67,6 +72,8 @@ sub dispatch {
 
     return $self->status($account) if $operation eq 'instance.status';
     return $self->metrics($account) if $operation eq 'instance.metrics';
+    return $self->backups($account) if $operation eq 'backup.list';
+    return $self->create_backup($account) if $operation eq 'backup.create';
     return $self->configure($account, $settings) if $operation eq 'instance.configure';
     return $self->provision($account, defined($preset) ? $preset : 'generic') if $operation eq 'instance.provision';
     return $self->start($account) if $operation eq 'instance.start';
@@ -374,6 +381,217 @@ sub metrics {
         %{$sample}, retained => $retained ? JSON::PP::true : JSON::PP::false,
         stale => JSON::PP::false, success => JSON::PP::true, version => 1,
     };
+}
+
+sub backups {
+    my ($self, $account) = @_;
+    return _failure('not_configured') if !$self->_read_manifest($account);
+    my ($directory, $directory_state) = $self->_backup_directory($account, 0);
+    return _failure('backup_storage_unavailable') if $directory_state eq 'unsafe';
+    my $entries = $directory_state eq 'absent' ? [] : $self->_read_backup_entries($directory, $account);
+    return _failure('backup_storage_unavailable') if ref($entries) ne 'ARRAY' || @{$entries} > $MAX_BACKUPS_PER_ACCOUNT;
+    return { backups => $entries, success => JSON::PP::true, version => 1 };
+}
+
+sub create_backup {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('not_running') if !$active || $state ne 'active';
+
+    my ($directory, $directory_state) = $self->_backup_directory($account, 1);
+    return _failure('backup_storage_unavailable') if !$directory || $directory_state ne 'ready';
+    my $lock_path = File::Spec->catfile($directory, 'backup.lock');
+    return _failure('backup_storage_unavailable') if !sysopen(my $lock, $lock_path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
+    my @lock_stat = stat($lock);
+    if (!@lock_stat || !S_ISREG($lock_stat[2]) || $lock_stat[4] != $self->{expected_owner_uid}
+        || $lock_stat[5] != $self->{expected_owner_uid} || $lock_stat[3] != 1 || ($lock_stat[2] & 0777) != 0600) {
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+    if (!flock($lock, LOCK_EX | LOCK_NB)) {
+        close($lock);
+        return _failure('backup_in_progress');
+    }
+
+    my $existing = $self->_read_backup_entries($directory, $account);
+    if (ref($existing) ne 'ARRAY') {
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+    my $created_at = time;
+    my $backup_id;
+    my $temporary;
+    for (1 .. 3) {
+        $backup_id = sprintf('snapshot-%010d-%08x.rdb', $created_at, int(rand(0x100000000)));
+        $temporary = File::Spec->catfile($directory, '.snapshot-' . $$ . '-' . sprintf('%08x', int(rand(0x100000000))) . '.tmp');
+        last if !-e $temporary && !-l $temporary && !-e File::Spec->catfile($directory, $backup_id)
+            && !-l File::Spec->catfile($directory, $backup_id);
+        undef $temporary;
+    }
+    if (!defined($temporary) || !sysopen(my $stage, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) {
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+    my $stage_ok = chown($self->{expected_owner_uid}, $self->{expected_owner_uid}, $temporary)
+        && chmod(0600, $temporary) && close($stage);
+    if (!$stage_ok) {
+        unlink($temporary) if -e $temporary || -l $temporary;
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+
+    my $created = $self->_run_backup_cli($manifest->{backend}, $manifest->{socket}, $temporary);
+    my @stage_stat = lstat($temporary);
+    my $valid_stage = $created && @stage_stat && S_ISREG($stage_stat[2])
+        && $stage_stat[4] == $self->{expected_owner_uid} && $stage_stat[5] == $self->{expected_owner_uid}
+        && $stage_stat[3] == 1 && ($stage_stat[2] & 0777) == 0600
+        && $stage_stat[7] > 0 && $stage_stat[7] <= $MAX_BACKUP_BYTES;
+    if (!$valid_stage) {
+        unlink($temporary) if -e $temporary || -l $temporary;
+        close($lock);
+        return _failure($created ? 'backup_invalid' : 'backup_failed');
+    }
+
+    my $destination = File::Spec->catfile($directory, $backup_id);
+    if (!chown($self->{expected_owner_uid}, $account->{gid}, $temporary)
+        || !chmod(0640, $temporary) || !rename($temporary, $destination)) {
+        unlink($temporary) if -e $temporary || -l $temporary;
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+    my $all_entries = $self->_read_backup_entries($directory, $account);
+    if (ref($all_entries) ne 'ARRAY') {
+        close($lock);
+        return _failure('backup_storage_unavailable');
+    }
+    for my $old_entry (@{$all_entries}[$MAX_BACKUPS_PER_ACCOUNT .. $#{$all_entries}]) {
+        next if !defined($old_entry);
+        my $old_path = File::Spec->catfile($directory, $old_entry->{id});
+        if (!unlink($old_path)) {
+            close($lock);
+            return _failure('backup_retention_failed');
+        }
+    }
+    my $retained_entries = $self->_read_backup_entries($directory, $account);
+    close($lock);
+    return _failure('backup_storage_unavailable') if ref($retained_entries) ne 'ARRAY';
+    my ($created_entry) = grep { $_->{id} eq $backup_id } @{$retained_entries};
+    return _failure('backup_storage_unavailable') if ref($created_entry) ne 'HASH';
+    return { backup => $created_entry, success => JSON::PP::true, version => 1 };
+}
+
+sub _backup_directory {
+    my ($self, $account, $create) = @_;
+    return (undef, 'unsafe') if !_valid_account($account) || !$self->_trusted_directory($self->{data_root});
+    my $root = File::Spec->catdir($self->{data_root}, '.orm-backups');
+    my @root_stat = lstat($root);
+    if (!@root_stat) {
+        return (undef, 'absent') if !$create;
+        return (undef, 'unsafe') if !mkdir($root, 0711)
+            || !chown($self->{expected_owner_uid}, $self->{expected_owner_uid}, $root)
+            || !chmod(0711, $root);
+        @root_stat = lstat($root);
+    }
+    return (undef, 'unsafe') if !@root_stat || !S_ISDIR($root_stat[2])
+        || $root_stat[4] != $self->{expected_owner_uid} || $root_stat[5] != $self->{expected_owner_uid}
+        || ($root_stat[2] & 0777) != 0711;
+
+    my $directory = File::Spec->catdir($root, $account->{name});
+    my @directory_stat = lstat($directory);
+    if (!@directory_stat) {
+        return (undef, 'absent') if !$create;
+        return (undef, 'unsafe') if !mkdir($directory, 0750)
+            || !chown($self->{expected_owner_uid}, $account->{gid}, $directory)
+            || !chmod(0750, $directory);
+        @directory_stat = lstat($directory);
+    }
+    return (undef, 'unsafe') if !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $directory_stat[4] != $self->{expected_owner_uid} || $directory_stat[5] != $account->{gid}
+        || ($directory_stat[2] & 0777) != 0750;
+    return ($directory, 'ready');
+}
+
+sub _read_backup_entries {
+    my ($self, $directory, $account) = @_;
+    return undef if !opendir(my $handle, $directory);
+    my @names = readdir($handle);
+    closedir($handle) or return undef;
+    my @entries;
+    for my $name (@names) {
+        next if $name !~ /\Asnapshot-([0-9]{10})-([a-f0-9]{8})[.]rdb\z/;
+        my $created_at = 0 + $1;
+        my $path = File::Spec->catfile($directory, $name);
+        my @path_stat = lstat($path);
+        return undef if !@path_stat || !S_ISREG($path_stat[2])
+            || $path_stat[4] != $self->{expected_owner_uid} || $path_stat[5] != $account->{gid}
+            || $path_stat[3] != 1 || ($path_stat[2] & 0777) != 0640
+            || $path_stat[7] == 0 || $path_stat[7] > $MAX_BACKUP_BYTES || $created_at > time + 300;
+        return undef if !sysopen(my $file, $path, O_RDONLY | O_NOFOLLOW);
+        my @file_stat = stat($file);
+        close($file) or return undef;
+        return undef if !@file_stat || $file_stat[0] != $path_stat[0] || $file_stat[1] != $path_stat[1]
+            || $file_stat[4] != $self->{expected_owner_uid} || $file_stat[5] != $account->{gid}
+            || $file_stat[3] != 1 || ($file_stat[2] & 0777) != 0640
+            || $file_stat[7] != $path_stat[7] || $file_stat[7] > $MAX_BACKUP_BYTES;
+        push @entries, { created_at => $created_at, id => $name, size_bytes => 0 + $file_stat[7] };
+    }
+    @entries = sort { $b->{created_at} <=> $a->{created_at} || $b->{id} cmp $a->{id} } @entries;
+    return \@entries;
+}
+
+sub _run_backup_cli {
+    my ($self, $backend, $socket, $destination) = @_;
+    return 0 if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
+    return 0 if !defined($socket) || ref($socket);
+    my ($account_name) = $socket =~ m{\A\Q$self->{data_root}\E/([a-zA-Z0-9_-]{1,16})/redis\.sock\z};
+    return 0 if !defined($account_name) || !defined($destination) || ref($destination);
+    my $backup_directory = File::Spec->catdir($self->{data_root}, '.orm-backups', $account_name);
+    return 0 if $destination !~ m{\A\Q$backup_directory\E/[.]snapshot-[0-9]+-[a-f0-9]{8}[.]tmp\z};
+    if (ref($self->{backup_create}) eq 'CODE') {
+        return eval { $self->{backup_create}->($backend, $socket, $destination) } ? 1 : 0;
+    }
+    my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
+    my $path;
+    for my $candidate (@{$self->{client_paths}->{$client_name} // []}) {
+        next if !defined($candidate) || $candidate !~ m{\A/usr/(?:local/)?(?:s?bin)/(?:redis|valkey)-cli\z};
+        my @stat = lstat($candidate);
+        next if !@stat || !S_ISREG($stat[2]) || $stat[4] != $self->{expected_owner_uid}
+            || ($stat[2] & 0022) != 0 || !-x $candidate;
+        $path = $candidate;
+        last;
+    }
+    return 0 if !defined($path);
+
+    my $pid = fork();
+    return 0 if !defined($pid);
+    if ($pid == 0) {
+        local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        umask(0077);
+        open(STDOUT, '>', '/dev/null') or _exit(127);
+        open(STDERR, '>', '/dev/null') or _exit(127);
+        exec {$path} $path, '-s', $socket, '--rdb', $destination;
+        _exit(127);
+    }
+    my $deadline = time + $BACKUP_TIMEOUT_SECONDS;
+    while (1) {
+        my $waited = waitpid($pid, WNOHANG);
+        return $? == 0 ? 1 : 0 if $waited == $pid;
+        return 0 if $waited == -1;
+        my @snapshot_stat = lstat($destination);
+        if ((@snapshot_stat && $snapshot_stat[7] > $MAX_BACKUP_BYTES) || time >= $deadline) {
+            kill('TERM', $pid);
+            my $grace_deadline = time + 1;
+            while (time < $grace_deadline && waitpid($pid, WNOHANG) == 0) {
+                select(undef, undef, undef, 0.05);
+            }
+            kill('KILL', $pid) if waitpid($pid, WNOHANG) == 0;
+            waitpid($pid, 0);
+            return 0;
+        }
+        select(undef, undef, undef, 0.05);
+    }
 }
 
 sub _stale_metrics {
