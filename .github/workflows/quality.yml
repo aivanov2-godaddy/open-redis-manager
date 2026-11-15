@@ -36,5 +36,7 @@ jobs:
         run: php tests/cpanel-broker-client.php
       - name: Check cPanel and WHM session mutation guard
         run: php tests/session-request-guard.php
+      - name: Stage instance launcher for systemd unit verification
+        run: sudo install -D -m 0755 bin/orm-instance-launcher.pl /usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher
       - name: Verify ORM systemd units
         run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service

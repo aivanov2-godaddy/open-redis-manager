@@ -2,7 +2,7 @@
 Description=Open Redis Manager cache instance for %i
 After=local-fs.target
 ConditionPathIsDirectory=/var/lib/orm-instances/%i
-ConditionPathIsRegularFile=/etc/orm-instances/%i/manifest.json
+ConditionPathExists=/etc/orm-instances/%i/manifest.json
 
 [Service]
 Type=simple
