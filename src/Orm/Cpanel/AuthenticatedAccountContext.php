@@ -16,19 +16,25 @@ final class AuthenticatedAccountContext
      */
     public static function fromLiveApi(object $liveApi): ?self
     {
-        if (!is_callable([$liveApi, 'cpanelprint'])) {
+        if (!is_callable([$liveApi, 'uapi'])) {
             return null;
         }
 
         try {
-            // cPanel documents this LiveAPI value for the authenticated account.
-            // cpanelprint is deprecated upstream, but remains the documented PHP
-            // interface while the replacement UAPI response is version-checked.
-            $username = $liveApi->cpanelprint('$user');
+            $response = $liveApi->uapi('Variables', 'get_user_information', ['name' => 'user']);
         } catch (\Throwable) {
             return null;
         }
 
+        if (!is_array($response)) {
+            return null;
+        }
+        $result = $response['cpanelresult']['result'] ?? null;
+        if (!is_array($result) || !in_array($result['status'] ?? null, [1, '1'], true)) {
+            return null;
+        }
+        $data = $result['data'] ?? null;
+        $username = is_array($data) ? ($data['user'] ?? null) : null;
         if (!is_string($username) || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1) {
             return null;
         }
