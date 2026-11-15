@@ -21,7 +21,7 @@ A production installer must be designed and reviewed for a supported cPanel/WHM 
 5. Persist account metadata and migrations with a tested backup and rollback path.
 6. Validate plugin visibility, account isolation, service health and update compatibility before reporting success.
 
-The repo now contains cPanel and WHM registration/entry-point scaffolds in [`packaging/`](../packaging/), but no install, upgrade, or uninstall script is included yet. The read-only backend discovery CLI is not invoked by either web entry point. Treat copied install commands from the reference website as vendor-specific and do not run them for this project.
+The repo now contains cPanel and WHM registration/entry-point scaffolds and a development install/uninstall workflow in [`packaging/`](../packaging/README.md). It targets cPanel's Jupiter theme and has not been run on a cPanel host; no supported version/OS matrix or upgrade workflow is established. Use only on a disposable cPanel & WHM server. The read-only backend discovery CLI is not invoked by the cPanel entry point.
 
 ## Backend selection plan
 

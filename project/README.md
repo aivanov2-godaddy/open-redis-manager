@@ -32,4 +32,5 @@ Open a feature branch and pull request for each coherent implementation incremen
 - PR: [#8 — Add ORM prototype, docs, and planning foundation](https://github.com/aivanov2-godaddy/open-redis-manager/pull/8) is open as a draft against `main`.
 - PR: [#9 — Add read-only Redis backend discovery CLI](https://github.com/aivanov2-godaddy/open-redis-manager/pull/9) is open as a draft, stacked on PR #8.
 - PR: [#10 — Add authenticated cPanel and WHM entrypoints](https://github.com/aivanov2-godaddy/open-redis-manager/pull/10) is open as a draft, stacked on PR #9.
-- cPanel/WHM authentication shells and the WHM discovery view are in place. There is still no installer, account-instance adapter, or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
+- PR: [#11 — Add development cPanel installer lifecycle](https://github.com/aivanov2-godaddy/open-redis-manager/pull/11) is open as a draft, stacked on PR #10.
+- cPanel/WHM authentication shells, the WHM discovery view, and a development installer/uninstaller are in place. There is no account-instance adapter or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
