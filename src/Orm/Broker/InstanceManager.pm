@@ -10,7 +10,12 @@ my %SERVER_BINARIES = (
     redis => [qw(/usr/bin/redis-server /usr/sbin/redis-server /usr/local/bin/redis-server /usr/local/sbin/redis-server)],
     valkey => [qw(/usr/bin/valkey-server /usr/sbin/valkey-server /usr/local/bin/valkey-server /usr/local/sbin/valkey-server)],
 );
+my %CLIENT_BINARIES = (
+    redis => [qw(/usr/bin/redis-cli /usr/sbin/redis-cli /usr/local/bin/redis-cli /usr/local/sbin/redis-cli)],
+    valkey => [qw(/usr/bin/valkey-cli /usr/sbin/valkey-cli /usr/local/bin/valkey-cli /usr/local/sbin/valkey-cli)],
+);
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
+my $MAX_INFO_BYTES = 32768;
 
 sub new {
     my ($class, %args) = @_;
@@ -23,6 +28,8 @@ sub new {
         systemctl_call => $args{systemctl_call},
         binary_paths => $args{binary_paths} // \%SERVER_BINARIES,
         binary_probe => $args{binary_probe},
+        client_paths => $args{client_paths} // \%CLIENT_BINARIES,
+        metrics_probe => $args{metrics_probe},
     }, $class;
 }
 
@@ -32,6 +39,7 @@ sub dispatch {
     return _failure('invalid_request') if !_valid_account($account);
 
     return $self->status($account) if $operation eq 'instance.status';
+    return $self->metrics($account) if $operation eq 'instance.metrics';
     return $self->provision($account) if $operation eq 'instance.provision';
     return $self->start($account) if $operation eq 'instance.start';
     return $self->stop($account) if $operation eq 'instance.stop';
@@ -147,6 +155,80 @@ sub stop {
     my $current = $self->status($account);
     return $current if $current->{success} && ($current->{state} eq 'stopped' || $current->{state} eq 'stopping');
     return _failure('service_failed');
+}
+
+sub metrics {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('instance_unavailable') if !$active && $state ne 'inactive' && $state ne 'failed';
+    return _failure('not_running') if $state ne 'active';
+
+    my $info;
+    if (ref($self->{metrics_probe}) eq 'CODE') {
+        $info = eval { $self->{metrics_probe}->($manifest->{backend}, $manifest->{socket}) };
+    } else {
+        $info = $self->_redis_info($manifest->{backend}, $manifest->{socket});
+    }
+    return _failure('metrics_unavailable') if !defined($info) || ref($info);
+    return _failure('metrics_unavailable') if length($info) == 0 || length($info) > $MAX_INFO_BYTES;
+
+    my %fields = (
+        memory_used_bytes => 'used_memory',
+        memory_peak_bytes => 'used_memory_peak',
+        connected_clients => 'connected_clients',
+        uptime_seconds => 'uptime_in_seconds',
+        commands_per_second => 'instantaneous_ops_per_sec',
+        keyspace_hits => 'keyspace_hits',
+        keyspace_misses => 'keyspace_misses',
+    );
+    my %metrics;
+    for my $name (keys %fields) {
+        my $field = $fields{$name};
+        my ($value) = $info =~ /^\Q$field\E:([0-9]+)\r?$/m;
+        return _failure('metrics_unavailable') if !defined($value) || length($value) > 15;
+        $metrics{$name} = 0 + $value;
+    }
+    return { %metrics, success => JSON::PP::true, version => 1 };
+}
+
+sub _redis_info {
+    my ($self, $backend, $socket) = @_;
+    return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
+    return undef if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+    my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
+    my $path;
+    for my $candidate (@{$self->{client_paths}->{$client_name} // []}) {
+        next if !defined($candidate) || $candidate !~ m{\A/usr/(?:local/)?(?:s?bin)/(?:redis|valkey)-cli\z};
+        my @stat = lstat($candidate);
+        next if !@stat || !S_ISREG($stat[2]) || $stat[4] != 0 || ($stat[2] & 0022) != 0 || !-x $candidate;
+        $path = $candidate;
+        last;
+    }
+    return undef if !defined($path);
+
+    my ($output, $opened) = ('', 0);
+    my $completed = eval {
+        local $SIG{ALRM} = sub { die "metrics timeout\n" };
+        local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        alarm(3);
+        if (open(my $pipe, '-|', $path, '-s', $socket, '--raw', 'INFO')) {
+            $opened = 1;
+            my $read = read($pipe, $output, $MAX_INFO_BYTES + 1);
+            $output = '' if !defined($read) || $read == 0 || $read > $MAX_INFO_BYTES;
+            my $closed = close($pipe);
+            $opened = 0;
+            die "metrics failed\n" if !$closed || $output eq '';
+        } else {
+            die "metrics unavailable\n";
+        }
+        alarm(0);
+        1;
+    };
+    alarm(0);
+    return undef if !$completed || $opened || $output eq '' || length($output) > $MAX_INFO_BYTES;
+    return $output;
 }
 
 sub _read_manifest {

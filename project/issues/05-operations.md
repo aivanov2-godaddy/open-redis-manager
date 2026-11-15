@@ -10,3 +10,7 @@ Build account-safe backups and useful operational visibility.
 - Metrics include memory, peak, connections, uptime, operations and hit/miss ratio.
 - Last-known metrics remain visible with a stale marker when sampling fails.
 - Exported diagnostics are previewable and credential-redacted.
+
+## Progress
+
+- The installed cPanel page now requests a bounded live metric sample for a running account via the fixed `instance.metrics` broker operation. It returns numeric memory, clients, uptime, operations-per-second, and keyspace hit/miss fields only. Historical storage, stale-value retention, diagnostics export, and backups/restore remain open; disposable-host validation is still required.

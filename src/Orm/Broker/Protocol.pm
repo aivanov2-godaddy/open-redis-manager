@@ -17,7 +17,7 @@ sub parse_request {
     if ($frame =~ /\A\{"offset":(0|[1-9][0-9]{0,5}),"operation":"fleet\.list","version":1\}\n\z/) {
         return { offset => 0 + $1, operation => 'fleet.list', version => 1 };
     }
-    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.provision|instance\.start|instance\.stop)","version":1\}\n\z/;
+    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop)","version":1\}\n\z/;
 
     my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;
     return undef if !defined($operation);

@@ -22,9 +22,29 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     }
 }
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
+$liveMetrics = $brokerVerified && ($instanceStatus['state'] ?? null) === 'running'
+    ? $instanceClient->request('instance.metrics')
+    : null;
 $connectionDetails = $brokerVerified
     ? \Orm\Cpanel\ConnectionDetails::forAccount($account->username(), $instanceStatus)
     : null;
+$formatBytes = static function (int $bytes): string {
+    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    $value = (float) $bytes;
+    $unit = 0;
+    while ($value >= 1024 && $unit < count($units) - 1) {
+        $value /= 1024;
+        $unit++;
+    }
+    return number_format($value, $unit === 0 ? 0 : 1) . ' ' . $units[$unit];
+};
+$hasLiveMetrics = is_array($liveMetrics) && ($liveMetrics['success'] ?? false) === true;
+$hitCount = $hasLiveMetrics ? $liveMetrics['keyspace_hits'] + $liveMetrics['keyspace_misses'] : 0;
+$hitRatio = $hasLiveMetrics && $hitCount > 0
+    ? number_format(($liveMetrics['keyspace_hits'] / $hitCount) * 100, 1) . '%'
+    : 'No lookups yet';
+$uptimeDays = $hasLiveMetrics ? intdiv($liveMetrics['uptime_seconds'], 86400) : 0;
+$uptimeHours = $hasLiveMetrics ? intdiv($liveMetrics['uptime_seconds'] % 86400, 3600) : 0;
 $stateClass = match ($instanceStatus['state'] ?? null) {
     'running' => 'is-running',
     'starting', 'stopping' => 'is-pending',
@@ -56,6 +76,12 @@ try {
         .orm-state.is-pending { background: #fff3d9; color: #895a00; }
         .orm-state.is-failed { background: #fde9e9; color: #a42828; }
         .orm-state.is-idle { background: #edf1f6; color: #4f6078; }
+        .orm-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; margin: 18px 0 24px; }
+        .orm-metric { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+        .orm-metric-label { display: flex; align-items: center; gap: 8px; color: #59677c; font-size: 13px; }
+        .orm-metric-icon { width: 18px; height: 18px; color: #317a9d; }
+        .orm-metric-value { display: block; margin-top: 8px; color: #172235; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+        .orm-metrics-note { color: #59677c; font-size: 13px; }
         .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
@@ -92,6 +118,24 @@ try {
           <?php else: ?>
             <div class="orm-card">
             <p class="orm-state <?= htmlspecialchars($stateClass, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $instanceStatus['state'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+            <?php if ($instanceStatus['state'] === 'running'): ?>
+              <section aria-labelledby="orm-usage-title">
+                <h3 id="orm-usage-title">Live usage</h3>
+                <?php if ($hasLiveMetrics): ?>
+                  <div class="orm-metrics">
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="2"/></svg>Memory used</span><strong class="orm-metric-value"><?= htmlspecialchars($formatBytes($liveMetrics['memory_used_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Memory peak</span><strong class="orm-metric-value"><?= htmlspecialchars($formatBytes($liveMetrics['memory_peak_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Connected clients</span><strong class="orm-metric-value"><?= number_format($liveMetrics['connected_clients']) ?></strong></div>
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Uptime</span><strong class="orm-metric-value"><?= number_format($uptimeDays) ?>d <?= str_pad((string) $uptimeHours, 2, '0', STR_PAD_LEFT) ?>h</strong></div>
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h3l3-7 4 4 3-8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Operations per second</span><strong class="orm-metric-value"><?= number_format($liveMetrics['commands_per_second']) ?>/s</strong></div>
+                    <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Cache hit ratio</span><strong class="orm-metric-value"><?= htmlspecialchars($hitRatio, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
+                  </div>
+                  <p class="orm-metrics-note">Live sample from Redis-compatible INFO statistics. Refresh this page for a new sample; history is not stored yet.</p>
+                <?php else: ?>
+                  <p class="orm-metrics-note" role="status">Live usage metrics are temporarily unavailable. Refresh this page to try again.</p>
+                <?php endif; ?>
+              </section>
+            <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'not_configured'): ?>
               <p>Initialize a private Redis-compatible cache instance. The backend must first be selected by your hosting provider.</p>
               <form method="post">

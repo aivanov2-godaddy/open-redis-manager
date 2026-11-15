@@ -130,7 +130,8 @@ sub run {
                 my $peer_uid = $clients{$fd}->{uid};
                 my $limit = $request->{operation} eq 'identity'
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
-                    : $request->{operation} eq 'fleet.list' ? 1 : $MUTATION_RATE_LIMIT_PER_SECOND;
+                    : $request->{operation} eq 'fleet.list' ? 1
+                    : $request->{operation} eq 'instance.metrics' ? 4 : $MUTATION_RATE_LIMIT_PER_SECOND;
                 my $root_read = $request->{operation} eq 'fleet.list' ? 1 : 0;
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read)) {
                     _write_and_close($selector, \%clients, $fd, {
