@@ -1,0 +1,11 @@
+.DS_Store
+Thumbs.db
+.env
+vendor/
+node_modules/
+*.log
+*.tmp
+.preview-*/
+.chrome-preview*/
+.claude-flow/
+.swarm/
