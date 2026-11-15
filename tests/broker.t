@@ -131,6 +131,7 @@ my @config_calls;
 my $fail_config_once;
 my $fail_config_always;
 my $fail_config_commit_once;
+my $fail_metrics_commit_once;
 my $fail_config_get;
 my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
 my $manager = Orm::Broker::InstanceManager->new(
@@ -161,6 +162,10 @@ my $manager = Orm::Broker::InstanceManager->new(
     config_get => sub { return undef if $fail_config_get; return { %runtime_settings }; },
     atomic_commit => sub {
         my ($temporary, $path) = @_;
+        if ($fail_metrics_commit_once && $path =~ /metrics[.]json\z/) {
+            $fail_metrics_commit_once = 0;
+            return 0;
+        }
         if ($fail_config_commit_once && index($path, 'ormtest') >= 0 && $path =~ /redis[.]conf\z/) {
             $fail_config_commit_once = 0;
             return 0;
@@ -212,8 +217,30 @@ my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],
     [1048576, 2097152, 3, 3600, 12, 90, 10], 'return only parsed numeric metrics');
-is_deeply([sort keys %{$metrics}], [qw(commands_per_second connected_clients keyspace_hits keyspace_misses memory_peak_bytes memory_used_bytes success uptime_seconds version)],
+ok(!$metrics->{stale} && $metrics->{retained} && $metrics->{sampled_at} =~ /\A[0-9]{10}\z/,
+    'mark the live sample fresh, retained, and record its capture time');
+is_deeply([sort keys %{$metrics}], [qw(commands_per_second connected_clients keyspace_hits keyspace_misses memory_peak_bytes memory_used_bytes retained sampled_at stale success uptime_seconds version)],
     'metrics response contains only the fixed numeric allowlist and envelope');
+my $metrics_path = "$etc_instances/ormtest/metrics.json";
+ok(-f $metrics_path, 'persist the latest metrics sample in the root-owned account metadata directory');
+my @metrics_stat = stat($metrics_path);
+is($metrics_stat[4], $<, 'metrics snapshot is owned by the privileged manager');
+is($metrics_stat[5], $<, 'metrics snapshot is not readable through the cPanel account group');
+is($metrics_stat[2] & 0777, 0600, 'metrics snapshot permissions are root-only');
+my $last_good_info = $metrics_info;
+$metrics_info = join("\n", 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:7',
+    'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20', '');
+$fail_metrics_commit_once = 1;
+my $uncached_metrics = $manager->dispatch('instance.metrics', $account);
+ok($uncached_metrics->{success} && !$uncached_metrics->{stale} && !$uncached_metrics->{retained}
+    && $uncached_metrics->{memory_used_bytes} == 3145728,
+    'return a live-only sample and flag a snapshot persistence failure');
+$metrics_info = undef;
+my $stale_metrics = $manager->dispatch('instance.metrics', $account);
+ok($stale_metrics->{success} && $stale_metrics->{stale} && $stale_metrics->{retained}
+    && $stale_metrics->{memory_used_bytes} == 1048576,
+    'retain and mark the last successfully saved sample when probing fails');
+$metrics_info = $last_good_info;
 is_deeply($metrics_calls[0], ['redis', "$data_instances/ormtest/redis.sock"],
     'probe the trusted account socket with the manifest backend');
 my $metrics_frame = '{"operation":"instance.metrics","version":1}' . "\n";
@@ -224,7 +251,10 @@ ok($decoded_metrics->{success} && $decoded_metrics->{connected_clients} == 3,
 is($manager->dispatch('instance.status', { name => 'ormother', uid => $< + 1, gid => $account->{gid} })->{state},
     'not_configured', 'another account cannot see the first account manifest');
 is($manager->dispatch('instance.stop', $account)->{state}, 'stopped', 'stop the account-scoped unit');
-is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running', 'do not collect metrics for a stopped instance');
+my $stopped_metrics = $manager->dispatch('instance.metrics', $account);
+ok($stopped_metrics->{success} && $stopped_metrics->{stale} && $stopped_metrics->{retained}
+    && $stopped_metrics->{memory_used_bytes} == 1048576,
+    'show the last sample with a stale marker while the instance is stopped');
 is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
 my $settings = { memory_mib => 48, maxmemory_policy => 'allkeys-lfu', maxclients => 50, timeout => 60 };
 my $config_calls_before_invalid = scalar @config_calls;
@@ -310,7 +340,43 @@ is(scalar @config_calls, $calls_before_stopped_config, 'do not issue runtime com
 $unit_state = 'inactive';
 is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
 $metrics_info = "used_memory:not-a-number\n";
-is($manager->dispatch('instance.metrics', $account)->{error}, 'metrics_unavailable', 'reject malformed or incomplete metric output');
+my $malformed_stale_metrics = $manager->dispatch('instance.metrics', $account);
+ok($malformed_stale_metrics->{success} && $malformed_stale_metrics->{stale} && $malformed_stale_metrics->{retained},
+    'serve the last sample when live metric output is malformed');
+open(my $corrupt_metrics_file, '>', $metrics_path) or die "corrupt metrics fixture: $!";
+print {$corrupt_metrics_file} '{"unexpected":"field"}' . "\n";
+close($corrupt_metrics_file) or die "close corrupt metrics fixture: $!";
+chmod(0600, $metrics_path) or die "chmod corrupt metrics fixture: $!";
+chown($<, $<, $metrics_path) or die "chown corrupt metrics fixture: $!";
+is($manager->dispatch('instance.metrics', $account)->{error}, 'metrics_unavailable',
+    'reject malformed cached fields instead of serving them');
+open(my $outside_metrics_file, '>', "$tmp/outside_metrics.json") or die "write outside metrics fixture: $!";
+print {$outside_metrics_file} JSON::PP->new->canonical(1)->encode({
+    commands_per_second => 12, connected_clients => 3, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, sampled_at => time,
+    uptime_seconds => 3600,
+}) . "\n";
+close($outside_metrics_file) or die "close outside metrics fixture: $!";
+chmod(0600, "$tmp/outside_metrics.json") or die "chmod outside metrics fixture: $!";
+chown($<, $<, "$tmp/outside_metrics.json") or die "chown outside metrics fixture: $!";
+unlink($metrics_path) or die "remove corrupt metrics fixture: $!";
+symlink("$tmp/outside_metrics.json", $metrics_path) or die "symlink metrics fixture: $!";
+is($manager->dispatch('instance.metrics', $account)->{error}, 'metrics_unavailable',
+    'refuse a symlink even when its target contains a valid sample');
+unlink($metrics_path) or die "remove metrics symlink fixture: $!";
+open(my $expired_metrics_file, '>', $metrics_path) or die "write expired metrics fixture: $!";
+print {$expired_metrics_file} JSON::PP->new->canonical(1)->encode({
+    commands_per_second => 12, connected_clients => 3, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, sampled_at => time - 31 * 24 * 60 * 60,
+    uptime_seconds => 3600,
+}) . "\n";
+close($expired_metrics_file) or die "close expired metrics fixture: $!";
+chmod(0600, $metrics_path) or die "chmod expired metrics fixture: $!";
+chown($<, $<, $metrics_path) or die "chown expired metrics fixture: $!";
+$unit_state = 'inactive';
+is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running',
+    'preserve the stopped error when the saved sample is expired');
+ok(!-e $metrics_path, 'remove an expired root-owned snapshot on access');
 ok(!(grep { $_->[-1] !~ /\Aorm-instance\@ormtest\.service\z/ && $_->[0] ne 'is-active' } @systemctl_calls),
     'only the account-specific ORM systemd template is controlled');
 ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\Aorm-instance\@ormtest\.service\z/ } @systemctl_calls),

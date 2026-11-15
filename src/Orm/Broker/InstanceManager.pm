@@ -16,6 +16,19 @@ my %CLIENT_BINARIES = (
 );
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
+my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
+my @METRIC_FIELDS = qw(
+    commands_per_second connected_clients keyspace_hits keyspace_misses memory_peak_bytes memory_used_bytes uptime_seconds
+);
+my %METRIC_INFO_FIELDS = (
+    memory_used_bytes => 'used_memory',
+    memory_peak_bytes => 'used_memory_peak',
+    connected_clients => 'connected_clients',
+    uptime_seconds => 'uptime_in_seconds',
+    commands_per_second => 'instantaneous_ops_per_sec',
+    keyspace_hits => 'keyspace_hits',
+    keyspace_misses => 'keyspace_misses',
+);
 my %PRESET_MEMORY_BYTES = (
     wordpress => 48 * 1024 * 1024,
     laravel => 32 * 1024 * 1024,
@@ -332,8 +345,11 @@ sub metrics {
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
-    return _failure('instance_unavailable') if !$active && $state ne 'inactive' && $state ne 'failed';
-    return _failure('not_running') if $state ne 'active';
+    if (!$active || $state ne 'active') {
+        my $stale = $self->_stale_metrics($account);
+        return $stale if $stale;
+        return _failure(!$active && ($state eq 'inactive' || $state eq 'failed') ? 'not_running' : 'instance_unavailable');
+    }
 
     my $info;
     if (ref($self->{metrics_probe}) eq 'CODE') {
@@ -341,26 +357,80 @@ sub metrics {
     } else {
         $info = $self->_redis_info($manifest->{backend}, $manifest->{socket});
     }
-    return _failure('metrics_unavailable') if !defined($info) || ref($info);
-    return _failure('metrics_unavailable') if length($info) == 0 || length($info) > $MAX_INFO_BYTES;
+    return $self->_stale_metrics($account) // _failure('metrics_unavailable')
+        if !defined($info) || ref($info) || length($info) == 0 || length($info) > $MAX_INFO_BYTES;
 
-    my %fields = (
-        memory_used_bytes => 'used_memory',
-        memory_peak_bytes => 'used_memory_peak',
-        connected_clients => 'connected_clients',
-        uptime_seconds => 'uptime_in_seconds',
-        commands_per_second => 'instantaneous_ops_per_sec',
-        keyspace_hits => 'keyspace_hits',
-        keyspace_misses => 'keyspace_misses',
-    );
     my %metrics;
-    for my $name (keys %fields) {
-        my $field = $fields{$name};
+    for my $name (@METRIC_FIELDS) {
+        my $field = $METRIC_INFO_FIELDS{$name};
         my ($value) = $info =~ /^\Q$field\E:([0-9]+)\r?$/m;
-        return _failure('metrics_unavailable') if !defined($value) || length($value) > 15;
+        return $self->_stale_metrics($account) // _failure('metrics_unavailable')
+            if !defined($value) || length($value) > 15;
         $metrics{$name} = 0 + $value;
     }
-    return { %metrics, success => JSON::PP::true, version => 1 };
+    my $sample = { %metrics, sampled_at => time };
+    my $retained = $self->_write_metrics_snapshot($account, $sample);
+    return {
+        %{$sample}, retained => $retained ? JSON::PP::true : JSON::PP::false,
+        stale => JSON::PP::false, success => JSON::PP::true, version => 1,
+    };
+}
+
+sub _stale_metrics {
+    my ($self, $account) = @_;
+    my $sample = $self->_read_metrics_snapshot($account);
+    return undef if !$sample;
+    return {
+        %{$sample}, retained => JSON::PP::true,
+        stale => JSON::PP::true, success => JSON::PP::true, version => 1,
+    };
+}
+
+sub _write_metrics_snapshot {
+    my ($self, $account, $sample) = @_;
+    return 0 if ref($sample) ne 'HASH';
+    return 0 if !_valid_metrics({ map { $_ => $sample->{$_} } @METRIC_FIELDS });
+    return 0 if !defined($sample->{sampled_at}) || ref($sample->{sampled_at})
+        || $sample->{sampled_at} !~ /\A[0-9]{1,10}\z/;
+    my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'metrics.json');
+    my $snapshot = JSON::PP->new->canonical(1)->encode($sample) . "\n";
+    return $self->_atomic_write($path, $snapshot, 0600, $self->{expected_owner_uid}, $self->{expected_owner_uid});
+}
+
+sub _read_metrics_snapshot {
+    my ($self, $account) = @_;
+    my $directory = $self->_account_config_dir($account->{name});
+    my @directory_stat = lstat($directory);
+    return undef if !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $directory_stat[4] != $self->{expected_owner_uid}
+        || $directory_stat[5] != $account->{gid} || ($directory_stat[2] & 0027) != 0;
+    my $path = File::Spec->catfile($directory, 'metrics.json');
+    return undef if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
+    my @stat = stat($handle);
+    if (!@stat || !S_ISREG($stat[2]) || $stat[4] != $self->{expected_owner_uid}
+        || $stat[5] != $self->{expected_owner_uid} || $stat[3] != 1
+        || ($stat[2] & 0777) != 0600 || $stat[7] > 2048) {
+        close($handle);
+        return undef;
+    }
+    my $json = '';
+    my $read = read($handle, $json, 2049);
+    my $closed = close($handle);
+    return undef if !defined($read) || !$closed || length($json) > 2048 || $json !~ /\n\z/;
+    my $snapshot = eval { JSON::PP->new->decode(substr($json, 0, -1)) };
+    return undef if ref($snapshot) ne 'HASH';
+    return undef if join(',', sort keys %{$snapshot}) ne join(',', sort(@METRIC_FIELDS, 'sampled_at'));
+    return undef if !_valid_metrics({ map { $_ => $snapshot->{$_} } @METRIC_FIELDS });
+    return undef if !defined($snapshot->{sampled_at}) || ref($snapshot->{sampled_at})
+        || $snapshot->{sampled_at} !~ /\A[0-9]{1,10}\z/ || $snapshot->{sampled_at} > time + 300;
+    if ($snapshot->{sampled_at} < time - $MAX_METRICS_AGE_SECONDS) {
+        # This exact root-owned file is expired and no longer useful.
+        unlink($path);
+        return undef;
+    }
+    my %result = map { $_ => 0 + $snapshot->{$_} } @METRIC_FIELDS;
+    $result{sampled_at} = 0 + $snapshot->{sampled_at};
+    return \%result;
 }
 
 sub _redis_info {
@@ -624,6 +694,17 @@ sub _valid_settings {
         || $settings->{timeout} !~ /\A[0-9]+\z/ || $settings->{timeout} > 300;
     return 0 if !defined($settings->{maxmemory_policy}) || ref($settings->{maxmemory_policy})
         || !exists($MAXMEMORY_POLICIES{$settings->{maxmemory_policy}});
+    return 1;
+}
+
+sub _valid_metrics {
+    my ($metrics) = @_;
+    return 0 if ref($metrics) ne 'HASH';
+    return 0 if join(',', sort keys %{$metrics}) ne join(',', sort @METRIC_FIELDS);
+    for my $name (@METRIC_FIELDS) {
+        my $value = $metrics->{$name};
+        return 0 if !defined($value) || ref($value) || $value !~ /\A[0-9]+\z/ || length($value) > 15;
+    }
     return 1;
 }
 

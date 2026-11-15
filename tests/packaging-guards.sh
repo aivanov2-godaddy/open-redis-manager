@@ -4,6 +4,10 @@ set -Eeuo pipefail
 [[ "$(id -u)" -eq 0 ]] || { printf 'packaging guard tests must run as root.\n' >&2; exit 1; }
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../packaging" && pwd -P)/lib.sh"
+grep -Fxq 'ReadWritePaths=/etc/orm-instances /var/lib/orm-instances' "$ORM_PACKAGE_ROOT/systemd/orm-broker.service" || {
+    printf 'broker writable paths must be limited to the ORM instance metadata and data roots.\n' >&2
+    exit 1
+}
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-packaging-guards.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 

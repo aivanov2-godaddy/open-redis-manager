@@ -31,5 +31,5 @@ Open a feature branch and pull request for each coherent implementation incremen
 - GitHub: milestone #1 and issues #1–#7 are created.
 - PRs #8–#16 have been merged to `main`.
 - PR #16 added account-private Unix sockets, an account-owned systemd template, WHM backend selection, and cPanel provision/status/start/stop actions. Linux CI passes; live disposable-host lifecycle validation remains open.
-- Initial setup presets, current metrics, and a bounded existing-instance configuration editor are implemented. Credential management, metric history, backups/restore, migration, package/reseller controls, and broad WHM operations remain open. Issues #1–#7 remain open.
+- Initial setup presets, live and stale latest-sample metrics, and a bounded existing-instance configuration editor are implemented. Credential management, metric history, backups/restore, migration, package/reseller controls, and broad WHM operations remain open. Issues #1–#7 remain open.
 - Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.

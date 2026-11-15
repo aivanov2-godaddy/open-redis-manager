@@ -58,20 +58,32 @@ $badConfigResponse = new BrokerClient(static fn (string $request): string =>
     "{\"config\":{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":65,\"timeout\":60},\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
 );
 $assert($badConfigResponse->request('instance.status') === null, 'Reject over-cap settings in a broker response.');
-$metricResponse = "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n";
+$metricResponse = "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":1794760000,\"stale\":false,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n";
 $metricsClient = new BrokerClient(static function (string $request) use (&$requests, $metricResponse): string {
     $requests[] = $request;
     return $metricResponse;
 });
 $metrics = $metricsClient->request('instance.metrics');
-$assert($metrics['memory_used_bytes'] === 1048576 && $metrics['keyspace_hits'] === 90,
-    'Parse the exact bounded metrics response.');
+$assert($metrics['memory_used_bytes'] === 1048576 && $metrics['keyspace_hits'] === 90
+    && $metrics['sampled_at'] === 1794760000 && $metrics['stale'] === false,
+    'Parse the exact bounded fresh-metrics response.');
 $assert($requests[2] === "{\"operation\":\"instance.metrics\",\"version\":1}\n",
     'Metrics requests contain no account identity or target path.');
 $badMetrics = new BrokerClient(static fn (string $request): string =>
-    "{\"commands_per_second\":-1,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n"
+    "{\"commands_per_second\":-1,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":1794760000,\"stale\":false,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n"
 );
 $assert($badMetrics->request('instance.metrics') === null, 'Reject negative metric values.');
+$staleMetricResponse = "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":1794760000,\"stale\":true,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n";
+$staleMetrics = new BrokerClient(static fn (string $request): string => $staleMetricResponse);
+$assert($staleMetrics->request('instance.metrics')['stale'] === true, 'Accept an exact validated stale metrics response.');
+$notRetainedStale = new BrokerClient(static fn (string $request): string =>
+    str_replace('"retained":true', '"retained":false', $staleMetricResponse)
+);
+$assert($notRetainedStale->request('instance.metrics') === null, 'Reject a stale response without a retained sample.');
+$badStaleMetrics = new BrokerClient(static fn (string $request): string =>
+    "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":\"1794760000\",\"stale\":1,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n"
+);
+$assert($badStaleMetrics->request('instance.metrics') === null, 'Reject malformed timestamp and stale marker types.');
 $before = count($requests);
 $assert($client->request('instance.delete') === null, 'Reject unrecognized operations.');
 $assert(count($requests) === $before, 'Do not send an unrecognized operation to the broker.');

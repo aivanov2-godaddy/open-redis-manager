@@ -92,4 +92,4 @@ broker_started=1
 "$ORM_SYSTEMCTL" enable --now orm-broker.service
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
-printf 'Open Redis Manager installed. WHM backend selection and account-scoped Redis/Valkey lifecycle controls are available; configuration, credentials, monitoring, and backups remain under development.\n'
+printf 'Open Redis Manager installed. WHM backend selection and account-scoped Redis/Valkey lifecycle controls are available; credential management and backups remain under development.\n'

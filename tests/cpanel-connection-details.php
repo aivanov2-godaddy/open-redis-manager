@@ -52,10 +52,13 @@ foreach ([
 $assert(str_contains($page, 'navigator.clipboard?.writeText'), 'copy through the browser clipboard API after a click');
 $assert(str_contains($page, 'role="status" aria-live="polite"'), 'announce copy success and failure accessibly');
 $assert(str_contains($page, 'Select and copy the example manually.'), 'explain the manual copy fallback');
-$assert(str_contains($page, "request('instance.metrics')"), 'request live metrics only for a running instance');
+$assert(str_contains($page, "request('instance.metrics')") && str_contains($page, "!== 'not_configured'"),
+    'request current or stale metrics for every configured instance state');
 $assert(str_contains($page, 'aria-labelledby="orm-usage-title"'), 'label the live usage section');
 $assert(str_contains($page, 'Cache hit ratio') && str_contains($page, 'Operations per second'), 'show activity and hit-ratio metrics');
-$assert(str_contains($page, 'history is not stored yet'), 'explain that current samples are not historical data');
+$assert(str_contains($page, 'Stale sample') && str_contains($page, 'sampled_at'), 'label stale values and show their sample time');
+$assert(str_contains($page, 'up to 30 days; no history is stored'), 'explain latest-sample retention without promising history');
+$assert(str_contains($page, 'could not be saved for fallback use'), 'disclose a failed snapshot write to the account user');
 $assert(str_contains($page, 'name="orm_preset"'), 'offer a preset when initializing an instance');
 foreach (['generic', 'wordpress', 'laravel', 'magento', 'session'] as $preset) {
     $assert(str_contains($page, 'value="' . $preset . '"'), 'expose the ' . $preset . ' setup preset');
