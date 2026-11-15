@@ -2,12 +2,12 @@
 
 An open-source Redis and Valkey control panel for cPanel and WHM. This repository starts with a standalone, dependency-free PHP prototype and a documented implementation plan for a production cPanel integration.
 
-> **Status:** early prototype. The screens use demonstration data. They do not control Redis, invoke cPanel APIs, or perform privileged server actions yet. Do not install this prototype on a production server.
+> **Status:** early development. The demo screens use sample data. The cPanel/WHM scaffolds and installer have not been validated on a cPanel host. A root-run identity-only broker is under development; it does not operate Redis or Valkey. Do not install on a production server.
 
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM entry points, a validated cPanel session identity display, and a development-only installer in [`packaging/`](packaging/README.md); the lifecycle has not been validated on a cPanel host.
+- cPanel and WHM entry points, a cPanel session identity check with a root-run Linux peer-identity broker, and a development-only installer in [`packaging/`](packaging/README.md); the lifecycle has not been validated on a cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).

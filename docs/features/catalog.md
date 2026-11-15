@@ -18,7 +18,7 @@ This catalog records the public product behavior observed on the reference site 
 | Diagnostics export | Download a support bundle with configuration and health context while redacting credentials and private values. | Diagnostics |
 | Health guidance | Summarize the state with actionable suggestions for memory pressure, weak cache hit ratio, connection issues and disabled runtime clients. | Dashboard |
 | Safe live configuration | Apply an account-level memory change live where supported; preserve account ownership and report apply failures instead of implying the saved file took effect. | Configuration |
-| Authenticated account context | Derive the current account from the cPanel session and use it for all account-scoped reads and writes. | Current cPanel page displays the validated LiveAPI username; no instance access is wired yet. |
+| Authenticated account context | Derive the current account from the cPanel session and use it for all account-scoped reads and writes. | The cPanel page cross-checks the LiveAPI username with a Linux peer-credential broker. No instance access is wired, and the process UID mapping awaits cPanel-host validation. |
 
 ## WHM server administration
 

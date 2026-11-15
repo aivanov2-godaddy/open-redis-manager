@@ -18,7 +18,7 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
 
-Issue #2 now has a CLI-only backend-discovery slice on branch `codex/orm-backend-discovery`. It is not wired to the prototype UI and does not complete the issue: supported cPanel package layouts and live Linux/systemd behavior remain to be validated on a disposable host.
+Issue #2 has a CLI-only backend-discovery slice and now includes the identity-only broker foundation on branch `codex/orm-account-broker`. The broker does not manage Redis/Valkey; the account instance registry and service adapter remain future work.
 
 ## Pull request plan
 
@@ -29,12 +29,7 @@ Open a feature branch and pull request for each coherent implementation incremen
 - Upstream repository: public; it was empty when this work started.
 - Local repository: `main` targets the upstream default branch; the active implementation is developed as stacked feature branches.
 - GitHub: milestone #1 and issues #1–#7 are created.
-- PR: [#8 — Add ORM prototype, docs, and planning foundation](https://github.com/aivanov2-godaddy/open-redis-manager/pull/8) is open as a draft against `main`.
-- PR: [#9 — Add read-only Redis backend discovery CLI](https://github.com/aivanov2-godaddy/open-redis-manager/pull/9) is open as a draft, stacked on PR #8.
-- PR: [#10 — Add authenticated cPanel and WHM entrypoints](https://github.com/aivanov2-godaddy/open-redis-manager/pull/10) is open as a draft, stacked on PR #9.
-- PR: [#11 — Add development cPanel installer lifecycle](https://github.com/aivanov2-godaddy/open-redis-manager/pull/11) is open as a draft, stacked on PR #10.
-- PR: [#12 — Add application integration and update guides](https://github.com/aivanov2-godaddy/open-redis-manager/pull/12) is open as a draft, stacked on PR #11.
-- PR: [#13 — Add authenticated cPanel account context](https://github.com/aivanov2-godaddy/open-redis-manager/pull/13) is open as a draft, stacked on PR #12.
-- The cPanel page now displays the validated authenticated username from LiveAPI; Redis instance isolation and service operations remain unimplemented.
+- PRs #8–#13 have been merged to `main`.
+- The current cPanel page cross-checks its LiveAPI username using a root-run identity-only broker; Redis instance isolation and service operations remain unimplemented.
 - cPanel/WHM authentication shells, the WHM discovery view, and a development installer/uninstaller are in place. There is no account-instance adapter or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
 - Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.
