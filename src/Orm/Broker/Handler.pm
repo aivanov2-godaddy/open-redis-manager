@@ -27,6 +27,21 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.control') {
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $request->{action}) }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $control_response = eval {
+                    $fleet_inventory->control($request->{username}, $request->{action})
+                };
+                $response = ref($control_response) eq 'HASH' ? $control_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
 
         my $account = defined($resolver) ? eval { $resolver->resolve_account($peer_uid) } : undef;
         if (defined($response)) {

@@ -13,4 +13,4 @@ Provide administrators with fleet visibility and scoped maintenance operations.
 
 ## Progress
 
-- PR #19 adds a root-only, paginated, read-only inventory of configured or unhealthy ORM accounts with normalized service state. Search and state filtering apply to the current page. Service controls, recovery, audit records, and migration readiness remain open.
+- PR #19 added a root-only, paginated inventory of configured or unhealthy ORM accounts with normalized service state. The current slice adds root-only start, stop, and restart through a separate fixed broker operation. The broker resolves the target from trusted cPanel account metadata, validates its manifest, logs actor/account/action/result through syslog, and reports the resulting transitional state. WHM command console, recovery scans/repairs, metrics, and migration readiness remain open.

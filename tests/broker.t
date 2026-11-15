@@ -68,9 +68,14 @@ my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
     lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $test_gid }; },
+    lookup_name => sub { return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest'; return undef; },
 );
 is($resolver->resolve_uid(43210), 'ormtest', 'resolve a mapped UID through a trusted account record');
 is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $test_gid }, 'resolve trusted UID and primary GID');
+is_deeply($resolver->resolve_name('ormtest'), { name => 'ormtest', uid => 43210, gid => $test_gid },
+    'resolve an administrator-selected account name through its trusted account record');
+ok(!defined($resolver->resolve_name('../root')), 'reject unsafe target names before account lookup');
+ok(!defined($resolver->resolve_name('missing')), 'reject names absent from trusted account lookup');
 ok(!defined($resolver->resolve_uid(0)), 'reject root identity');
 ok(!defined($resolver->resolve_uid(undef)), 'reject missing UID');
 
@@ -230,6 +235,17 @@ is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', '
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
+my $restarted = $manager->restart($account);
+ok($restarted->{success} && $restarted->{state} eq 'running', 'restart a validated instance through its fixed systemd unit');
+ok((grep { $_->[0] eq 'restart' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-instance@ormtest.service' } @systemctl_calls),
+    'restart uses a server-generated unit and fixed no-block invocation');
+my $stopped_for_restart_test = $manager->stop($account);
+ok($stopped_for_restart_test->{success}, 'stop the test instance before checking restart guards');
+my $restart_calls_before_stopped = scalar grep { $_->[0] eq 'restart' } @systemctl_calls;
+is($manager->restart($account)->{error}, 'instance_unavailable', 'refuse restart when the instance is not running');
+is(scalar grep { $_->[0] eq 'restart' } @systemctl_calls, $restart_calls_before_stopped,
+    'do not invoke systemd restart for a stopped instance');
+ok($manager->start($account)->{success}, 'start the test instance again after the restart guard check');
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
     'return validated saved settings in the instance status');
 my $backup_root_path = "$data_instances/.orm-backups";
@@ -442,6 +458,12 @@ my %root_rates;
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 0), 'deny root broker requests by default');
 ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 1), 'allow the explicitly gated root inventory operation');
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1.1, 1, 1), 'rate-limit root inventory requests');
+ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2, 1, 1, 1, 'fleet.control'),
+    'allow a root control action in its separate rate bucket');
+ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.1, 1, 1, 1, 1),
+    'keep root inventory reads available after a fleet control action');
+ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.2, 1, 1, 1, 'fleet.control'),
+    'rate-limit repeated fleet control actions independently');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);

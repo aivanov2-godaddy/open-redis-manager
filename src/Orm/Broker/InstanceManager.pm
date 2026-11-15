@@ -198,6 +198,20 @@ sub stop {
     return _failure('service_failed');
 }
 
+sub restart {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my $before = $self->status($account);
+    return _failure('instance_unavailable') if !$before->{success}
+        || ($before->{state} ne 'running' && $before->{state} ne 'starting');
+    my ($ok) = $self->_systemctl('restart', '--no-block', $self->_unit_name($account->{name}));
+    return _failure('service_failed') if !$ok;
+    my $current = $self->status($account);
+    return $current if $current->{success} && $current->{state} =~ /\A(?:running|starting|stopping)\z/;
+    return _failure('service_failed');
+}
+
 sub configure {
     my ($self, $account, $settings) = @_;
     return _failure('invalid_request') if !_valid_settings($settings);

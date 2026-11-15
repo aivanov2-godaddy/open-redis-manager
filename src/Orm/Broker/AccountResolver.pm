@@ -16,6 +16,11 @@ sub new {
             return undef if !@entry || !defined($entry[0]) || !defined($entry[2]);
             return { name => $entry[0], uid => $entry[2], gid => $entry[3] };
         },
+        lookup_name => $args{lookup_name} // sub {
+            my @entry = getpwnam($_[0]);
+            return undef if !@entry || !defined($entry[0]) || !defined($entry[2]);
+            return { name => $entry[0], uid => $entry[2], gid => $entry[3] };
+        },
     }, $class;
 }
 
@@ -57,6 +62,18 @@ sub resolve_account {
 
     close($handle) or return undef;
     return { name => $username, uid => 0 + $uid, gid => 0 + $entry->{gid} };
+}
+
+sub resolve_name {
+    my ($self, $username) = @_;
+    return undef if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+    my $entry = eval { $self->{lookup_name}->($username) };
+    return undef if ref($entry) ne 'HASH' || !defined($entry->{name}) || $entry->{name} ne $username
+        || !defined($entry->{uid}) || ref($entry->{uid}) || $entry->{uid} !~ /\A[1-9][0-9]*\z/
+        || !defined($entry->{gid}) || ref($entry->{gid}) || $entry->{gid} !~ /\A[0-9]+\z/;
+    my $account = $self->resolve_account($entry->{uid});
+    return undef if ref($account) ne 'HASH' || $account->{name} ne $username || $account->{gid} != $entry->{gid};
+    return $account;
 }
 
 1;

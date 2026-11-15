@@ -14,6 +14,6 @@ final class SessionRequestGuard
         }
         $uri = $server['REQUEST_URI'] ?? null;
         return is_string($uri) && strlen($uri) <= 8192
-            && preg_match('~\\A/cpsess[0-9]+(?:/|\\?|\\z)~', $uri) === 1;
+            && preg_match('~\\A/cpsess[0-9]{10}(?:/|\\?|\\z)~', $uri) === 1;
     }
 }
