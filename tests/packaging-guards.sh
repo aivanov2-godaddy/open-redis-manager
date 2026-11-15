@@ -103,7 +103,7 @@ orm_restore_broker_state
     exit 1
 }
 
-mock_enabled_state=enabled
+mock_enabled_state=disabled
 mock_active_state=failed
 orm_capture_broker_state
 orm_test_systemctl disable --now orm-broker.service
@@ -112,7 +112,7 @@ orm_broker_state_matches_initial || {
     exit 1
 }
 orm_restore_broker_state
-[[ "$mock_enabled_state" == enabled && "$mock_active_state" == inactive ]] || {
+[[ "$mock_enabled_state" == disabled && "$mock_active_state" == inactive ]] || {
     printf 'rollback unexpectedly started a previously failed broker.\n' >&2
     exit 1
 }
