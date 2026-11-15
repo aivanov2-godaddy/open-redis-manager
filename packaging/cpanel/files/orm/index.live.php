@@ -67,6 +67,10 @@ try {
         .orm-connection details { margin-top: 14px; }
         .orm-connection summary { cursor: pointer; font-weight: 700; }
         .orm-connection pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: #f2f5f9; }
+        .orm-copy-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+        .orm-connection .orm-copy-button { padding: 7px 11px; border: 1px solid #cbd5e1; background: #fff; color: #263b57; font-size: 13px; }
+        .orm-copy-status:empty { display: none; }
+        .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl { grid-template-columns: 1fr; gap: 4px; } }
       </style>
       <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>Open Redis Manager</h1>
@@ -118,16 +122,41 @@ try {
                   <p class="orm-note">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm that the PHP runtime used by your site can see this path, especially if CageFS is enabled.</p>
                   <details open>
                     <summary>PHP with PhpRedis</summary>
-                    <pre><code><?= htmlspecialchars($connectionDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy PHP with PhpRedis example" data-copy-target="orm-example-php" data-copy-label="PHP with PhpRedis">Copy example</button></div>
+                    <pre><code id="orm-example-php"><?= htmlspecialchars($connectionDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
                   </details>
                   <details>
                     <summary>Node.js with node-redis</summary>
-                    <pre><code><?= htmlspecialchars($connectionDetails['node_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy Node.js with node-redis example" data-copy-target="orm-example-node" data-copy-label="Node.js with node-redis">Copy example</button></div>
+                    <pre><code id="orm-example-node"><?= htmlspecialchars($connectionDetails['node_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
                   </details>
                   <details>
                     <summary>Python with redis-py</summary>
-                    <pre><code><?= htmlspecialchars($connectionDetails['python_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy Python with redis-py example" data-copy-target="orm-example-python" data-copy-label="Python with redis-py">Copy example</button></div>
+                    <pre><code id="orm-example-python"><?= htmlspecialchars($connectionDetails['python_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
                   </details>
+                  <p id="orm-copy-status" class="orm-note orm-copy-status" role="status" aria-live="polite"></p>
+                  <script>
+                    (() => {
+                      const status = document.getElementById('orm-copy-status');
+                      document.querySelectorAll('.orm-copy-button').forEach(button => {
+                        button.addEventListener('click', async () => {
+                          const example = document.getElementById(button.dataset.copyTarget);
+                          if (!example) {
+                            status.textContent = 'This example is unavailable. Select and copy it manually.';
+                            return;
+                          }
+                          try {
+                            if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+                            await navigator.clipboard.writeText(example.innerText);
+                            status.textContent = `${button.dataset.copyLabel} copied.`;
+                          } catch {
+                            status.textContent = 'Clipboard access is unavailable. Select and copy the example manually.';
+                          }
+                        });
+                      });
+                    })();
+                  </script>
                 </section>
               <?php endif; ?>
               <p class="orm-note">Configuration editing, monitoring and backups are not enabled in this build yet.</p>

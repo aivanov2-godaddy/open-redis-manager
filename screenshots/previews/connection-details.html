@@ -29,6 +29,9 @@
     .codebox { padding: 17px; border-radius: 8px; background: #f2f5f9; color: #19273b; white-space: pre-wrap; }
     details { margin-top: 14px; }
     summary { cursor: pointer; font-weight: 700; }
+    .copy-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+    .copy-button { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #263b57; font-size: 13px; cursor: pointer; }
+    .copy-status { min-height: 1.5em; color: #176b3a; }
     .notice { margin-top: 18px; padding: 14px 16px; border: 1px solid #cfe0ff; border-radius: 8px; color: #34527d; background: #f5f8ff; }
     .footer { text-align: center; color: #7b8798; font-size: 12px; margin-top: 24px; }
     @media(max-width: 600px) { main { width: calc(100% - 24px); margin: 24px auto; } .topbar { padding: 0 16px; } .card { padding: 20px 18px; } dl { grid-template-columns: 1fr; gap: 4px; } dd { margin-bottom: 9px; } }
@@ -54,27 +57,47 @@
         </dl>
         <details open>
           <summary>PHP with PhpRedis</summary>
-          <pre class="codebox"><code>$redis = new Redis();
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy PHP with PhpRedis example" data-target="php-example" data-label="PHP with PhpRedis">Copy example</button></div>
+          <pre class="codebox"><code id="php-example">$redis = new Redis();
 $redis-&gt;connect('/var/lib/orm-instances/demo/redis.sock');
 $redis-&gt;select(0);</code></pre>
         </details>
         <details>
           <summary>Node.js with node-redis</summary>
-          <pre class="codebox"><code>import { createClient } from 'redis';
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy Node.js with node-redis example" data-target="node-example" data-label="Node.js with node-redis">Copy example</button></div>
+          <pre class="codebox"><code id="node-example">import { createClient } from 'redis';
 const client = createClient({ socket: { path: "/var/lib/orm-instances/demo/redis.sock" } });
 await client.connect();</code></pre>
         </details>
         <details>
           <summary>Python with redis-py</summary>
-          <pre class="codebox"><code>import redis
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy Python with redis-py example" data-target="python-example" data-label="Python with redis-py">Copy example</button></div>
+          <pre class="codebox"><code id="python-example">import redis
 
 client = redis.Redis(unix_socket_path='/var/lib/orm-instances/demo/redis.sock', db=0)
 client.ping()</code></pre>
         </details>
+        <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
         <p class="notice">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm your website's PHP runtime can see the socket path if CageFS is enabled.</p>
       </section>
     </section>
     <p class="footer">Preview screenshot uses synthetic demo data; no cPanel or Redis service is connected.</p>
   </main>
+  <script>
+    (() => {
+      const status = document.getElementById('copy-status');
+      document.querySelectorAll('.copy-button').forEach(button => {
+        button.addEventListener('click', async () => {
+          try {
+            if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+            await navigator.clipboard.writeText(document.getElementById(button.dataset.target).innerText);
+            status.textContent = `${button.dataset.label} copied.`;
+          } catch {
+            status.textContent = 'Clipboard access is unavailable. Select and copy the example manually.';
+          }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
