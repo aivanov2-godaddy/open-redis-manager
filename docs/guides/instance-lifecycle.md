@@ -15,7 +15,7 @@ On initialization, ORM creates a per-account service using `orm-instance@<accoun
 - The launcher accepts only fixed Redis and Valkey binary paths and passes the fixed configuration path as an argument vector without a shell.
 - The service uses only `AF_UNIX`, `PrivateNetwork`, strict filesystem protection, and one account-specific writable path.
 - Opening the cPanel page only reads status. Start/stop and WHM policy changes are POST-only, require a `cpsess`-tokenized route, and rely on cPanel/cpsrvd to validate the session token.
-- Uninstall refuses to remove ORM while entries remain under the managed instance metadata directory. It does not delete account data.
+- Uninstall refuses to remove ORM while entries remain under either managed instance root. It does not delete account data.
 
 ## Not implemented yet
 
@@ -23,4 +23,4 @@ The service adapter is an initial control-plane slice, not a complete cache prod
 
 ## Validation status
 
-The prior live cPanel smoke test verified only that one authenticated LiveAPI account matched the local broker identity. It did not provision or operate a Redis/Valkey process. Linux CI checks, systemd verification, and a disposable cPanel end-to-end lifecycle test are required before production use.
+Linux CI passed, including the broker tests, packaging root-guard tests, PHP checks, and systemd unit verification. The prior live cPanel smoke test verified only that one authenticated LiveAPI account matched the local broker identity. It did not provision or operate a Redis/Valkey process. A disposable cPanel end-to-end lifecycle test is still required before production use.
