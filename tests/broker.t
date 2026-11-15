@@ -333,7 +333,7 @@ my $generated_config = do { local $/; <$config_file> };
 close($config_file);
 like($generated_config, qr/^port 0$/m, 'Redis TCP listener is disabled');
 like($generated_config, qr/^unixsocketperm 700$/m, 'Redis Unix socket is account-private');
-like($generated_config, qr/^maxmemory 67108864$/m, 'generic preset uses the fixed 64 MiB ceiling');
+like($generated_config, qr/^maxmemory 41943040$/m, 'saved failed-service config keeps its selected memory setting');
 my $wordpress_account = { name => 'ormwp', uid => $account->{uid}, gid => $account->{gid} };
 my $wordpress_provisioned = $manager->dispatch('instance.provision', $wordpress_account, 'wordpress');
 ok($wordpress_provisioned->{success} && $wordpress_provisioned->{preset} eq 'wordpress',
