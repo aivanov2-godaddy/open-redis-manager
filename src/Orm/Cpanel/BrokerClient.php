@@ -26,15 +26,22 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
-    public function request(string $operation): ?array
+    /** @return array{success:bool,version:int,state?:string,preset?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
+    public function request(string $operation, ?string $preset = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
             return null;
         }
+        if ($preset !== null && ($operation !== 'instance.provision'
+            || !in_array($preset, ['wordpress', 'laravel', 'magento', 'session', 'generic'], true))) {
+            return null;
+        }
 
+        $payload = $preset === null
+            ? ['operation' => $operation, 'version' => 1]
+            : ['operation' => $operation, 'preset' => $preset, 'version' => 1];
         $request = json_encode(
-            ['operation' => $operation, 'version' => 1],
+            $payload,
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         ) . "\n";
         $response = $this->exchange === null
@@ -72,8 +79,17 @@ final class BrokerClient
                 }
                 return $decoded;
             }
-            if ($keys !== ['state', 'success', 'version']
-                || !in_array($decoded['state'], ['not_configured', 'stopped', 'starting', 'running', 'stopping', 'failed'], true)) {
+            if (!in_array($decoded['state'] ?? null, ['not_configured', 'stopped', 'starting', 'running', 'stopping', 'failed'], true)) {
+                return null;
+            }
+            if (array_key_exists('preset', $decoded)) {
+                if (!in_array($decoded['preset'], ['wordpress', 'laravel', 'magento', 'session', 'generic'], true)
+                    || $keys !== ['preset', 'state', 'success', 'version']) {
+                    return null;
+                }
+                return ['success' => true, 'state' => $decoded['state'], 'version' => 1, 'preset' => $decoded['preset']];
+            }
+            if ($keys !== ['state', 'success', 'version']) {
                 return null;
             }
             return ['success' => true, 'state' => $decoded['state'], 'version' => 1];

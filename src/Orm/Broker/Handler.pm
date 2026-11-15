@@ -34,7 +34,7 @@ sub handle_frame {
         } elsif (ref($account) eq 'HASH' && $request->{operation} eq 'identity') {
             $response = { success => JSON::PP::true, username => $account->{name}, version => 1 };
         } elsif (ref($account) eq 'HASH' && defined($instance_manager)) {
-            $response = eval { $instance_manager->dispatch($request->{operation}, $account) };
+            $response = eval { $instance_manager->dispatch($request->{operation}, $account, $request->{preset}) };
             $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 }
                 if ref($response) ne 'HASH';
         } else {

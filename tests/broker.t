@@ -22,9 +22,15 @@ for my $operation (qw(instance.status instance.provision instance.start instance
 }
 is(parse_request('{"operation":"instance.metrics","version":1}' . "\n")->{operation},
     'instance.metrics', 'accept the fixed instance metrics request');
+for my $preset (qw(wordpress laravel magento session generic)) {
+    my $frame = '{"operation":"instance.provision","preset":"' . $preset . '","version":1}' . "\n";
+    is(parse_request($frame)->{preset}, $preset, "accept the fixed $preset provisioning preset");
+}
 for my $invalid (
     '', '{}', $request . "\n", '{"version":1,"operation":"identity"}' . "\n",
     '{"operation":"identity","version":2}' . "\n", ('x' x (max_frame_bytes() + 1)),
+    '{"operation":"instance.provision","preset":"../../root","version":1}' . "\n",
+    '{"operation":"instance.start","preset":"generic","version":1}' . "\n",
 ) {
     ok(!parse_request($invalid), 'reject a non-canonical or oversized request');
 }
@@ -128,6 +134,7 @@ my $account = { name => 'ormtest', uid => $<, gid => $test_gid };
 is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
+is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],
@@ -170,9 +177,29 @@ my $generated_config = do { local $/; <$config_file> };
 close($config_file);
 like($generated_config, qr/^port 0$/m, 'Redis TCP listener is disabled');
 like($generated_config, qr/^unixsocketperm 700$/m, 'Redis Unix socket is account-private');
+like($generated_config, qr/^maxmemory 67108864$/m, 'generic preset uses the fixed 64 MiB ceiling');
+my $wordpress_account = { name => 'ormwp', uid => $account->{uid}, gid => $account->{gid} };
+my $wordpress_provisioned = $manager->dispatch('instance.provision', $wordpress_account, 'wordpress');
+ok($wordpress_provisioned->{success} && $wordpress_provisioned->{preset} eq 'wordpress',
+    'provision an account with its selected fixed preset');
+open(my $wordpress_config, '<', "$etc_instances/ormwp/redis.conf") or die "read WordPress config: $!";
+my $wordpress_config_text = do { local $/; <$wordpress_config> };
+close($wordpress_config);
+like($wordpress_config_text, qr/^maxmemory 50331648$/m, 'WordPress preset applies its bounded memory value');
+my $bad_preset = $manager->dispatch('instance.provision', { name => 'badpreset', uid => $account->{uid}, gid => $account->{gid} }, '../root');
+is($bad_preset->{error}, 'invalid_request', 'reject unknown provisioning presets');
 my $forged = $manager->dispatch('instance.start', { name => 'ormtest', uid => $< + 1, gid => $account->{gid} });
 ok(!$forged->{success}, 'manifest UID mismatch fails closed');
 ok(!$manager->dispatch('instance.some-other-action', $account)->{success}, 'unknown lifecycle operation is rejected');
+open(my $legacy_manifest_file, '>', $manifest_path) or die "rewrite legacy manifest fixture: $!";
+print {$legacy_manifest_file} JSON::PP->new->canonical(1)->encode({
+    backend => 'redis', config => "$etc_instances/ormtest/redis.conf", data => $data_path,
+    gid => $account->{gid}, socket => "$data_instances/ormtest/redis.sock", uid => $account->{uid}, version => 1,
+}) . "\n";
+close($legacy_manifest_file) or die "close legacy manifest fixture: $!";
+chmod(0640, $manifest_path) or die "chmod legacy manifest fixture: $!";
+chown($<, $account->{gid}, $manifest_path) or die "chown legacy manifest fixture: $!";
+is($manager->dispatch('instance.status', $account)->{preset}, 'generic', 'read legacy v1 manifests as the generic preset');
 my $no_policy = Orm::Broker::BackendPolicy->new(path => "$tmp/etc/missing-policy.json", expected_owner_uid => $<);
 my $no_policy_manager = Orm::Broker::InstanceManager->new(
     etc_root => $etc_instances, data_root => $data_instances, policy => $no_policy,

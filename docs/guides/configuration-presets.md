@@ -1,6 +1,6 @@
 # Configuration and workload presets
 
-## Presets
+## Presets currently available during setup
 
 The feature inventory includes five starting profiles:
 
@@ -10,7 +10,19 @@ The feature inventory includes five starting profiles:
 - **Session cache:** user session storage.
 - **Generic:** a neutral baseline for custom applications.
 
-Presets should set safe initial values rather than override a provider's maximums. Before saving, show which values will change and the effective limit for the account's package.
+The cPanel initialization form offers all five profiles. The broker accepts only these preset IDs and chooses the memory limit server-side:
+
+| Preset | Initial memory limit |
+|---|---:|
+| WordPress | 48 MiB |
+| Laravel | 32 MiB |
+| Magento | 64 MiB |
+| Session cache | 32 MiB |
+| Generic | 64 MiB |
+
+All profiles currently use `allkeys-lru`, 16 logical databases, a 100-client ceiling, no client idle timeout, and persistence disabled. The current hard cap is 64 MiB. Package and reseller ceilings are not implemented yet. The selected profile is stored in the root-owned instance manifest; version 1 manifests continue to read as Generic. Presets are currently selected during initial provisioning; changing a profile or individual settings on an existing service is not available yet.
+
+The preview lists the effective memory limit before instance creation. The profile never accepts raw configuration values from the browser.
 
 ## Advanced values
 

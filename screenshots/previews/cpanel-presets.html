@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — Set up cache</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172235; font-family: Arial, sans-serif; }
+    .topbar { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 34px; color: #fff; background: #18283f; }
+    .brand-icon { width: 35px; height: 35px; }
+    .topbar strong { font-size: 17px; }
+    .topbar span { margin-left: auto; color: #d0d9e6; font-size: 13px; }
+    main { max-width: 920px; margin: 34px auto; padding: 0 24px; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    .subtitle { margin: 0 0 22px; color: #65748a; line-height: 1.5; }
+    .card { padding: 27px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+    .state { display: inline-block; margin: 0 0 18px; padding: 6px 12px; border-radius: 999px; background: #edf1f6; color: #4f6078; font-size: 13px; font-weight: 700; }
+    h2 { margin: 0 0 9px; font-size: 19px; }
+    .explain { margin: 0 0 19px; color: #65748a; line-height: 1.5; }
+    .label { display: block; margin-bottom: 8px; font-weight: 700; }
+    select { width: 100%; height: 48px; padding: 0 13px; border: 1px solid #bac6d5; border-radius: 7px; color: #172235; background: #fff; font: 15px Arial, sans-serif; }
+    .profiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
+    .profile { min-height: 83px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fbfcfe; }
+    .profile strong { display: block; margin-bottom: 5px; font-size: 14px; }
+    .profile span { color: #65748a; font-size: 12px; line-height: 1.45; }
+    .notice { margin: 18px 0; padding: 13px 15px; border: 1px solid #cfe0ff; border-radius: 8px; background: #f5f8ff; color: #34527d; font-size: 13px; line-height: 1.5; }
+    button { padding: 11px 17px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-size: 14px; font-weight: 700; }
+    .footer { margin: 18px 0; text-align: center; color: #7b8798; font-size: 12px; }
+    @media (max-width: 620px) { main { margin: 22px auto; padding: 0 14px; } .card { padding: 20px; } .profiles { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <svg class="brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>
+    <strong>Open Redis Manager</strong>
+    <span>cPanel · demo</span>
+  </header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="subtitle">Set up a private Redis-compatible cache for this account. You can connect your applications after initialization.</p>
+    <section class="card" aria-label="Synthetic ORM setup preview">
+      <p class="state">Not configured</p>
+      <h2>Choose a starting profile</h2>
+      <p class="explain">Each profile selects a memory limit for a common workload. The provider can choose the Redis-compatible backend in WHM.</p>
+      <label class="label" for="preset">Configuration preset</label>
+      <select id="preset" aria-label="Configuration preset">
+        <option selected>Generic — 64 MiB</option>
+        <option>WordPress — 48 MiB</option>
+        <option>Laravel — 32 MiB</option>
+        <option>Magento — 64 MiB</option>
+        <option>Session cache — 32 MiB</option>
+      </select>
+      <div class="profiles">
+        <div class="profile"><strong>WordPress</strong><span>Object-cache starting profile · 48 MiB</span></div>
+        <div class="profile"><strong>Laravel</strong><span>Application cache and sessions · 32 MiB</span></div>
+        <div class="profile"><strong>Magento</strong><span>Storefront cache starting profile · 64 MiB</span></div>
+        <div class="profile"><strong>Session cache</strong><span>Session storage starting profile · 32 MiB</span></div>
+        <div class="profile"><strong>Generic</strong><span>Neutral profile for custom applications · 64 MiB</span></div>
+      </div>
+      <p class="notice">All profiles use a private Unix socket, 16 databases, up to 100 clients, and persistence disabled. The current server memory ceiling is 64 MiB. Package and reseller limits are not available yet.</p>
+      <button type="button">Initialize cache</button>
+    </section>
+    <p class="footer">Synthetic demo preview. No cPanel account or Redis service is connected.</p>
+  </main>
+</body>
+</html>
