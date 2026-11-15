@@ -16,7 +16,7 @@ $instanceClient = new \Orm\Cpanel\BrokerClient();
 $actionResult = null;
 $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
-    $allowedActions = ['provision', 'configure', 'start', 'stop', 'backup.create'];
+    $allowedActions = ['provision', 'configure', 'start', 'stop', 'backup.create', 'backup.restore'];
     if (is_string($action) && in_array($action, $allowedActions, true)) {
         if ($action === 'provision') {
             $preset = $_POST['orm_preset'] ?? 'generic';
@@ -46,6 +46,9 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                 : null;
         } elseif ($action === 'backup.create') {
             $actionResult = $instanceClient->request('backup.create');
+        } elseif ($action === 'backup.restore') {
+            $backupId = $_POST['orm_backup_id'] ?? null;
+            $actionResult = is_string($backupId) ? $instanceClient->restoreBackup($backupId) : null;
         } else {
             $actionResult = $instanceClient->request('instance.' . $action);
         }
@@ -145,6 +148,10 @@ $errorMessages = [
     'backup_in_progress' => 'A backup is already running for this cache. Wait before starting another.',
     'backup_retention_failed' => 'The new snapshot was saved, but ORM could not remove older backups. Contact your hosting provider.',
     'backup_storage_unavailable' => 'Backup storage is unavailable or failed security checks. Contact your hosting provider.',
+    'backup_not_found' => 'That snapshot is no longer available. Refresh the page and choose a listed snapshot.',
+    'restore_validation_unavailable' => 'The installed Redis-compatible RDB checker is unavailable. No restore was applied; contact your hosting provider.',
+    'restore_failed' => 'The restore did not complete. ORM attempted to keep the cache available and retained a safety snapshot; check the current status before trying again.',
+    'restore_rollback_failed' => 'ORM could not verify the automatic restore rollback. Check the cache status and contact your hosting provider before retrying.',
 ];
 try {
     if (!$brokerVerified) {
@@ -186,6 +193,8 @@ try {
         .orm-backup-list { display: grid; gap: 9px; max-width: 720px; margin: 16px 0 0; padding: 0; list-style: none; }
         .orm-backup-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 14px; border: 1px solid #dce3ed; border-radius: 8px; background: #fff; }
         .orm-backup-list a { font-weight: 700; }
+        .orm-backup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+        .orm-backup-actions form { margin: 0; }
         .orm-connection { margin-top: 18px; }
         .orm-connection dl { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 10px 18px; }
         .orm-connection dt { color: #59677c; }
@@ -199,7 +208,7 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } }
       </style>
-      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>Open Redis Manager</h1>
+      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 64 64" aria-hidden="true"><rect x="1" y="1" width="62" height="62" rx="17" fill="#D92D20"/><g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.2"><path d="M32 10 49 19 32 28 15 19 32 10Z"/><path d="M15 19v8l17 9 17-9v-8"/><path d="M15 28v8l17 9 17-9v-8"/><path d="M15 37v4l17 9 17-9v-4"/></g><g fill="#FFFFFF"><circle cx="21" cy="23" r="1.6"/><circle cx="21" cy="32" r="1.6"/><circle cx="21" cy="41" r="1.6"/></g></svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
@@ -209,9 +218,9 @@ try {
           <?php if ($actionResult === null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'): ?>
             <p role="alert">The requested action was not accepted.</p>
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
-            <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+            <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?php if (is_string($actionResult['safety_backup_id'] ?? null)): ?> Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was retained and is available in the backup list.<?php endif; ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state'])): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
+            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
           <?php endif; ?>
           <?php if ($downloadFailure): ?>
             <p role="alert">The requested backup is unavailable or failed file validation.</p>
@@ -251,7 +260,7 @@ try {
               </section>
               <section aria-labelledby="orm-backups-title">
                 <h3 id="orm-backups-title">Backups</h3>
-                <p class="orm-note">Create an RDB snapshot while the cache stays online. The transfer may use extra CPU and disk I/O. ORM keeps the three newest snapshots; creating another removes the oldest.</p>
+                <p class="orm-note">Create an RDB snapshot while the cache stays online. Restoring briefly stops the cache and replaces its data with the selected snapshot; writes made after that snapshot may be lost. ORM creates a safety snapshot before restore. The transfer may use extra CPU and disk I/O. ORM keeps the three newest snapshots; creating another removes the oldest.</p>
                 <form method="post" class="orm-preset-form">
                   <input type="hidden" name="orm_action" value="backup.create">
                   <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>>Create backup</button>
@@ -264,7 +273,14 @@ try {
                       <?php foreach ($backupList['backups'] as $backup): ?>
                         <li>
                           <span><?= htmlspecialchars(gmdate('Y-m-d H:i:s', $backup['created_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC · <?= htmlspecialchars($formatBytes($backup['size_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
-                          <a href="?orm_backup=<?= rawurlencode($backup['id']) ?>">Download backup</a>
+                          <div class="orm-backup-actions">
+                            <a href="?orm_backup=<?= rawurlencode($backup['id']) ?>">Download backup</a>
+                            <form method="post" onsubmit="return confirm('Restore this snapshot? The cache will restart briefly, writes newer than this snapshot may be lost, and ORM will create a safety snapshot first.');">
+                              <input type="hidden" name="orm_action" value="backup.restore">
+                              <input type="hidden" name="orm_backup_id" value="<?= htmlspecialchars($backup['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                              <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>>Restore</button>
+                            </form>
+                          </div>
                         </li>
                       <?php endforeach; ?>
                     </ul>

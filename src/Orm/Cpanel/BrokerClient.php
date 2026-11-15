@@ -19,6 +19,7 @@ final class BrokerClient
         'instance.stop',
         'backup.list',
         'backup.create',
+        'backup.restore',
     ];
     private const MEMORY_POLICIES = [
         'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
@@ -33,8 +34,8 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
-    public function request(string $operation, ?string $preset = null, ?array $config = null): ?array
+    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
+    public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
             return null;
@@ -49,6 +50,10 @@ final class BrokerClient
         if ($operation === 'instance.configure' && $config === null) {
             return null;
         }
+        if (($operation === 'backup.restore') !== ($backupId !== null)
+            || ($backupId !== null && !self::validBackupId($backupId))) {
+            return null;
+        }
 
         if ($config !== null) {
             $payload = [
@@ -57,6 +62,12 @@ final class BrokerClient
                 'memory_mib' => $config['memory_mib'],
                 'operation' => $operation,
                 'timeout' => $config['timeout'],
+                'version' => 1,
+            ];
+        } elseif ($operation === 'backup.restore') {
+            $payload = [
+                'backup_id' => $backupId,
+                'operation' => $operation,
                 'version' => 1,
             ];
         } else {
@@ -107,6 +118,15 @@ final class BrokerClient
             }
             if ($operation === 'backup.create') {
                 return $keys === ['backup', 'success', 'version'] && self::validBackup($decoded['backup'] ?? null)
+                    ? $decoded
+                    : null;
+            }
+            if ($operation === 'backup.restore') {
+                return $keys === ['backup_id', 'safety_backup_id', 'state', 'success', 'version']
+                    && self::validBackupId($decoded['backup_id'] ?? null)
+                    && $decoded['backup_id'] === $backupId
+                    && self::validBackupId($decoded['safety_backup_id'] ?? null)
+                    && $decoded['state'] === 'running'
                     ? $decoded
                     : null;
             }
@@ -162,6 +182,25 @@ final class BrokerClient
 
         $keys = array_keys($decoded);
         sort($keys);
+        if ($operation === 'backup.restore') {
+            if (!in_array($decoded['error'] ?? null, [
+                'invalid_request', 'not_authorized', 'operation_failed', 'not_configured', 'not_running',
+                'backup_not_found', 'backup_invalid', 'backup_in_progress', 'backup_retention_failed',
+                'backup_storage_unavailable', 'restore_validation_unavailable', 'restore_failed',
+                'restore_rollback_failed', 'rate_limited',
+            ], true)) {
+                return null;
+            }
+            if ($keys === ['error', 'success', 'version']) {
+                return ['success' => false, 'error' => $decoded['error'], 'version' => 1];
+            }
+            if ($keys === ['error', 'safety_backup_id', 'success', 'version']
+                && self::validBackupId($decoded['safety_backup_id'])) {
+                return ['success' => false, 'error' => $decoded['error'],
+                    'safety_backup_id' => $decoded['safety_backup_id'], 'version' => 1];
+            }
+            return null;
+        }
         if ($keys !== ['error', 'success', 'version']
             || !in_array($decoded['error'], [
                 'invalid_request', 'not_authorized', 'operation_failed', 'instance_unavailable',
@@ -207,6 +246,17 @@ final class BrokerClient
             return false;
         }
         return true;
+    }
+
+    private static function validBackupId(mixed $backupId): bool
+    {
+        return is_string($backupId) && preg_match('/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/', $backupId) === 1;
+    }
+
+    /** @return array{success:bool,version:int,backup_id?:string,safety_backup_id?:string,state?:string,error?:string}|null */
+    public function restoreBackup(string $backupId): ?array
+    {
+        return $this->request('backup.restore', null, null, $backupId);
     }
 
     /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */

@@ -58,6 +58,7 @@ sub handle_frame {
                         memory_mib => $request->{memory_mib},
                         timeout => $request->{timeout},
                     } : undef,
+                    $request->{operation} eq 'backup.restore' ? $request->{backup_id} : undef,
                 )
             };
             $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 }

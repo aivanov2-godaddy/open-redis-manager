@@ -4,8 +4,9 @@ use warnings;
 use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
 use JSON::PP ();
-use POSIX qw(WNOHANG _exit);
+use POSIX qw(WNOHANG _exit setgid setuid);
 use Orm::Broker::BackendPolicy;
+use Sys::Syslog qw(:standard :macros);
 
 my %SERVER_BINARIES = (
     redis => [qw(/usr/bin/redis-server /usr/sbin/redis-server /usr/local/bin/redis-server /usr/local/sbin/redis-server)],
@@ -14,6 +15,10 @@ my %SERVER_BINARIES = (
 my %CLIENT_BINARIES = (
     redis => [qw(/usr/bin/redis-cli /usr/sbin/redis-cli /usr/local/bin/redis-cli /usr/local/sbin/redis-cli)],
     valkey => [qw(/usr/bin/valkey-cli /usr/sbin/valkey-cli /usr/local/bin/valkey-cli /usr/local/sbin/valkey-cli)],
+);
+my %RDB_CHECK_BINARIES = (
+    redis => [qw(/usr/bin/redis-check-rdb /usr/sbin/redis-check-rdb /usr/local/bin/redis-check-rdb /usr/local/sbin/redis-check-rdb)],
+    valkey => [qw(/usr/bin/valkey-check-rdb /usr/sbin/valkey-check-rdb /usr/local/bin/valkey-check-rdb /usr/local/sbin/valkey-check-rdb)],
 );
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
@@ -56,6 +61,10 @@ sub new {
         binary_paths => $args{binary_paths} // \%SERVER_BINARIES,
         binary_probe => $args{binary_probe},
         client_paths => $args{client_paths} // \%CLIENT_BINARIES,
+        rdb_check_paths => $args{rdb_check_paths} // \%RDB_CHECK_BINARIES,
+        rdb_check => $args{rdb_check},
+        restore_audit => $args{restore_audit},
+        restore_state_timeout => defined($args{restore_state_timeout}) ? $args{restore_state_timeout} : 20,
         metrics_probe => $args{metrics_probe},
         redis_cli_call => $args{redis_cli_call},
         config_get => $args{config_get},
@@ -66,7 +75,7 @@ sub new {
 }
 
 sub dispatch {
-    my ($self, $operation, $account, $preset, $settings) = @_;
+    my ($self, $operation, $account, $preset, $settings, $backup_id) = @_;
     return _failure('not_authorized') if ref($account) ne 'HASH';
     return _failure('invalid_request') if !_valid_account($account);
 
@@ -74,6 +83,7 @@ sub dispatch {
     return $self->metrics($account) if $operation eq 'instance.metrics';
     return $self->backups($account) if $operation eq 'backup.list';
     return $self->create_backup($account) if $operation eq 'backup.create';
+    return $self->restore_backup($account, $backup_id) if $operation eq 'backup.restore';
     return $self->configure($account, $settings) if $operation eq 'instance.configure';
     return $self->provision($account, defined($preset) ? $preset : 'generic') if $operation eq 'instance.provision';
     return $self->start($account) if $operation eq 'instance.start';
@@ -416,25 +426,35 @@ sub create_backup {
 
     my ($directory, $directory_state) = $self->_backup_directory($account, 1);
     return _failure('backup_storage_unavailable') if !$directory || $directory_state ne 'ready';
+    my ($lock, $lock_error) = $self->_acquire_backup_lock($directory);
+    return _failure($lock_error) if !defined($lock);
+    my $response = eval { $self->_create_backup_locked($account, $manifest, $directory, undef) };
+    close($lock);
+    return ref($response) eq 'HASH' ? $response : _failure('backup_storage_unavailable');
+}
+
+sub _acquire_backup_lock {
+    my ($self, $directory) = @_;
     my $lock_path = File::Spec->catfile($directory, 'backup.lock');
     my $lock;
-    return _failure('backup_storage_unavailable') if !sysopen($lock, $lock_path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
+    return (undef, 'backup_storage_unavailable') if !sysopen($lock, $lock_path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
     my @lock_stat = stat($lock);
     if (!@lock_stat || !S_ISREG($lock_stat[2]) || $lock_stat[4] != $self->{expected_owner_uid}
         || $lock_stat[5] != $self->{expected_owner_uid} || $lock_stat[3] != 1 || ($lock_stat[2] & 0777) != 0600) {
         close($lock);
-        return _failure('backup_storage_unavailable');
+        return (undef, 'backup_storage_unavailable');
     }
     if (!flock($lock, LOCK_EX | LOCK_NB)) {
         close($lock);
-        return _failure('backup_in_progress');
+        return (undef, 'backup_in_progress');
     }
+    return ($lock, undef);
+}
 
+sub _create_backup_locked {
+    my ($self, $account, $manifest, $directory, $preserve_id) = @_;
     my $existing = $self->_read_backup_entries($directory, $account);
-    if (ref($existing) ne 'ARRAY') {
-        close($lock);
-        return _failure('backup_storage_unavailable');
-    }
+    return _failure('backup_storage_unavailable') if ref($existing) ne 'ARRAY';
     my $created_at = time;
     my $backup_id;
     my $temporary;
@@ -446,15 +466,12 @@ sub create_backup {
         undef $temporary;
     }
     my $stage;
-    if (!defined($temporary) || !sysopen($stage, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) {
-        close($lock);
-        return _failure('backup_storage_unavailable');
-    }
+    return _failure('backup_storage_unavailable') if !defined($temporary)
+        || !sysopen($stage, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     my $stage_ok = chown($self->{expected_owner_uid}, $self->{expected_owner_uid}, $temporary)
         && chmod(0600, $temporary) && close($stage);
     if (!$stage_ok) {
         unlink($temporary) if -e $temporary || -l $temporary;
-        close($lock);
         return _failure('backup_storage_unavailable');
     }
 
@@ -466,7 +483,6 @@ sub create_backup {
         && $stage_stat[7] > 0 && $stage_stat[7] <= $MAX_BACKUP_BYTES;
     if (!$valid_stage) {
         unlink($temporary) if -e $temporary || -l $temporary;
-        close($lock);
         return _failure($created ? 'backup_invalid' : 'backup_failed');
     }
 
@@ -474,28 +490,332 @@ sub create_backup {
     if (!chown($self->{expected_owner_uid}, $account->{gid}, $temporary)
         || !chmod(0640, $temporary) || !rename($temporary, $destination)) {
         unlink($temporary) if -e $temporary || -l $temporary;
-        close($lock);
         return _failure('backup_storage_unavailable');
     }
     my $all_entries = $self->_read_backup_entries($directory, $account);
-    if (ref($all_entries) ne 'ARRAY') {
-        close($lock);
-        return _failure('backup_storage_unavailable');
-    }
-    for my $old_entry (@{$all_entries}[$MAX_BACKUPS_PER_ACCOUNT .. $#{$all_entries}]) {
-        next if !defined($old_entry);
+    return _failure('backup_storage_unavailable') if ref($all_entries) ne 'ARRAY';
+    my %preserve = ($backup_id => 1);
+    $preserve{$preserve_id} = 1 if defined($preserve_id);
+    for my $old_entry (reverse @{$all_entries}) {
+        last if @{$all_entries} <= $MAX_BACKUPS_PER_ACCOUNT;
+        next if $preserve{$old_entry->{id}};
         my $old_path = File::Spec->catfile($directory, $old_entry->{id});
-        if (!unlink($old_path)) {
-            close($lock);
-            return _failure('backup_retention_failed');
-        }
+        return _failure('backup_retention_failed') if !unlink($old_path);
+        @{$all_entries} = grep { $_->{id} ne $old_entry->{id} } @{$all_entries};
     }
     my $retained_entries = $self->_read_backup_entries($directory, $account);
-    close($lock);
     return _failure('backup_storage_unavailable') if ref($retained_entries) ne 'ARRAY';
+    return _failure('backup_retention_failed') if @{$retained_entries} > $MAX_BACKUPS_PER_ACCOUNT;
     my ($created_entry) = grep { $_->{id} eq $backup_id } @{$retained_entries};
     return _failure('backup_storage_unavailable') if ref($created_entry) ne 'HASH';
     return { backup => $created_entry, success => JSON::PP::true, version => 1 };
+}
+
+sub restore_backup {
+    my ($self, $account, $backup_id) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    return _failure('invalid_request') if !defined($backup_id) || ref($backup_id)
+        || $backup_id !~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+
+    my $unit = $self->_unit_name($account->{name});
+    my ($active, $state) = $self->_systemctl('is-active', $unit);
+    return $self->_restore_audit_response($account, $backup_id, undef, 'not_running', $state)
+        if !$active || $state ne 'active';
+
+    my ($directory, $directory_state) = $self->_backup_directory($account, 0);
+    return $self->_restore_audit_response($account, $backup_id, undef, 'backup_storage_unavailable', 'running')
+        if !$directory || $directory_state ne 'ready';
+    my ($lock, $lock_error) = $self->_acquire_backup_lock($directory);
+    return $self->_restore_audit_response($account, $backup_id, undef, $lock_error, 'running')
+        if !defined($lock);
+
+    my @temporary_paths;
+    my $safety_id;
+    my $finish = sub {
+        my ($response, $outcome, $final_state) = @_;
+        for my $path (@temporary_paths) {
+            unlink($path) if -e $path || -l $path;
+        }
+        close($lock);
+        return $self->_restore_audit_response($account, $backup_id, $safety_id, $outcome, $final_state, $response);
+    };
+
+    my $entries = $self->_read_backup_entries($directory, $account);
+    return $finish->(_failure('backup_storage_unavailable'), 'backup_storage_unavailable', 'running')
+        if ref($entries) ne 'ARRAY';
+    return $finish->(_failure('backup_not_found'), 'backup_not_found', 'running')
+        if !(grep { $_->{id} eq $backup_id } @{$entries});
+
+    my $restore_stage = $self->_new_backup_stage_path($directory, 'restore');
+    return $finish->(_failure('backup_storage_unavailable'), 'backup_storage_unavailable', 'running')
+        if !defined($restore_stage);
+    push @temporary_paths, $restore_stage;
+    my $staged = $self->_stage_backup_copy($directory, $backup_id, $restore_stage, $account);
+    return $finish->(_failure($staged ? 'backup_invalid' : 'backup_storage_unavailable'),
+        $staged ? 'backup_invalid' : 'backup_storage_unavailable', 'running') if !$staged;
+
+    my $valid_rdb = $self->_run_rdb_check($manifest->{backend}, $restore_stage, $account);
+    return $finish->(_failure(defined($valid_rdb) ? 'backup_invalid' : 'restore_validation_unavailable'),
+        defined($valid_rdb) ? 'backup_invalid' : 'restore_validation_unavailable', 'running') if !$valid_rdb;
+
+    my $target = File::Spec->catfile($manifest->{data}, 'dump.rdb');
+    return $finish->(_failure('backup_storage_unavailable'), 'backup_storage_unavailable', 'running')
+        if !$self->_restore_target_safe($target, $account);
+
+    my $safety = $self->_create_backup_locked($account, $manifest, $directory, $backup_id);
+    if (ref($safety) ne 'HASH' || !$safety->{success} || ref($safety->{backup}) ne 'HASH') {
+        my $error = ref($safety) eq 'HASH' && defined($safety->{error}) ? $safety->{error} : 'backup_failed';
+        return $finish->(_failure($error), $error, 'running');
+    }
+    $safety_id = $safety->{backup}->{id};
+
+    my $rollback_stage = $self->_new_backup_stage_path($directory, 'rollback');
+    return $finish->(_failure('backup_storage_unavailable'), 'backup_storage_unavailable', 'running')
+        if !defined($rollback_stage);
+    push @temporary_paths, $rollback_stage;
+    my $safety_staged = $self->_stage_backup_copy($directory, $safety_id, $rollback_stage, $account);
+    return $finish->(_failure($safety_staged ? 'backup_invalid' : 'backup_storage_unavailable'),
+        $safety_staged ? 'backup_invalid' : 'backup_storage_unavailable', 'running') if !$safety_staged;
+    my $safety_valid = $self->_run_rdb_check($manifest->{backend}, $rollback_stage, $account);
+    return $finish->(_failure(defined($safety_valid) ? 'backup_invalid' : 'restore_validation_unavailable'),
+        defined($safety_valid) ? 'backup_invalid' : 'restore_validation_unavailable', 'running') if !$safety_valid;
+
+    my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
+    if (!$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout})) {
+        my $recovered = $self->_ensure_unit_running($unit);
+        return $finish->(_failure('restore_failed'), 'restore_failed', $recovered ? 'running' : 'unavailable');
+    }
+    if (!$self->_restore_target_safe($target, $account)) {
+        my ($start_ok) = $self->_systemctl('start', '--no-block', $unit);
+        my $recovered = $start_ok && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout});
+        return $finish->(_failure('restore_failed'), 'restore_failed', $recovered ? 'running' : 'unavailable');
+    }
+
+    my $installed = $self->_install_restore_stage($restore_stage, $target, $account);
+    if (!$installed) {
+        my $recovered = $installed < 0
+            ? $self->_rollback_restore($unit, $rollback_stage, $target, $account)
+            : $self->_ensure_unit_running($unit);
+        my $error = $recovered ? 'restore_failed' : 'restore_rollback_failed';
+        return $finish->(_failure($error), $error, $recovered ? 'running' : 'unavailable');
+    }
+
+    my ($start_ok) = $self->_systemctl('start', '--no-block', $unit);
+    if ($start_ok && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout})) {
+        my $response = {
+            backup_id => $backup_id,
+            safety_backup_id => $safety_id,
+            state => 'running',
+            success => JSON::PP::true,
+            version => 1,
+        };
+        return $finish->($response, 'success', 'running');
+    }
+
+    if ($self->_rollback_restore($unit, $rollback_stage, $target, $account)) {
+        return $finish->(_failure('restore_failed'), 'restore_failed', 'running');
+    }
+    return $finish->(_failure('restore_rollback_failed'), 'restore_rollback_failed', 'unavailable');
+}
+
+sub _restore_audit_response {
+    my ($self, $account, $backup_id, $safety_id, $outcome, $state, $response) = @_;
+    $state = 'unavailable' if !defined($state) || $state !~ /\A(?:running|inactive|failed|unavailable)\z/;
+    if (ref($self->{restore_audit}) eq 'CODE') {
+        eval { $self->{restore_audit}->($account->{uid}, $account->{name}, $backup_id, $safety_id, $outcome, $state) };
+    } else {
+        my $safe_backup = defined($backup_id) && $backup_id =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/
+            ? $backup_id : 'invalid';
+        my $safe_safety = defined($safety_id) && $safety_id =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/
+            ? $safety_id : 'none';
+        eval {
+            openlog('orm-broker', 'pid', 'authpriv');
+            syslog(LOG_NOTICE, 'backup_restore actor_uid=%s account=%s backup=%s safety=%s result=%s state=%s',
+                $account->{uid}, $account->{name}, $safe_backup, $safe_safety, $outcome, $state)
+                or die "syslog write failed";
+            closelog();
+        };
+        eval { closelog(); };
+    }
+    if (ref($response) ne 'HASH') {
+        $response = { error => 'restore_failed', success => JSON::PP::false, version => 1 };
+    }
+    $response->{safety_backup_id} = $safety_id if defined($safety_id)
+        && $safety_id =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+    return $response;
+}
+
+sub _new_backup_stage_path {
+    my ($self, $directory, $purpose) = @_;
+    return undef if !defined($purpose) || $purpose !~ /\A(?:restore|rollback)\z/;
+    for (1 .. 5) {
+        my $path = File::Spec->catfile($directory, '.' . $purpose . '-' . $$ . '-' . sprintf('%08x', int(rand(4294967296))) . '.tmp');
+        return $path if !-e $path && !-l $path;
+    }
+    return undef;
+}
+
+sub _stage_backup_copy {
+    my ($self, $directory, $backup_id, $destination, $account) = @_;
+    return 0 if !defined($backup_id) || $backup_id !~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/
+        || !defined($destination);
+    my $source = File::Spec->catfile($directory, $backup_id);
+    my @source_path_stat = lstat($source);
+    return 0 if !@source_path_stat || !S_ISREG($source_path_stat[2])
+        || $source_path_stat[4] != $self->{expected_owner_uid} || $source_path_stat[5] != $account->{gid}
+        || $source_path_stat[3] != 1 || ($source_path_stat[2] & 0777) != 0640
+        || $source_path_stat[7] < 1 || $source_path_stat[7] > $MAX_BACKUP_BYTES;
+    my $input;
+    return 0 if !sysopen($input, $source, O_RDONLY | O_NOFOLLOW);
+    my @source_stat = stat($input);
+    if (!@source_stat || $source_stat[0] != $source_path_stat[0] || $source_stat[1] != $source_path_stat[1]
+        || $source_stat[4] != $self->{expected_owner_uid} || $source_stat[5] != $account->{gid}
+        || $source_stat[3] != 1 || ($source_stat[2] & 0777) != 0640 || $source_stat[7] != $source_path_stat[7]) {
+        close($input);
+        return 0;
+    }
+    my $output;
+    if (!sysopen($output, $destination, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) {
+        close($input);
+        return 0;
+    }
+    binmode($input);
+    binmode($output);
+    my $copied = 0;
+    my $ok = 1;
+    while (1) {
+        my $buffer = '';
+        my $read = read($input, $buffer, 65536);
+        if (!defined($read)) { $ok = 0; last; }
+        last if $read == 0;
+        $copied += $read;
+        if ($copied > $MAX_BACKUP_BYTES || !print {$output} $buffer) { $ok = 0; last; }
+    }
+    $ok = 0 if $copied != $source_stat[7];
+    $ok = 0 if !close($input);
+    $ok = 0 if !close($output);
+    if ($ok) {
+        $ok = chown($self->{expected_owner_uid}, $account->{gid}, $destination)
+            && chmod(0640, $destination);
+    }
+    if (!$ok) {
+        unlink($destination) if -e $destination || -l $destination;
+        return 0;
+    }
+    my @destination_stat = lstat($destination);
+    return 0 if !@destination_stat || !S_ISREG($destination_stat[2])
+        || $destination_stat[4] != $self->{expected_owner_uid} || $destination_stat[5] != $account->{gid}
+        || $destination_stat[3] != 1 || ($destination_stat[2] & 0777) != 0640
+        || $destination_stat[7] != $source_stat[7];
+    return 1;
+}
+
+sub _run_rdb_check {
+    my ($self, $backend, $path, $account) = @_;
+    if (ref($self->{rdb_check}) eq 'CODE') {
+        my $valid = eval { $self->{rdb_check}->($backend, $path, $account) };
+        return $@ ? 0 : ($valid ? 1 : 0);
+    }
+    return undef if !defined($backend) || !exists($self->{rdb_check_paths}->{$backend});
+    my $checker;
+    for my $candidate (@{$self->{rdb_check_paths}->{$backend}}) {
+        next if !defined($candidate)
+            || $candidate !~ m{\A/usr/(?:local/)?(?:s?bin)/(?:redis|valkey)-check-rdb\z};
+        my @stat = lstat($candidate);
+        next if !@stat || !S_ISREG($stat[2]) || $stat[4] != 0 || ($stat[2] & 0022) != 0 || !-x $candidate;
+        $checker = $candidate;
+        last;
+    }
+    return undef if !defined($checker);
+    my $pid = fork();
+    return 0 if !defined($pid);
+    if ($pid == 0) {
+        local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        open(STDOUT, '>', '/dev/null') or _exit(127);
+        open(STDERR, '>', '/dev/null') or _exit(127);
+        $! = 0;
+        $) = "$account->{gid} $account->{gid}";
+        _exit(127) if $! != 0;
+        setgid($account->{gid}) == 0 or _exit(127);
+        setuid($account->{uid}) == 0 or _exit(127);
+        exec {$checker} $checker, $path;
+        _exit(127);
+    }
+    my $deadline = time + 30;
+    while (1) {
+        my $waited = waitpid($pid, WNOHANG);
+        return $? == 0 ? 1 : 0 if $waited == $pid;
+        return 0 if $waited == -1;
+        if (time >= $deadline) {
+            kill('TERM', $pid);
+            my $grace = time + 1;
+            while (time < $grace && waitpid($pid, WNOHANG) == 0) {
+                select(undef, undef, undef, 0.05);
+            }
+            kill('KILL', $pid) if waitpid($pid, WNOHANG) == 0;
+            waitpid($pid, 0);
+            return 0;
+        }
+        select(undef, undef, undef, 0.05);
+    }
+}
+
+sub _restore_target_safe {
+    my ($self, $path, $account, $allow_broker_owned) = @_;
+    my @path_stat = lstat($path);
+    return 1 if !@path_stat && !-e $path && !-l $path;
+    my $account_owned = @path_stat && $path_stat[4] == $account->{uid}
+        && $path_stat[5] == $account->{gid} && ($path_stat[2] & 0777) == 0600;
+    my $broker_owned = $allow_broker_owned && @path_stat && $path_stat[4] == $self->{expected_owner_uid}
+        && $path_stat[5] == $account->{gid} && ($path_stat[2] & 0777) == 0640;
+    return 0 if !@path_stat || !S_ISREG($path_stat[2]) || (!$account_owned && !$broker_owned)
+        || $path_stat[3] != 1 || $path_stat[7] > $MAX_BACKUP_BYTES;
+    my $file;
+    return 0 if !sysopen($file, $path, O_RDONLY | O_NOFOLLOW);
+    my @opened = stat($file);
+    close($file) or return 0;
+    my $opened_account_owned = @opened && $opened[4] == $account->{uid}
+        && $opened[5] == $account->{gid} && ($opened[2] & 0777) == 0600;
+    my $opened_broker_owned = $allow_broker_owned && @opened && $opened[4] == $self->{expected_owner_uid}
+        && $opened[5] == $account->{gid} && ($opened[2] & 0777) == 0640;
+    return @opened && $opened[0] == $path_stat[0] && $opened[1] == $path_stat[1]
+        && ($opened_account_owned || $opened_broker_owned) && $opened[3] == 1 && $opened[7] == $path_stat[7];
+}
+
+sub _install_restore_stage {
+    my ($self, $stage, $target, $account, $allow_broker_owned) = @_;
+    return 0 if !$self->_restore_target_safe($target, $account, $allow_broker_owned) || !rename($stage, $target);
+    return chown($account->{uid}, $account->{gid}, $target) && chmod(0600, $target) ? 1 : -1;
+}
+
+sub _ensure_unit_running {
+    my ($self, $unit) = @_;
+    my (undef, $state) = $self->_systemctl('is-active', $unit);
+    return 1 if defined($state) && $state eq 'active';
+    my ($started) = $self->_systemctl('start', '--no-block', $unit);
+    return $started && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout}) ? 1 : 0;
+}
+
+sub _rollback_restore {
+    my ($self, $unit, $rollback_stage, $target, $account) = @_;
+    my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
+    return 0 if !$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout});
+    my $installed = $self->_install_restore_stage($rollback_stage, $target, $account, 1);
+    return 0 if $installed != 1;
+    my ($started) = $self->_systemctl('start', '--no-block', $unit);
+    return $started && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout}) ? 1 : 0;
+}
+
+sub _wait_for_unit_state {
+    my ($self, $unit, $expected, $timeout) = @_;
+    my $deadline = time + $timeout;
+    while (1) {
+        my (undef, $state) = $self->_systemctl('is-active', $unit);
+        return 1 if defined($state) && $state eq $expected;
+        return 0 if time >= $deadline;
+        select(undef, undef, undef, 0.1);
+    }
 }
 
 sub _backup_directory {

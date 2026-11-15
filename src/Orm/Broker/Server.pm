@@ -132,9 +132,10 @@ sub run {
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
                     : $request->{operation} eq 'fleet.list' ? 1
                     : $request->{operation} eq 'instance.metrics' ? 4
-                    : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'fleet.control') ? 1
+                    : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
+                        || $request->{operation} eq 'fleet.control') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
-                my $rate_window = $request->{operation} eq 'backup.create' ? 60 : 1;
+                my $rate_window = ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore') ? 60 : 1;
                 my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control)\z/ ? 1 : 0;
                 my $rate_bucket = $request->{operation} eq 'fleet.control' ? 'fleet.control' : $rate_window;
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
