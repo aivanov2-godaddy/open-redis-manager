@@ -23,6 +23,9 @@ my %PRESET_MEMORY_BYTES = (
     session => 32 * 1024 * 1024,
     generic => 64 * 1024 * 1024,
 );
+my %MAXMEMORY_POLICIES = map { $_ => 1 } qw(
+    allkeys-lru allkeys-lfu allkeys-random volatile-lru volatile-lfu volatile-random volatile-ttl noeviction
+);
 
 sub new {
     my ($class, %args) = @_;
@@ -37,16 +40,21 @@ sub new {
         binary_probe => $args{binary_probe},
         client_paths => $args{client_paths} // \%CLIENT_BINARIES,
         metrics_probe => $args{metrics_probe},
+        redis_cli_call => $args{redis_cli_call},
+        config_get => $args{config_get},
+        config_set => $args{config_set},
+        atomic_commit => $args{atomic_commit},
     }, $class;
 }
 
 sub dispatch {
-    my ($self, $operation, $account, $preset) = @_;
+    my ($self, $operation, $account, $preset, $settings) = @_;
     return _failure('not_authorized') if ref($account) ne 'HASH';
     return _failure('invalid_request') if !_valid_account($account);
 
     return $self->status($account) if $operation eq 'instance.status';
     return $self->metrics($account) if $operation eq 'instance.metrics';
+    return $self->configure($account, $settings) if $operation eq 'instance.configure';
     return $self->provision($account, defined($preset) ? $preset : 'generic') if $operation eq 'instance.provision';
     return $self->start($account) if $operation eq 'instance.start';
     return $self->stop($account) if $operation eq 'instance.stop';
@@ -66,11 +74,11 @@ sub status {
     return _failure('instance_unavailable') if !$manifest;
     my ($ok, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
     return _failure('instance_unavailable') if !$ok && $state ne 'inactive' && $state ne 'failed';
-    return _state('running', $manifest->{preset}) if $state eq 'active';
-    return _state('starting', $manifest->{preset}) if $state eq 'activating' || $state eq 'reloading';
-    return _state('stopping', $manifest->{preset}) if $state eq 'deactivating';
-    return _state('failed', $manifest->{preset}) if $state eq 'failed';
-    return _state('stopped', $manifest->{preset}) if $state eq 'inactive';
+    return _state('running', $manifest) if $state eq 'active';
+    return _state('starting', $manifest) if $state eq 'activating' || $state eq 'reloading';
+    return _state('stopping', $manifest) if $state eq 'deactivating';
+    return _state('failed', $manifest) if $state eq 'failed';
+    return _state('stopped', $manifest) if $state eq 'inactive';
     return _failure('instance_unavailable');
 }
 
@@ -91,7 +99,8 @@ sub provision {
     return _failure('backend_policy_required') if !defined($backend);
     my $binary = $self->_available_binary($backend);
     return _failure('backend_unavailable') if !defined($binary);
-    my $memory_bytes = $PRESET_MEMORY_BYTES{$preset};
+    my $settings = _preset_settings($preset);
+    my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
 
     my $config_dir = $self->_account_config_dir($account->{name});
@@ -121,7 +130,7 @@ sub provision {
         version => 2,
     };
     my $manifest_json = JSON::PP->new->canonical(1)->encode($manifest) . "\n";
-    my $config = _redis_config($data_dir, $socket, $memory_bytes);
+    my $config = _redis_config($data_dir, $socket, $settings);
     if (!$self->_atomic_write(File::Spec->catfile($config_dir, 'redis.conf'), $config, 0640, $self->{expected_owner_uid}, $account->{gid})) {
         return $self->_rollback_provision($account, $config_dir, $data_dir, 1, 'storage_unavailable');
     }
@@ -167,6 +176,153 @@ sub stop {
     my $current = $self->status($account);
     return $current if $current->{success} && ($current->{state} eq 'stopped' || $current->{state} eq 'stopping');
     return _failure('service_failed');
+}
+
+sub configure {
+    my ($self, $account, $settings) = @_;
+    return _failure('invalid_request') if !_valid_settings($settings);
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('instance_unavailable') if !$active && $state ne 'inactive' && $state ne 'failed';
+    return _failure('instance_unavailable') if $state eq 'activating' || $state eq 'reloading' || $state eq 'deactivating';
+
+    my $runtime_previous;
+    if ($state eq 'active') {
+        $runtime_previous = $self->_redis_config_get($manifest->{backend}, $manifest->{socket});
+        return _failure('configuration_unavailable') if !_valid_settings($runtime_previous);
+    }
+
+    my $config = _redis_config($manifest->{data}, $manifest->{socket}, $settings);
+    my $temporary = $self->_stage_atomic_write(
+        $manifest->{config}, $config, 0640, $self->{expected_owner_uid}, $account->{gid}
+    );
+    return _failure('configuration_storage_unavailable') if !defined($temporary);
+
+    if ($state eq 'active') {
+        my @applied;
+        for my $setting (qw(maxmemory_policy maxclients timeout memory_mib)) {
+            my ($parameter, $value) = _redis_parameter($setting, $settings->{$setting});
+            push(@applied, $setting);
+            if (!$self->_redis_config_set($manifest->{backend}, $manifest->{socket}, $parameter, $value)) {
+                my $rollback_ok = $self->_rollback_live_settings($manifest, $runtime_previous, \@applied);
+                unlink($temporary);
+                return _failure($rollback_ok ? 'configuration_failed' : 'configuration_uncertain');
+            }
+        }
+    }
+
+    if (!$self->_commit_atomic_write($temporary, $manifest->{config})) {
+        my $rollback_ok = $state ne 'active'
+            || $self->_rollback_live_settings($manifest, $runtime_previous, [qw(maxmemory_policy maxclients timeout memory_mib)]);
+        unlink($temporary);
+        return _failure($rollback_ok ? 'configuration_storage_unavailable' : 'configuration_uncertain');
+    }
+
+    $manifest->{settings} = { %{$settings} };
+    my $result_state = $state eq 'active' ? 'running' : $state eq 'failed' ? 'failed' : 'stopped';
+    return _state($result_state, $manifest);
+}
+
+sub _rollback_live_settings {
+    my ($self, $manifest, $settings, $applied) = @_;
+    my $ok = 1;
+    for my $setting (reverse @{$applied}) {
+        my ($parameter, $value) = _redis_parameter($setting, $settings->{$setting});
+        $ok = 0 if !$self->_redis_config_set($manifest->{backend}, $manifest->{socket}, $parameter, $value);
+    }
+    return $ok;
+}
+
+sub _redis_config_get {
+    my ($self, $backend, $socket) = @_;
+    return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
+    return undef if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+    if (ref($self->{config_get}) eq 'CODE') {
+        my $settings = eval { $self->{config_get}->($backend, $socket) };
+        return undef if !_valid_settings($settings);
+        return { %{$settings} };
+    }
+    my %values;
+    for my $parameter (qw(maxmemory maxmemory-policy maxclients timeout)) {
+        # One pattern works on Redis and Valkey versions before multi-pattern CONFIG GET (7.0).
+        my $output = _run_redis_cli($self, $backend, $socket, 'CONFIG', 'GET', $parameter);
+        return undef if !defined($output);
+        my @lines = split(/\r?\n/, $output, -1);
+        pop @lines if @lines && $lines[-1] eq '';
+        return undef if @lines != 2 || $lines[0] ne $parameter;
+        $values{$parameter} = $lines[1];
+    }
+    return undef if join(',', sort keys %values) ne 'maxclients,maxmemory,maxmemory-policy,timeout';
+    return undef if $values{maxmemory} !~ /\A[0-9]+\z/ || $values{maxmemory} % (1024 * 1024) != 0;
+    return undef if $values{maxclients} !~ /\A[0-9]+\z/ || $values{timeout} !~ /\A[0-9]+\z/;
+    my $settings = {
+        memory_mib => int($values{maxmemory} / (1024 * 1024)),
+        maxmemory_policy => $values{'maxmemory-policy'},
+        maxclients => 0 + $values{maxclients},
+        timeout => 0 + $values{timeout},
+    };
+    return _valid_settings($settings) ? $settings : undef;
+}
+
+sub _redis_config_set {
+    my ($self, $backend, $socket, $parameter, $value) = @_;
+    return 0 if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
+    return 0 if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+    return 0 if !defined($parameter) || !defined($value) || ref($parameter) || ref($value);
+    return 0 if $parameter !~ /\A(?:maxmemory|maxmemory-policy|maxclients|timeout)\z/;
+    return 0 if $value =~ /[\r\n\0]/;
+    return 0 if $parameter eq 'maxmemory' && ($value !~ /\A[0-9]+\z/ || $value < 8 * 1024 * 1024 || $value > $MAX_MEMORY_BYTES);
+    return 0 if $parameter eq 'maxmemory-policy' && !exists($MAXMEMORY_POLICIES{$value});
+    return 0 if $parameter eq 'maxclients' && ($value !~ /\A[0-9]+\z/ || $value < 10 || $value > 100);
+    return 0 if $parameter eq 'timeout' && ($value !~ /\A[0-9]+\z/ || $value > 300);
+    if (ref($self->{config_set}) eq 'CODE') {
+        my $ok = eval { $self->{config_set}->($backend, $socket, $parameter, $value) };
+        return $ok ? 1 : 0;
+    }
+    my $output = _run_redis_cli($self, $backend, $socket, 'CONFIG', 'SET', $parameter, $value);
+    return defined($output) && $output eq "OK\n" ? 1 : 0;
+}
+
+sub _run_redis_cli {
+    my ($self, $backend, $socket, @arguments) = @_;
+    if (ref($self->{redis_cli_call}) eq 'CODE') {
+        my $output = eval { $self->{redis_cli_call}->($backend, $socket, @arguments) };
+        return undef if !$output || ref($output) || length($output) > 1024;
+        return $output;
+    }
+    my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
+    my $path;
+    for my $candidate (@{$self->{client_paths}->{$client_name} // []}) {
+        next if !defined($candidate) || $candidate !~ m{\A/usr/(?:local/)?(?:s?bin)/(?:redis|valkey)-cli\z};
+        my @stat = lstat($candidate);
+        next if !@stat || !S_ISREG($stat[2]) || $stat[4] != 0 || ($stat[2] & 0022) != 0 || !-x $candidate;
+        $path = $candidate;
+        last;
+    }
+    return undef if !defined($path);
+
+    my ($output, $opened) = ('', 0);
+    my $completed = eval {
+        local $SIG{ALRM} = sub { die "Redis client timeout\n" };
+        local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        alarm(3);
+        if (open(my $pipe, '-|', $path, '-s', $socket, '--raw', @arguments)) {
+            $opened = 1;
+            my $read = read($pipe, $output, 1025);
+            $output = '' if !defined($read) || $read == 0 || $read > 1024;
+            my $closed = close($pipe);
+            $opened = 0;
+            die "Redis client command failed\n" if !$closed;
+        } else {
+            die "Redis client unavailable\n";
+        }
+        alarm(0);
+        1;
+    };
+    alarm(0);
+    return undef if !$completed || $opened || $output eq '' || length($output) > 1024;
+    return $output;
 }
 
 sub metrics {
@@ -288,27 +444,53 @@ sub _read_manifest {
     return undef if $manifest->{data} ne $expected_data
         || $manifest->{config} ne $expected_config || $manifest->{socket} ne $expected_socket;
     return undef if !defined($self->_available_binary($manifest->{backend}));
-    return undef if !$self->_valid_config($account, $manifest);
+    my $settings = $self->_valid_config($account, $manifest);
+    return undef if !$settings;
+    $manifest->{settings} = $settings;
     return $manifest;
 }
 
 sub _valid_config {
     my ($self, $account, $manifest) = @_;
     my $path = $manifest->{config};
-    return 0 if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
+    return undef if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
     my @stat = stat($handle);
     if (!@stat || !S_ISREG($stat[2]) || $stat[4] != $self->{expected_owner_uid}
         || $stat[5] != $account->{gid} || $stat[3] != 1 || ($stat[2] & 0037) != 0
         || $stat[7] > 16384) {
         close($handle);
-        return 0;
+        return undef;
     }
-    close($handle) or return 0;
+    my $content = '';
+    my $read = read($handle, $content, 16385);
+    close($handle) or return undef;
+    return undef if !defined($read) || $read > 16384;
     my @data_stat = lstat($manifest->{data});
-    return 0 if !@data_stat || !S_ISDIR($data_stat[2])
+    return undef if !@data_stat || !S_ISDIR($data_stat[2])
         || $data_stat[4] != $account->{uid} || $data_stat[5] != $account->{gid}
         || ($data_stat[2] & 0077) != 0;
-    return 1;
+    my ($memory_bytes) = $content =~ /^maxmemory ([0-9]+)$/m;
+    my $memory_count = scalar(() = $content =~ /^maxmemory [0-9]+$/mg);
+    my ($memory_policy) = $content =~ /^maxmemory-policy ([a-z-]+)$/m;
+    my $policy_count = scalar(() = $content =~ /^maxmemory-policy [a-z-]+$/mg);
+    my ($maxclients) = $content =~ /^maxclients ([0-9]+)$/m;
+    my $clients_count = scalar(() = $content =~ /^maxclients [0-9]+$/mg);
+    my ($timeout) = $content =~ /^timeout ([0-9]+)$/m;
+    my $timeout_count = scalar(() = $content =~ /^timeout [0-9]+$/mg);
+    return undef if !defined($memory_bytes) || ($memory_count // 0) != 1
+        || !defined($memory_policy) || ($policy_count // 0) != 1
+        || !defined($maxclients) || ($clients_count // 0) != 1
+        || !defined($timeout) || ($timeout_count // 0) != 1;
+    return undef if $memory_bytes % (1024 * 1024) != 0;
+    my $settings = {
+        memory_mib => int($memory_bytes / (1024 * 1024)),
+        maxmemory_policy => $memory_policy,
+        maxclients => 0 + $maxclients,
+        timeout => 0 + $timeout,
+    };
+    return undef if !_valid_settings($settings);
+    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings);
+    return $settings;
 }
 
 sub _available_binary {
@@ -354,18 +536,35 @@ sub _systemctl {
 
 sub _atomic_write {
     my ($self, $path, $content, $mode, $uid, $gid) = @_;
+    my $temporary = $self->_stage_atomic_write($path, $content, $mode, $uid, $gid);
+    return 0 if !defined($temporary);
+    return $self->_commit_atomic_write($temporary, $path);
+}
+
+sub _stage_atomic_write {
+    my ($self, $path, $content, $mode, $uid, $gid) = @_;
     my $temporary = $path . '.tmp-' . $$ . '-' . int(rand(1_000_000));
-    return 0 if !sysopen(my $handle, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    return undef if !sysopen(my $handle, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     my $ok = print {$handle} $content;
     $ok = 0 if !$ok || !close($handle);
     if ($ok) {
         $ok = chmod($mode, $temporary) && chown($uid, $gid, $temporary);
     }
-    if ($ok) {
-        $ok = rename($temporary, $path);
+    if (!$ok) {
+        unlink($temporary) if -e $temporary || -l $temporary;
+        return undef;
     }
+    return $temporary;
+}
+
+sub _commit_atomic_write {
+    my ($self, $temporary, $path) = @_;
+    my $ok = ref($self->{atomic_commit}) eq 'CODE'
+        ? eval { $self->{atomic_commit}->($temporary, $path) }
+        : rename($temporary, $path);
+    return 1 if $ok;
     unlink($temporary) if -e $temporary || -l $temporary;
-    return $ok ? 1 : 0;
+    return 0;
 }
 
 sub _rollback_provision {
@@ -401,10 +600,44 @@ sub _manifest_path { return File::Spec->catfile($_[0]->{etc_root}, $_[1], 'manif
 sub _account_config_dir { return File::Spec->catdir($_[0]->{etc_root}, $_[1]); }
 sub _account_data_dir { return File::Spec->catdir($_[0]->{data_root}, $_[1]); }
 
+sub _preset_settings {
+    my ($preset) = @_;
+    return {
+        memory_mib => int($PRESET_MEMORY_BYTES{$preset} / (1024 * 1024)),
+        maxmemory_policy => 'allkeys-lru',
+        maxclients => 100,
+        timeout => 0,
+    };
+}
+
+sub _valid_settings {
+    my ($settings) = @_;
+    return 0 if ref($settings) ne 'HASH';
+    return 0 if join(',', sort keys %{$settings}) ne 'maxclients,maxmemory_policy,memory_mib,timeout';
+    return 0 if !defined($settings->{memory_mib}) || ref($settings->{memory_mib})
+        || $settings->{memory_mib} !~ /\A[0-9]+\z/ || $settings->{memory_mib} < 8 || $settings->{memory_mib} > 64;
+    return 0 if !defined($settings->{maxclients}) || ref($settings->{maxclients})
+        || $settings->{maxclients} !~ /\A[0-9]+\z/ || $settings->{maxclients} < 10 || $settings->{maxclients} > 100;
+    return 0 if !defined($settings->{timeout}) || ref($settings->{timeout})
+        || $settings->{timeout} !~ /\A[0-9]+\z/ || $settings->{timeout} > 300;
+    return 0 if !defined($settings->{maxmemory_policy}) || ref($settings->{maxmemory_policy})
+        || !exists($MAXMEMORY_POLICIES{$settings->{maxmemory_policy}});
+    return 1;
+}
+
+sub _redis_parameter {
+    my ($setting, $value) = @_;
+    return ('maxmemory', $value * 1024 * 1024) if $setting eq 'memory_mib';
+    return ('maxmemory-policy', $value) if $setting eq 'maxmemory_policy';
+    return ('maxclients', $value) if $setting eq 'maxclients';
+    return ('timeout', $value) if $setting eq 'timeout';
+    return;
+}
+
 sub _redis_config {
-    my ($data, $socket, $memory_bytes) = @_;
-    $memory_bytes = $MAX_MEMORY_BYTES if !defined($memory_bytes);
-    return undef if $memory_bytes !~ /\A[0-9]+\z/ || $memory_bytes > $MAX_MEMORY_BYTES;
+    my ($data, $socket, $settings) = @_;
+    return undef if !_valid_settings($settings);
+    my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return join("\n",
         'daemonize no',
         'supervised no',
@@ -418,10 +651,10 @@ sub _redis_config {
         'save ""',
         'appendonly no',
         'maxmemory ' . $memory_bytes,
-        'maxmemory-policy allkeys-lru',
+        'maxmemory-policy ' . $settings->{maxmemory_policy},
         'databases 16',
-        'timeout 0',
-        'maxclients 100',
+        'timeout ' . $settings->{timeout},
+        'maxclients ' . $settings->{maxclients},
         'logfile ""',
         ''
     );
@@ -436,9 +669,12 @@ sub _valid_account {
 }
 
 sub _state {
-    my ($state, $preset) = @_;
+    my ($state, $manifest) = @_;
     return { success => JSON::PP::true, state => $state, version => 1,
-        (defined($preset) ? (preset => $preset) : ()) };
+        (ref($manifest) eq 'HASH' ? (
+            preset => $manifest->{preset},
+            config => $manifest->{settings},
+        ) : ()) };
 }
 sub _failure { return { error => $_[0], success => JSON::PP::false, version => 1 }; }
 

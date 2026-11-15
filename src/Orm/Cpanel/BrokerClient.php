@@ -14,8 +14,13 @@ final class BrokerClient
         'instance.status',
         'instance.metrics',
         'instance.provision',
+        'instance.configure',
         'instance.start',
         'instance.stop',
+    ];
+    private const MEMORY_POLICIES = [
+        'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
+        'volatile-lfu', 'volatile-random', 'volatile-ttl', 'noeviction',
     ];
 
     /** @param null|callable(string): ?string $exchange Test seam; production uses the fixed Unix socket. */
@@ -26,8 +31,8 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
-    public function request(string $operation, ?string $preset = null): ?array
+    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
+    public function request(string $operation, ?string $preset = null, ?array $config = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
             return null;
@@ -36,10 +41,27 @@ final class BrokerClient
             || !in_array($preset, ['wordpress', 'laravel', 'magento', 'session', 'generic'], true))) {
             return null;
         }
+        if ($config !== null && ($operation !== 'instance.configure' || $preset !== null || !self::validConfig($config))) {
+            return null;
+        }
+        if ($operation === 'instance.configure' && $config === null) {
+            return null;
+        }
 
-        $payload = $preset === null
-            ? ['operation' => $operation, 'version' => 1]
-            : ['operation' => $operation, 'preset' => $preset, 'version' => 1];
+        if ($config !== null) {
+            $payload = [
+                'maxclients' => $config['maxclients'],
+                'maxmemory_policy' => $config['maxmemory_policy'],
+                'memory_mib' => $config['memory_mib'],
+                'operation' => $operation,
+                'timeout' => $config['timeout'],
+                'version' => 1,
+            ];
+        } else {
+            $payload = $preset === null
+                ? ['operation' => $operation, 'version' => 1]
+                : ['operation' => $operation, 'preset' => $preset, 'version' => 1];
+        }
         $request = json_encode(
             $payload,
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
@@ -62,6 +84,9 @@ final class BrokerClient
         }
 
         if ($decoded['success']) {
+            if ($operation === 'instance.configure' && !array_key_exists('config', $decoded)) {
+                return null;
+            }
             $keys = array_keys($decoded);
             sort($keys);
             if (in_array('memory_used_bytes', $keys, true)) {
@@ -81,6 +106,20 @@ final class BrokerClient
             }
             if (!in_array($decoded['state'] ?? null, ['not_configured', 'stopped', 'starting', 'running', 'stopping', 'failed'], true)) {
                 return null;
+            }
+            if (array_key_exists('config', $decoded)) {
+                if (!in_array($decoded['preset'] ?? null, ['wordpress', 'laravel', 'magento', 'session', 'generic'], true)
+                    || !self::validConfig($decoded['config'])
+                    || $keys !== ['config', 'preset', 'state', 'success', 'version']) {
+                    return null;
+                }
+                return [
+                    'success' => true,
+                    'state' => $decoded['state'],
+                    'version' => 1,
+                    'preset' => $decoded['preset'],
+                    'config' => $decoded['config'],
+                ];
             }
             if (array_key_exists('preset', $decoded)) {
                 if (!in_array($decoded['preset'], ['wordpress', 'laravel', 'magento', 'session', 'generic'], true)
@@ -102,10 +141,28 @@ final class BrokerClient
                 'invalid_request', 'not_authorized', 'operation_failed', 'instance_unavailable',
                 'instance_exists', 'storage_unavailable', 'backend_policy_required', 'backend_unavailable',
                 'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
+                'configuration_unavailable', 'configuration_failed', 'configuration_storage_unavailable',
+                'configuration_uncertain',
             ], true)) {
             return null;
         }
         return ['success' => false, 'error' => $decoded['error'], 'version' => 1];
+    }
+
+    private static function validConfig(mixed $config): bool
+    {
+        if (!is_array($config)) {
+            return false;
+        }
+        $keys = array_keys($config);
+        sort($keys);
+        if ($keys !== ['maxclients', 'maxmemory_policy', 'memory_mib', 'timeout']) {
+            return false;
+        }
+        return is_int($config['memory_mib']) && $config['memory_mib'] >= 8 && $config['memory_mib'] <= 64
+            && is_int($config['maxclients']) && $config['maxclients'] >= 10 && $config['maxclients'] <= 100
+            && is_int($config['timeout']) && $config['timeout'] >= 0 && $config['timeout'] <= 300
+            && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
     }
 
     /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */

@@ -16,12 +16,33 @@ $instanceClient = new \Orm\Cpanel\BrokerClient();
 $actionResult = null;
 $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
-    $allowedActions = ['provision', 'start', 'stop'];
+    $allowedActions = ['provision', 'configure', 'start', 'stop'];
     if (is_string($action) && in_array($action, $allowedActions, true)) {
         if ($action === 'provision') {
             $preset = $_POST['orm_preset'] ?? 'generic';
             $actionResult = is_string($preset)
                 ? $instanceClient->request('instance.provision', $preset)
+                : null;
+        } elseif ($action === 'configure') {
+            $readInteger = static function (string $key, int $minimum, int $maximum): ?int {
+                $raw = $_POST[$key] ?? null;
+                if (!is_string($raw) || preg_match('/\A(?:0|[1-9][0-9]{0,2})\z/', $raw) !== 1) {
+                    return null;
+                }
+                $value = filter_var($raw, FILTER_VALIDATE_INT);
+                return is_int($value) && $value >= $minimum && $value <= $maximum ? $value : null;
+            };
+            $memory = $readInteger('orm_memory_mib', 8, 64);
+            $clients = $readInteger('orm_maxclients', 10, 100);
+            $timeout = $readInteger('orm_timeout', 0, 300);
+            $policy = $_POST['orm_maxmemory_policy'] ?? null;
+            $actionResult = $memory !== null && $clients !== null && $timeout !== null && is_string($policy)
+                ? $instanceClient->request('instance.configure', null, [
+                    'memory_mib' => $memory,
+                    'maxmemory_policy' => $policy,
+                    'maxclients' => $clients,
+                    'timeout' => $timeout,
+                ])
                 : null;
         } else {
             $actionResult = $instanceClient->request('instance.' . $action);
@@ -62,9 +83,13 @@ $errorMessages = [
     'backend_policy_required' => 'Your hosting provider must select an installed backend before you can initialize a cache.',
     'backend_unavailable' => 'The selected cache backend is not available right now. Contact your hosting provider.',
     'instance_exists' => 'An instance record already exists. Refresh this page or contact your hosting provider.',
-    'invalid_request' => 'Choose one of the available setup presets and try again.',
+    'invalid_request' => 'The requested setup or configuration values are not valid.',
     'not_configured' => 'Initialize the cache before starting it.',
     'rate_limited' => 'Please wait a moment before trying another action.',
+    'configuration_unavailable' => 'ORM could not read supported current settings, so it made no changes. Stop and start the cache to restore its saved settings, then try again.',
+    'configuration_failed' => 'The update failed and ORM attempted to restore the previous live settings. Refresh this page to check them.',
+    'configuration_storage_unavailable' => 'The settings were not saved. Refresh this page before trying again.',
+    'configuration_uncertain' => 'The settings could not be fully verified. Refresh this page and contact your hosting provider if the problem continues.',
     'service_failed' => 'The cache service could not complete that action. Refresh the page and check its status.',
     'storage_unavailable' => 'The cache could not be initialized because its private storage is unavailable.',
 ];
@@ -93,9 +118,15 @@ try {
         .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
-        .orm-preset-form { max-width: 560px; margin-top: 18px; }
-        .orm-preset-form label { display: block; margin-bottom: 7px; font-weight: 700; }
-        .orm-preset-form select { width: 100%; padding: 10px 12px; border: 1px solid #bac6d5; border-radius: 7px; color: #172235; background: #fff; font: inherit; }
+        .orm-preset-form, .orm-config-form { max-width: 640px; margin-top: 18px; }
+        .orm-preset-form label, .orm-config-form label { display: block; margin-bottom: 7px; font-weight: 700; }
+        .orm-preset-form select, .orm-config-form select, .orm-config-form input { width: 100%; padding: 10px 12px; border: 1px solid #bac6d5; border-radius: 7px; color: #172235; background: #fff; font: inherit; }
+        .orm-config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 14px 0; }
+        .orm-config-grid label { margin: 0; }
+        .orm-config-label { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+        .orm-config-icon { width: 18px; height: 18px; color: #317a9d; }
+        .orm-config-grid input, .orm-config-grid select { margin-top: 6px; }
+        .orm-config-impact { padding: 12px; border-left: 3px solid #bf7a18; background: #fff8e9; color: #57390e; }
         .orm-preset-help { color: #59677c; font-size: 14px; }
         .orm-note { margin-top: 18px; color: #59677c; }
         .orm-connection { margin-top: 18px; }
@@ -109,7 +140,7 @@ try {
         .orm-connection .orm-copy-button { padding: 7px 11px; border: 1px solid #cbd5e1; background: #fff; color: #263b57; font-size: 13px; }
         .orm-copy-status:empty { display: none; }
         .orm-copy-status { color: #176b3a; }
-        @media (max-width: 600px) { .orm-connection dl { grid-template-columns: 1fr; gap: 4px; } }
+        @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } }
       </style>
       <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
@@ -123,7 +154,7 @@ try {
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
             <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status">Action accepted. Current state: <?= htmlspecialchars($actionResult['state'] ?? 'unknown', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
+            <p role="status"><?= $action === 'configure' ? 'Configuration saved.' : 'Action accepted.' ?> Current state: <?= htmlspecialchars($actionResult['state'] ?? 'unknown', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
           <?php endif; ?>
           <?php if ($instanceStatus === null || !$instanceStatus['success']): ?>
             <p role="alert">The local ORM service is temporarily unavailable. Contact the server administrator.</p>
@@ -167,6 +198,37 @@ try {
                 <button type="submit">Initialize cache</button>
               </form>
             <?php else: ?>
+              <?php if (in_array($instanceStatus['state'], ['running', 'stopped', 'failed'], true) && is_array($instanceStatus['config'] ?? null)): ?>
+                <section aria-labelledby="orm-config-title">
+                  <h3 id="orm-config-title">Configuration</h3>
+                  <form method="post" class="orm-config-form">
+                    <input type="hidden" name="orm_action" value="configure">
+                    <div class="orm-config-grid">
+                      <label for="orm-memory-mib"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Memory limit (MiB)</span>
+                        <input id="orm-memory-mib" name="orm_memory_mib" type="number" min="8" max="64" step="1" required value="<?= htmlspecialchars((string) $instanceStatus['config']['memory_mib'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      </label>
+                      <label for="orm-maxmemory-policy"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M5 12h14M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="5" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="12" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="19" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/></svg>When the cache is full</span>
+                        <select id="orm-maxmemory-policy" name="orm_maxmemory_policy" required>
+                          <?php foreach (['allkeys-lru' => 'Evict least recently used keys', 'allkeys-lfu' => 'Evict least frequently used keys', 'allkeys-random' => 'Evict random keys', 'volatile-lru' => 'Evict least recently used expiring keys', 'volatile-lfu' => 'Evict least frequently used expiring keys', 'volatile-random' => 'Evict random expiring keys', 'volatile-ttl' => 'Evict expiring keys with the shortest TTL', 'noeviction' => 'Reject writes when full'] as $policy => $label): ?>
+                            <option value="<?= htmlspecialchars($policy, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $instanceStatus['config']['maxmemory_policy'] === $policy ? ' selected' : '' ?>><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </label>
+                      <label for="orm-maxclients"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Maximum connected clients</span>
+                        <input id="orm-maxclients" name="orm_maxclients" type="number" min="10" max="100" step="1" required value="<?= htmlspecialchars((string) $instanceStatus['config']['maxclients'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      </label>
+                      <label for="orm-timeout"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Close idle clients after (seconds)</span>
+                        <input id="orm-timeout" name="orm_timeout" type="number" min="0" max="300" step="1" required value="<?= htmlspecialchars((string) $instanceStatus['config']['timeout'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      </label>
+                    </div>
+                    <p class="orm-config-impact"><strong>Lowering memory can evict cached keys immediately; those evictions cannot be undone.</strong> The memory limit cannot exceed 64 MiB. TCP access, persistence, database count, and socket path remain controlled by the host.</p>
+                    <p class="orm-preset-help">Changes apply live without restarting a running cache, then are saved for the next start. When stopped, changes are saved and applied on start. Package-specific ceilings are not available in this build.</p>
+                    <button type="submit">Save configuration</button>
+                  </form>
+                </section>
+              <?php elseif (in_array($instanceStatus['state'], ['starting', 'stopping'], true)): ?>
+                <p class="orm-note">Configuration editing is unavailable while the cache is changing state.</p>
+              <?php endif; ?>
               <div class="orm-actions">
                 <form method="post">
                   <input type="hidden" name="orm_action" value="start">
@@ -227,7 +289,7 @@ try {
                   </script>
                 </section>
               <?php endif; ?>
-              <p class="orm-note">Configuration editing, monitoring and backups are not enabled in this build yet.</p>
+              <p class="orm-note">Metrics are sampled live and are not retained. Backups and restore are not enabled in this build.</p>
             <?php endif; ?>
             </div>
           <?php endif; ?>

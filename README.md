@@ -2,12 +2,12 @@
 
 An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, read-only connection guidance, WHM backend discovery, and a root-only service inventory. Production readiness still requires live cPanel validation.
 
-> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed account-scoped broker for initialization, status, start and stop. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
+> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed account-scoped broker for initialization, status, live metrics, bounded configuration, start and stop. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
 
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
+- cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
@@ -37,7 +37,7 @@ php bin/orm backend:discover --json
 
 This command does not mutate the host and is not exposed through the unauthenticated prototype UI. Platform and package coverage limits are documented in [`docs/guides/backend-discovery.md`](docs/guides/backend-discovery.md).
 
-The installed cPanel and WHM entry points also expose a first lifecycle slice. WHM must choose an installed default backend; a cPanel user can initialize, view status, read live metrics, start, and stop only their own service. During initialization, the user can choose a fixed WordPress, Laravel, Magento, Session Cache, or Generic preset; the broker sets its memory limit and keeps every profile within the 64 MiB hard cap. The cPanel page shows the account-private Unix socket path and PhpRedis, node-redis and redis-py examples for provisioned instances. Current memory, client, uptime, operation-rate, and cache hit/miss values are fetched on page load, without historical retention. Instances run under the cPanel account with TCP disabled and persistence off by default. See the [preset guide](docs/guides/configuration-presets.md) and [instance lifecycle guide](docs/guides/instance-lifecycle.md) for current limits and validation status.
+The installed cPanel and WHM entry points expose a first lifecycle slice. WHM must choose an installed default backend; a cPanel user can initialize, view status, read live metrics, configure bounded settings, start, and stop only their own service. During initialization, the user can choose a fixed WordPress, Laravel, Magento, Session Cache, or Generic preset; the broker sets its memory limit and keeps every profile within the 64 MiB cap. Existing instances can change memory (8–64 MiB), an allowlisted eviction policy, client limit (10–100), and idle timeout (0–300 seconds). Reducing memory can evict keys immediately. Package and reseller ceilings are not available, and direct Redis commands through the account's own socket can change runtime values independently of the broker-saved config. The cPanel page shows the account-private Unix socket path and PhpRedis, node-redis and redis-py examples for provisioned instances. Current memory, client, uptime, operation-rate, and cache hit/miss values are fetched on page load, without historical retention. Instances run under the cPanel account with TCP disabled and persistence off by default. See the [preset guide](docs/guides/configuration-presets.md) and [instance lifecycle guide](docs/guides/instance-lifecycle.md) for current limits and validation status.
 
 ## Documentation
 

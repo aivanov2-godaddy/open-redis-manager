@@ -22,6 +22,11 @@ for my $operation (qw(instance.status instance.provision instance.start instance
 }
 is(parse_request('{"operation":"instance.metrics","version":1}' . "\n")->{operation},
     'instance.metrics', 'accept the fixed instance metrics request');
+my $config_request = '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n";
+my $parsed_config = parse_request($config_request);
+ok($parsed_config && $parsed_config->{operation} eq 'instance.configure'
+    && $parsed_config->{memory_mib} == 48 && $parsed_config->{maxclients} == 50,
+    'accept the canonical bounded instance configuration request');
 for my $preset (qw(wordpress laravel magento session generic)) {
     my $frame = '{"operation":"instance.provision","preset":"' . $preset . '","version":1}' . "\n";
     is(parse_request($frame)->{preset}, $preset, "accept the fixed $preset provisioning preset");
@@ -31,6 +36,12 @@ for my $invalid (
     '{"operation":"identity","version":2}' . "\n", ('x' x (max_frame_bytes() + 1)),
     '{"operation":"instance.provision","preset":"../../root","version":1}' . "\n",
     '{"operation":"instance.start","preset":"generic","version":1}' . "\n",
+    '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":65,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
+    '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":"48","operation":"instance.configure","timeout":0,"version":1}' . "\n",
+    '{"maxclients":101,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
+    '{"maxclients":50,"maxmemory_policy":"arbitrary","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
+    '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":301,"version":1}' . "\n",
+    '{"operation":"instance.configure","maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"timeout":0,"version":1}' . "\n",
 ) {
     ok(!parse_request($invalid), 'reject a non-canonical or oversized request');
 }
@@ -108,6 +119,12 @@ my $metrics_info = join("\r\n",
     'uptime_in_seconds:3600', 'instantaneous_ops_per_sec:12', 'keyspace_hits:90', 'keyspace_misses:10', '');
 my @metrics_calls;
 my @systemctl_calls;
+my @config_calls;
+my $fail_config_once;
+my $fail_config_always;
+my $fail_config_commit_once;
+my $fail_config_get;
+my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
 my $manager = Orm::Broker::InstanceManager->new(
     etc_root => $etc_instances,
     data_root => $data_instances,
@@ -118,6 +135,29 @@ my $manager = Orm::Broker::InstanceManager->new(
     metrics_probe => sub {
         push @metrics_calls, [@_];
         return $metrics_info;
+    },
+    config_set => sub {
+        my ($backend, $socket, $parameter, $value) = @_;
+        push @config_calls, [$backend, $socket, $parameter, $value];
+        if (defined($fail_config_once) && $parameter eq $fail_config_once) {
+            undef $fail_config_once;
+            return 0;
+        }
+        return 0 if defined($fail_config_always) && $parameter eq $fail_config_always;
+        if ($parameter eq 'maxmemory') { $runtime_settings{memory_mib} = $value / (1024 * 1024); }
+        elsif ($parameter eq 'maxmemory-policy') { $runtime_settings{maxmemory_policy} = $value; }
+        elsif ($parameter eq 'maxclients') { $runtime_settings{maxclients} = 0 + $value; }
+        elsif ($parameter eq 'timeout') { $runtime_settings{timeout} = 0 + $value; }
+        return 1;
+    },
+    config_get => sub { return undef if $fail_config_get; return { %runtime_settings }; },
+    atomic_commit => sub {
+        my ($temporary, $path) = @_;
+        if ($fail_config_commit_once && index($path, 'ormtest') >= 0 && $path =~ /redis[.]conf\z/) {
+            $fail_config_commit_once = 0;
+            return 0;
+        }
+        return rename($temporary, $path);
     },
     systemctl_call => sub {
         my (@args) = @_;
@@ -130,11 +170,36 @@ my $manager = Orm::Broker::InstanceManager->new(
         return (1, '');
     },
 );
+my @config_get_cli_calls;
+my %config_get_cli_values = (
+    maxmemory => '50331648',
+    'maxmemory-policy' => 'allkeys-lfu',
+    maxclients => '50',
+    timeout => '60',
+);
+my $config_get_cli_manager = Orm::Broker::InstanceManager->new(
+    redis_cli_call => sub {
+        my ($backend, $socket, @arguments) = @_;
+        push @config_get_cli_calls, [$backend, $socket, @arguments];
+        return undef if @arguments != 3 || $arguments[0] ne 'CONFIG'
+            || $arguments[1] ne 'GET' || !exists($config_get_cli_values{$arguments[2]});
+        return "$arguments[2]\n$config_get_cli_values{$arguments[2]}\n";
+    },
+);
+is_deeply($config_get_cli_manager->_redis_config_get('redis', '/var/lib/orm-instances/ormtest/redis.sock'),
+    { memory_mib => 48, maxmemory_policy => 'allkeys-lfu', maxclients => 50, timeout => 60 },
+    'read bounded runtime settings with individual CONFIG GET patterns');
+is_deeply([map { [@{$_}[2 .. $#$_]] } @config_get_cli_calls], [
+    ['CONFIG', 'GET', 'maxmemory'], ['CONFIG', 'GET', 'maxmemory-policy'],
+    ['CONFIG', 'GET', 'maxclients'], ['CONFIG', 'GET', 'timeout'],
+], 'use one CONFIG GET pattern per command for pre-7.0 compatibility');
 my $account = { name => 'ormtest', uid => $<, gid => $test_gid };
 is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
+is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
+    'return validated saved settings in the instance status');
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],
@@ -152,6 +217,89 @@ is($manager->dispatch('instance.status', { name => 'ormother', uid => $< + 1, gi
     'not_configured', 'another account cannot see the first account manifest');
 is($manager->dispatch('instance.stop', $account)->{state}, 'stopped', 'stop the account-scoped unit');
 is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running', 'do not collect metrics for a stopped instance');
+is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
+my $settings = { memory_mib => 48, maxmemory_policy => 'allkeys-lfu', maxclients => 50, timeout => 60 };
+my $config_calls_before_invalid = scalar @config_calls;
+is($manager->dispatch('instance.configure', $account, undef, { %{$settings}, memory_mib => 65 })->{error},
+    'invalid_request', 'reject an over-cap configuration in the manager');
+is(scalar @config_calls, $config_calls_before_invalid, 'do not call Redis for invalid settings');
+$unit_state = 'activating';
+is($manager->dispatch('instance.configure', $account, undef, $settings)->{error},
+    'instance_unavailable', 'reject configuration while the service is changing state');
+is(scalar @config_calls, $config_calls_before_invalid, 'do not apply settings during a service transition');
+$unit_state = 'active';
+my $configured = $manager->dispatch('instance.configure', $account, undef, $settings);
+ok($configured->{success} && $configured->{state} eq 'running', 'apply bounded settings to a running instance');
+is_deeply($configured->{config}, $settings, 'return the selected settings after a successful update');
+is_deeply(\%runtime_settings, $settings, 'apply the settings to the live runtime');
+is_deeply([map { $_->[2] } @config_calls], ['maxmemory-policy', 'maxclients', 'timeout', 'maxmemory'],
+    'use only the four fixed Redis CONFIG parameters');
+is($config_calls[3]->[3], 48 * 1024 * 1024, 'apply the potentially evicting memory change last and send bytes');
+my $config_file_text;
+open(my $configured_file, '<', "$etc_instances/ormtest/redis.conf") or die "read configured Redis config: $!";
+$config_file_text = do { local $/; <$configured_file> };
+close($configured_file);
+like($config_file_text, qr/^maxmemory 50331648$/m, 'persist the configured memory ceiling');
+like($config_file_text, qr/^maxmemory-policy allkeys-lfu$/m, 'persist the selected eviction policy');
+my $handler_config = Orm::Broker::Handler->handle_frame($config_request, $account->{uid}, $resolver, $manager);
+my $decoded_config = JSON::PP->new->decode($handler_config);
+ok($decoded_config->{success} && $decoded_config->{config}->{memory_mib} == 48,
+    'route only allowlisted settings through the peer-credential handler');
+my $handler_settings = { memory_mib => 48, maxmemory_policy => 'allkeys-lru', maxclients => 50, timeout => 0 };
+is_deeply(\%runtime_settings, $handler_settings, 'apply the canonical handler request values');
+$fail_config_once = 'timeout';
+my $failed_settings = { memory_mib => 56, maxmemory_policy => 'allkeys-lru', maxclients => 60, timeout => 90 };
+my $config_failure = $manager->dispatch('instance.configure', $account, undef, $failed_settings);
+is($config_failure->{error}, 'configuration_failed', 'report a rejected setting after restoring changed runtime values');
+is($manager->dispatch('instance.status', $account)->{config}->{memory_mib}, 48,
+    'preserve the saved configuration after a rolled-back update');
+is_deeply(\%runtime_settings, $handler_settings, 'restore the exact prior live values after a failed update');
+
+my $calls_before_unavailable = scalar @config_calls;
+$fail_config_get = 1;
+is($manager->dispatch('instance.configure', $account, undef, $failed_settings)->{error},
+    'configuration_unavailable', 'refuse changes when current runtime settings cannot be read');
+$fail_config_get = 0;
+is(scalar @config_calls, $calls_before_unavailable, 'do not change runtime values when the initial read fails');
+
+%runtime_settings = (memory_mib => 40, maxmemory_policy => 'allkeys-random', maxclients => 70, timeout => 45);
+$fail_config_once = 'timeout';
+is($manager->dispatch('instance.configure', $account, undef, $failed_settings)->{error},
+    'configuration_failed', 'rollback a failed update to out-of-band runtime values');
+is_deeply(\%runtime_settings, { memory_mib => 40, maxmemory_policy => 'allkeys-random', maxclients => 70, timeout => 45 },
+    'preserve tenant runtime changes when a configuration update fails');
+
+%runtime_settings = %{$settings};
+$fail_config_commit_once = 1;
+my $commit_failure_settings = { memory_mib => 40, maxmemory_policy => 'volatile-lfu', maxclients => 45, timeout => 90 };
+is($manager->dispatch('instance.configure', $account, undef, $commit_failure_settings)->{error},
+    'configuration_storage_unavailable', 'roll back runtime changes when atomic file replacement fails');
+is_deeply(\%runtime_settings, $settings, 'restore live values after a config-file commit failure');
+is($manager->dispatch('instance.status', $account)->{config}->{memory_mib}, 48,
+    'keep the prior saved config when the atomic commit fails');
+
+my $config_calls_before_uncertain = scalar @config_calls;
+$fail_config_always = 'timeout';
+my $uncertain_settings = { memory_mib => 56, maxmemory_policy => 'allkeys-lru', maxclients => 60, timeout => 120 };
+is($manager->dispatch('instance.configure', $account, undef, $uncertain_settings)->{error},
+    'configuration_uncertain', 'report when runtime rollback cannot be confirmed');
+undef $fail_config_always;
+ok(scalar(@config_calls) > $config_calls_before_uncertain, 'attempt rollback after an uncertain runtime update');
+my $calls_before_stopped_config = scalar @config_calls;
+is($manager->dispatch('instance.stop', $account)->{state}, 'stopped', 'stop the account-scoped unit');
+my $stopped_settings = { memory_mib => 32, maxmemory_policy => 'volatile-lru', maxclients => 40, timeout => 30 };
+my $stopped_config = $manager->dispatch('instance.configure', $account, undef, $stopped_settings);
+ok($stopped_config->{success} && $stopped_config->{state} eq 'stopped', 'save settings without starting a stopped service');
+is(scalar @config_calls, $calls_before_stopped_config, 'do not issue runtime commands when the service is stopped');
+is($manager->dispatch('instance.status', $account)->{config}->{memory_mib}, 32,
+    'read stopped-service settings back from its trusted config file');
+$unit_state = 'failed';
+my $failed_service_config = { memory_mib => 40, maxmemory_policy => 'allkeys-lfu', maxclients => 45, timeout => 15 };
+my $failed_service_result = $manager->dispatch('instance.configure', $account, undef, $failed_service_config);
+ok($failed_service_result->{success} && $failed_service_result->{state} eq 'failed',
+    'keep a failed service state when saving configuration for its next start');
+is(scalar @config_calls, $calls_before_stopped_config, 'do not issue runtime commands for a failed service');
+$unit_state = 'inactive';
 is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
 $metrics_info = "used_memory:not-a-number\n";
 is($manager->dispatch('instance.metrics', $account)->{error}, 'metrics_unavailable', 'reject malformed or incomplete metric output');

@@ -61,5 +61,12 @@ foreach (['generic', 'wordpress', 'laravel', 'magento', 'session'] as $preset) {
     $assert(str_contains($page, 'value="' . $preset . '"'), 'expose the ' . $preset . ' setup preset');
 }
 $assert(str_contains($page, "request('instance.provision', \$preset)"), 'send the selected preset through the broker client');
+$assert(str_contains($page, 'name="orm_action" value="configure"'), 'provide a session-protected configuration form action');
+$assert(str_contains($page, 'name="orm_memory_mib"') && str_contains($page, 'max="64"'), 'bound the memory field in the account UI');
+$assert(str_contains($page, 'name="orm_maxmemory_policy"'), 'offer an eviction policy selector');
+$assert(str_contains($page, 'name="orm_maxclients"') && str_contains($page, 'name="orm_timeout"'), 'expose the client and timeout controls');
+$assert(str_contains($page, 'those evictions cannot be undone.'), 'warn that lowering memory can irreversibly evict keys');
+$assert(str_contains($page, "request('instance.configure', null, ["), 'send configuration through the fixed broker operation');
+$assert(str_contains($page, 'Configuration saved.'), 'announce configuration changes accessibly after they are accepted');
 
 fwrite(STDOUT, "cPanel connection details checks passed: {$checks}\n");
