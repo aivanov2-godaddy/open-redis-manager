@@ -29,4 +29,8 @@ The reference product also describes signed commercial licensing and billing lif
 
 ## Prototype boundary
 
-The current demo renders sample data and does not authenticate users or operate host services. It must not be used as a security boundary or installed as a privileged plugin.
+The browser prototype renders sample data. The installed cPanel/WHM entry points and read-only discovery view are scaffolds, not a Redis control plane. The cPanel page obtains the username from LiveAPI and cross-checks it with a local root-run identity broker. The broker reads the connecting process UID from Linux `SO_PEERCRED`, maps it through the system account database, and accepts only a matching root-owned cPanel account record. It accepts one fixed identity request and cannot run commands or change services.
+
+The cPanel-to-broker UID match has not been validated on an actual cPanel host. Until that check and the complete installer lifecycle are exercised on a disposable supported host, the cPanel page can report identity unavailable and the plugin must not be treated as production-ready. No account instance registry, Redis service adapter, lifecycle operation, backup, or restore is implemented.
+
+The broker uses Linux's `SO_PEERCRED` Unix-socket option to read the peer credentials ([`unix(7)`](https://man7.org/linux/man-pages/man7/unix.7.html)). Its systemd unit uses a private runtime directory and filesystem restrictions ([`systemd.exec`](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)).

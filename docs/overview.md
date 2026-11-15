@@ -33,4 +33,4 @@ Applications use their Redis client to connect to an account-scoped loopback end
 
 ## Current implementation status
 
-The initial PHP screen is a static interaction prototype with sample values. Its screens express the product model; they are not wired to cPanel or Redis. Production capabilities are tracked in the [feature catalog](features/catalog.md) and [roadmap](../project/README.md).
+The PHP demo is a static interaction prototype with sample values. Installed cPanel/WHM entry points and read-only discovery scaffolds exist, along with an identity-only local broker; none of these features operate Redis or Valkey. Production capabilities are tracked in the [feature catalog](features/catalog.md) and [roadmap](../project/README.md).

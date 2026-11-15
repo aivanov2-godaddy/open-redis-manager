@@ -3,21 +3,24 @@ declare(strict_types=1);
 
 require_once '/usr/local/cpanel/php/cpanel.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php';
 
 $cpanel = new CPANEL();
 $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
+$brokerVerified = $account !== null
+    && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
 try {
-    if ($account === null) {
+    if (!$brokerVerified) {
         http_response_code(503);
     }
     print $cpanel->header('Open Redis Manager');
     ?>
     <main class="orm-entry" aria-labelledby="orm-title">
       <h1 id="orm-title">Open Redis Manager</h1>
-      <?php if ($account === null): ?>
-        <p role="alert">The authenticated cPanel account could not be verified. Reload the page or contact the server administrator.</p>
+      <?php if (!$brokerVerified): ?>
+        <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
-        <p>Authenticated account: <code><?= htmlspecialchars($account->username(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
+        <p>Verified cPanel account: <code><?= htmlspecialchars($account->username(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
         <section aria-labelledby="orm-ready-title">
           <h2 id="orm-ready-title">Redis account service is not connected</h2>
           <p>This build verifies the cPanel account context but does not yet read or change Redis, Valkey, or account instance state.</p>

@@ -24,3 +24,9 @@ jobs:
         run: pre-commit run --all-files
       - name: Check packaging shell syntax
         run: bash -n packaging/install.sh packaging/uninstall.sh packaging/lib.sh
+      - name: Check broker Perl syntax and tests
+        run: |
+          for file in src/Orm/Broker/*.pm bin/orm-broker.pl; do perl -I src -c "$file"; done
+          prove -I src tests/broker.t
+      - name: Verify systemd broker unit
+        run: systemd-analyze verify packaging/systemd/orm-broker.service
