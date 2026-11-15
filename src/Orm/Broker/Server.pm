@@ -11,11 +11,13 @@ use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use Orm::Broker::AccountResolver;
 use Orm::Broker::Handler;
 use Orm::Broker::PeerCredentials;
+use Orm::Broker::InstanceManager;
 use Orm::Broker::Protocol qw(max_frame_bytes encode_response);
 
 my $MAX_CLIENTS = 64;
-my $CLIENT_TIMEOUT_SECONDS = 1.5;
-my $RATE_LIMIT_PER_SECOND = 16;
+my $CLIENT_TIMEOUT_SECONDS = 5;
+my $IDENTITY_RATE_LIMIT_PER_SECOND = 16;
+my $MUTATION_RATE_LIMIT_PER_SECOND = 2;
 
 sub run {
     my ($class, %args) = @_;
@@ -35,6 +37,7 @@ sub run {
     die "ORM broker socket path already exists\n" if lstat($socket_path);
 
     my $resolver = Orm::Broker::AccountResolver->new(account_root => $account_root);
+    my $instance_manager = Orm::Broker::InstanceManager->new();
     my $old_umask = umask(0111);
     my $server = IO::Socket::UNIX->new(
         Type => SOCK_STREAM,
@@ -111,7 +114,25 @@ sub run {
                 next;
             }
             if ($read_bytes == 0) {
-                _close_client($selector, \%clients, $fd);
+                my $frame = $clients{$fd}->{buffer};
+                my $request = Orm::Broker::Protocol::parse_request($frame);
+                if (!$request) {
+                    _write_and_close($selector, \%clients, $fd, {
+                        error => 'invalid_request', success => JSON::PP::false, version => 1,
+                    });
+                    next;
+                }
+                my $peer_uid = $clients{$fd}->{uid};
+                my $limit = $request->{operation} eq 'identity'
+                    ? $IDENTITY_RATE_LIMIT_PER_SECOND : $MUTATION_RATE_LIMIT_PER_SECOND;
+                if (!_rate_allowed(\%rates, $peer_uid, $now, $limit)) {
+                    _write_and_close($selector, \%clients, $fd, {
+                        error => 'rate_limited', success => JSON::PP::false, version => 1,
+                    });
+                    next;
+                }
+                my $response = Orm::Broker::Handler->handle_frame($frame, $peer_uid, $resolver, $instance_manager);
+                _write_and_close_encoded($selector, \%clients, $fd, $response);
                 next;
             }
 
@@ -122,19 +143,15 @@ sub run {
                 });
                 next;
             }
-            next if index($clients{$fd}->{buffer}, "\n") < 0;
-
-            my $peer_uid = $clients{$fd}->{uid};
-            my $frame = $clients{$fd}->{buffer};
-            my $response;
-            if (!_rate_allowed(\%rates, $peer_uid, $now, $RATE_LIMIT_PER_SECOND)) {
-                $response = encode_response({
-                    error => 'rate_limited', success => JSON::PP::false, version => 1,
-                });
-            } else {
-                $response = Orm::Broker::Handler->handle_frame($frame, $peer_uid, $resolver);
+            if (index($clients{$fd}->{buffer}, "\n") >= 0) {
+                my $newline = index($clients{$fd}->{buffer}, "\n");
+                if ($newline != length($clients{$fd}->{buffer}) - 1) {
+                    _write_and_close($selector, \%clients, $fd, {
+                        error => 'invalid_request', success => JSON::PP::false, version => 1,
+                    });
+                    next;
+                }
             }
-            _write_and_close_encoded($selector, \%clients, $fd, $response);
         }
 
         if ($now - $last_rate_prune > 60) {

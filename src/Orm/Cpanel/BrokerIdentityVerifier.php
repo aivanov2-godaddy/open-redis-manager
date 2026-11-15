@@ -83,6 +83,10 @@ final class BrokerIdentityVerifier
             }
             $written += $count;
         }
+        if (!@stream_socket_shutdown($stream, STREAM_SHUT_WR)) {
+            fclose($stream);
+            return null;
+        }
 
         $response = @stream_get_contents($stream, self::MAX_RESPONSE_BYTES + 1);
         $metadata = stream_get_meta_data($stream);

@@ -21,7 +21,7 @@ A production installer must be designed and reviewed for a supported cPanel/WHM 
 5. Persist account metadata and migrations with a tested backup and rollback path.
 6. Validate plugin visibility, account isolation, service health and update compatibility before reporting success.
 
-The repo now contains cPanel and WHM registration/entry-point scaffolds, an identity-only root broker, and a development install/uninstall workflow in [`packaging/`](../packaging/README.md). It targets cPanel's Jupiter theme and has not been run on a cPanel host; no supported version/OS matrix or upgrade workflow is established. Use only on a disposable cPanel & WHM server. The broker does not manage Redis/Valkey, and the read-only backend discovery CLI is not invoked by the cPanel entry point.
+The repo now contains cPanel and WHM entry points, a manual development installer, explicit WHM backend selection, and account-scoped provision/status/start/stop through a root broker and systemd template. The cPanel page obtains the authenticated identity from LiveAPI, then the broker derives the target only from the Unix peer UID. The lifecycle remains unvalidated on a disposable cPanel host; there is no supported version/OS matrix or upgrade workflow. Use only on a disposable cPanel & WHM server.
 
 ## Backend selection plan
 

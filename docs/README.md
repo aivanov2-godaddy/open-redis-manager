@@ -19,6 +19,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [cPanel user guide](guides/cpanel.md)
+- [Account instance lifecycle](guides/instance-lifecycle.md)
 - [WHM administrator guide](guides/whm.md)
 - [Configuration and presets](guides/configuration-presets.md)
 - [Backups and recovery](guides/backups-recovery.md)

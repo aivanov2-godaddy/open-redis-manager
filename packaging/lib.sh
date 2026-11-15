@@ -20,6 +20,10 @@ ORM_SYSTEMCTL=/usr/bin/systemctl
 ORM_BROKER_BIN="$ORM_3RDPARTY/bin/orm-broker.pl"
 ORM_BROKER_LIB="$ORM_3RDPARTY/lib/Orm/Broker"
 ORM_BROKER_UNIT=/etc/systemd/system/orm-broker.service
+ORM_INSTANCE_ROOT=/etc/orm-instances
+ORM_INSTANCE_DATA=/var/lib/orm-instances
+ORM_INSTANCE_UNIT=/etc/systemd/system/orm-instance@.service
+ORM_INSTANCE_LAUNCHER="$ORM_3RDPARTY/bin/orm-instance-launcher"
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
@@ -58,26 +62,57 @@ orm_install_paths_are_clear() {
         "$ORM_WHM_ICONS/orm-whm.png" \
         "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" \
         "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" \
+        "$ORM_3RDPARTY/src/Orm/Security/SessionRequestGuard.php" \
         "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
         "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" \
+        "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" \
+        "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
         "$ORM_BROKER_BIN" \
+        "$ORM_INSTANCE_LAUNCHER" \
         "$ORM_BROKER_LIB/AccountResolver.pm" \
+        "$ORM_BROKER_LIB/BackendPolicy.pm" \
         "$ORM_BROKER_LIB/Handler.pm" \
+        "$ORM_BROKER_LIB/InstanceManager.pm" \
         "$ORM_BROKER_LIB/PeerCredentials.pm" \
         "$ORM_BROKER_LIB/Protocol.pm" \
         "$ORM_BROKER_LIB/Server.pm" \
         "$ORM_BROKER_UNIT" \
+        "$ORM_INSTANCE_UNIT" \
         "$ORM_APPCONFIG"; do
         [[ ! -e "$path" && ! -L "$path" ]] || orm_die "refusing to overwrite existing path: $path"
     done
+    [[ ! -e "$ORM_INSTANCE_ROOT" && ! -L "$ORM_INSTANCE_ROOT" ]] \
+        || orm_die "refusing to use an existing instance metadata path: $ORM_INSTANCE_ROOT"
+    [[ ! -e "$ORM_INSTANCE_DATA" && ! -L "$ORM_INSTANCE_DATA" ]] \
+        || orm_die "refusing to use an existing instance data path: $ORM_INSTANCE_DATA"
     unit_state="$("$ORM_SYSTEMCTL" list-unit-files --no-legend --no-pager orm-broker.service 2>/dev/null || true)"
     [[ -z "$unit_state" ]] || orm_die 'an orm-broker.service unit already exists; refusing to replace it.'
     ! orm_registration_state || orm_die 'the WHM AppConfig application is already registered.'
 }
 
+orm_prepare_instance_directories() {
+    local path owner mode
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        if [[ ! -e "$path" && ! -L "$path" ]]; then
+            mkdir -m 0711 -- "$path" || orm_die "could not create the ORM runtime directory: $path"
+            chown root:root -- "$path" || orm_die "could not secure the ORM runtime directory: $path"
+            chmod 0711 -- "$path" || orm_die "could not set private traversal permissions on: $path"
+            continue
+        fi
+        [[ -d "$path" && ! -L "$path" ]] || orm_die "refusing an unsafe ORM runtime path: $path"
+        owner="$(stat -c '%u' -- "$path")"
+        mode="$(stat -c '%a' -- "$path")"
+        [[ "$owner" == 0 ]] || orm_die "the ORM runtime directory is not root-owned: $path"
+        (( (8#$mode & 0022) == 0 )) || orm_die "the ORM runtime directory is writable by another user: $path"
+        chmod 0711 -- "$path" || orm_die "could not set private traversal permissions on: $path"
+    done
+}
+
 orm_remove_empty_owned_directories() {
     local path
     for path in \
+        "$ORM_INSTANCE_ROOT" \
+        "$ORM_INSTANCE_DATA" \
         "$ORM_3RDPARTY/src/Orm/Backend" \
         "$ORM_3RDPARTY/src/Orm/Security" \
         "$ORM_3RDPARTY/src/Orm/Cpanel" \
@@ -105,14 +140,78 @@ $ORM_PACKAGE_ROOT/whm/cgi/addon_open_redis_manager.php|$ORM_WHM_CGI/addon_open_r
 $ORM_PACKAGE_ROOT/whm/icons/orm-whm.png|$ORM_WHM_ICONS/orm-whm.png
 $ORM_REPO_ROOT/src/Orm/Backend/BackendDiscovery.php|$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php
 $ORM_REPO_ROOT/src/Orm/Security/WhmAcl.php|$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php
+$ORM_REPO_ROOT/src/Orm/Security/SessionRequestGuard.php|$ORM_3RDPARTY/src/Orm/Security/SessionRequestGuard.php
 $ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php|$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php
 $ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php|$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php
+$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php|$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php
+$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php|$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php
 $ORM_REPO_ROOT/bin/orm-broker.pl|$ORM_BROKER_BIN
+$ORM_REPO_ROOT/bin/orm-instance-launcher.pl|$ORM_INSTANCE_LAUNCHER
 $ORM_REPO_ROOT/src/Orm/Broker/AccountResolver.pm|$ORM_BROKER_LIB/AccountResolver.pm
+$ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm|$ORM_BROKER_LIB/BackendPolicy.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Handler.pm|$ORM_BROKER_LIB/Handler.pm
+$ORM_REPO_ROOT/src/Orm/Broker/InstanceManager.pm|$ORM_BROKER_LIB/InstanceManager.pm
 $ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm|$ORM_BROKER_LIB/PeerCredentials.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm|$ORM_BROKER_LIB/Protocol.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Server.pm|$ORM_BROKER_LIB/Server.pm
 $ORM_PACKAGE_ROOT/systemd/orm-broker.service|$ORM_BROKER_UNIT
+$ORM_PACKAGE_ROOT/systemd/orm-instance@.service|$ORM_INSTANCE_UNIT
 EOF
+}
+
+orm_instances_exist() {
+    local path entries owner mode
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        [[ -d "$path" && ! -L "$path" ]] || return 2
+        owner="$(stat -c '%u' -- "$path" 2>/dev/null)" || return 2
+        mode="$(stat -c '%a' -- "$path" 2>/dev/null)" || return 2
+        [[ "$owner" == 0 && "$mode" == 711 ]] || return 2
+        entries="$(find "$path" -mindepth 1 -print -quit 2>/dev/null)" || return 2
+        [[ -z "$entries" ]] || return 0
+    done
+    return 1
+}
+
+orm_capture_broker_state() {
+    local enabled active
+    enabled="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    case "$enabled" in
+        enabled|disabled|enabled-runtime) ;;
+        *) return 1 ;;
+    esac
+    case "$active" in
+        active) ;;
+        inactive|failed) active=inactive ;;
+        *) return 1 ;;
+    esac
+    ORM_BROKER_ENABLED_BEFORE="$enabled"
+    ORM_BROKER_ACTIVE_BEFORE="$active"
+}
+
+orm_broker_state_matches_initial() {
+    local enabled active
+    enabled="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    case "$active" in
+        active) ;;
+        inactive|failed) active=inactive ;;
+        *) return 1 ;;
+    esac
+    [[ "$enabled" == "${ORM_BROKER_ENABLED_BEFORE:-}" \
+        && "$active" == "${ORM_BROKER_ACTIVE_BEFORE:-}" ]]
+}
+
+orm_restore_broker_state() {
+    case "${ORM_BROKER_ENABLED_BEFORE:-}" in
+        enabled) "$ORM_SYSTEMCTL" enable orm-broker.service || return 1 ;;
+        disabled) "$ORM_SYSTEMCTL" disable orm-broker.service || return 1 ;;
+        enabled-runtime) "$ORM_SYSTEMCTL" enable --runtime orm-broker.service || return 1 ;;
+        *) return 1 ;;
+    esac
+    case "${ORM_BROKER_ACTIVE_BEFORE:-}" in
+        active) "$ORM_SYSTEMCTL" start orm-broker.service || return 1 ;;
+        inactive) "$ORM_SYSTEMCTL" stop orm-broker.service || return 1 ;;
+        *) return 1 ;;
+    esac
 }

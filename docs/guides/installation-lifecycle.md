@@ -1,6 +1,6 @@
 # Installation, upgrade and uninstall
 
-> **Development stage:** a manual install/uninstall script now exists under [`packaging/`](../../packaging/README.md). It has not been run on a cPanel host and is not a production installer. This guide remains the checklist for the full lifecycle.
+> **Development stage:** a manual install/uninstall script exists under [`packaging/`](../../packaging/README.md). It now installs backend selection and account-scoped lifecycle support, but has not been validated end-to-end on a disposable cPanel host and is not a production installer.
 
 ## Installation flow
 
@@ -8,7 +8,7 @@
 2. Inspect available Redis and Valkey packages, services and existing account data without modifying them.
 3. Report missing PHP extension prerequisites and relevant memory headroom.
 4. Install panel assets and register least-privilege cPanel and WHM entry points.
-5. Create persistent metadata and privileged service boundaries with restrictive ownership.
+5. Create root-owned backend policy and per-account metadata; run each service with an account-specific systemd unit and private socket.
 6. Verify panel registration and that no pre-existing Redis service or account configuration changed.
 
 ## Upgrade flow
@@ -26,7 +26,7 @@
 - Remove only paths owned by ORM and report leftover user data without deleting it.
 - Verify cPanel/WHM registrations are removed while unrelated control-panel files stay untouched.
 
-The current uninstall script removes panel registrations and matching ORM interface files only. It does not remove Redis or Valkey processes, configuration, or data.
+The current uninstaller refuses to proceed while any managed instance metadata remains. This prevents removal of the launcher or service template while an account service may rely on it. It does not remove Redis or Valkey data.
 
 ## Runtime prerequisites
 

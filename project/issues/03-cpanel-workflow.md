@@ -10,3 +10,8 @@ Connect the cPanel prototype to account-scoped operations and connection guidanc
 - Connection helpers cover the integrations in `docs/integrations.md`.
 - Application discovery does not modify application files or return secret contents.
 - Diagnostics redact credential values.
+
+## Progress
+
+- The current lifecycle branch wires cPanel status, initialize, start, and stop to fixed broker operations. Account identity is derived from the socket peer UID, and the cPanel request accepts no account ID or configuration payload.
+- The page uses cPanel's session-tokenized POST route. Connection details, configuration, presets, metrics, and application integration remain future work.

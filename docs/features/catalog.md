@@ -6,7 +6,7 @@ This catalog records the public product behavior observed on the reference site 
 
 | Feature | Expected behavior | Prototype |
 |---|---|---|
-| Status and lifecycle | Show online, stopped, degraded or unavailable state; initialize, start and stop only the current account instance. | Dashboard and Instance |
+| Status and lifecycle | Show online, stopped, degraded or unavailable state; initialize, start and stop only the current account instance. | Authenticated cPanel entry point supports backend-gated initialize, status, start and stop through the peer-credential broker. Uses account-private Unix socket; no metrics yet. |
 | Connection details | Show host, port, database and credential with the secret hidden by default; copy values on explicit request. | Connection |
 | Health and preflight | Explain whether an instance exists, is running and has authentication configured; link each warning to a remedy. | Dashboard |
 | Metrics | Present memory, peak memory, connected clients, uptime, command rate and hit/miss ratio with a selectable time window. Mark stale samples. | Monitoring |
@@ -26,7 +26,7 @@ This catalog records the public product behavior observed on the reference site 
 |---|---|---|
 | Fleet dashboard | Summarize managed/running accounts, connections, memory, backend availability and service health. | Overview |
 | Account manager | Search and filter accounts by state; inspect usage; start, stop, restart and edit within package limits. | Accounts |
-| Backend discovery | Detect Redis and Valkey service, server/CLI binary, version and managed account counts. Explain selection and migration readiness. | Backends |
+| Backend discovery | Detect Redis and Valkey service, server/CLI binary, version and managed account counts. Explain selection and migration readiness. | WHM displays read-only discovery and lets root WHM select the installed default for future ORM instances; account counts and migration readiness remain unavailable. |
 | Redis command console | Run an allowlisted set of read-only diagnostics against a chosen account, or offer a carefully permissioned admin console with audit. | CLI |
 | Backups | Browse account snapshots and request targeted or fleet backups; report partial failures per account. | Backups |
 | Recovery | Scan first, repair only affected accounts, rebuild configuration from trusted metadata, fix ownership, rotate credentials, and audit each action. | Recovery |
