@@ -60,4 +60,47 @@ find() { return 1; }
 assert_status 2
 unset -f find
 
+mock_enabled_state=enabled
+mock_active_state=active
+orm_test_systemctl() {
+    case "${1:-}" in
+        is-enabled) printf '%s\n' "$mock_enabled_state" ;;
+        is-active) printf '%s\n' "$mock_active_state" ;;
+        disable)
+            mock_enabled_state=disabled
+            if [[ "${2:-}" == --now ]]; then mock_active_state=inactive; fi
+            ;;
+        enable) mock_enabled_state=enabled ;;
+        start) mock_active_state=active ;;
+        stop) mock_active_state=inactive ;;
+        *) return 1 ;;
+    esac
+}
+ORM_SYSTEMCTL=orm_test_systemctl
+orm_capture_broker_state
+orm_test_systemctl disable --now orm-broker.service
+if orm_broker_state_matches_initial; then
+    printf 'expected broker state change after disable --now.\n' >&2
+    exit 1
+fi
+orm_restore_broker_state
+orm_broker_state_matches_initial || {
+    printf 'enabled and active broker state was not restored.\n' >&2
+    exit 1
+}
+
+mock_enabled_state=disabled
+mock_active_state=inactive
+orm_capture_broker_state
+orm_test_systemctl disable --now orm-broker.service
+orm_broker_state_matches_initial || {
+    printf 'disabled and inactive broker state unexpectedly changed.\n' >&2
+    exit 1
+}
+orm_restore_broker_state
+[[ "$mock_enabled_state" == disabled && "$mock_active_state" == inactive ]] || {
+    printf 'rollback changed a broker that was initially disabled and inactive.\n' >&2
+    exit 1
+}
+
 printf 'Packaging instance-root guard tests passed.\n'

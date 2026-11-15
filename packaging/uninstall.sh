@@ -20,10 +20,11 @@ restore_broker_on_exit=0
 cleanup_on_exit() {
     local status=$?
     if [[ "$status" -ne 0 && "$restore_broker_on_exit" -eq 1 && -f "$ORM_BROKER_UNIT" ]]; then
-        if "$ORM_SYSTEMCTL" enable --now orm-broker.service >/dev/null 2>&1; then
-            printf 'ORM uninstaller: broker restored after the uninstall stopped early.\n' >&2
+        if orm_restore_broker_state >/dev/null 2>&1; then
+            restore_broker_on_exit=0
+            printf 'ORM uninstaller: broker state restored after the uninstall stopped early.\n' >&2
         else
-            printf 'ORM uninstaller: broker restoration failed; inspect orm-broker.service before using ORM.\n' >&2
+            printf 'ORM uninstaller: broker state restoration failed; inspect orm-broker.service before using ORM.\n' >&2
         fi
     fi
     rm -f -- "$archive"
@@ -35,13 +36,16 @@ orm_verify_installed_files
 
 broker_stopped=0
 if [[ -f "$ORM_BROKER_UNIT" ]]; then
-    restore_broker_on_exit=1
-    "$ORM_SYSTEMCTL" disable --now orm-broker.service
+    orm_capture_broker_state || orm_die 'could not determine the broker state; refusing uninstall.'
+    stop_status=0
+    "$ORM_SYSTEMCTL" disable --now orm-broker.service || stop_status=$?
+    if ! orm_broker_state_matches_initial; then restore_broker_on_exit=1; fi
+    [[ "$stop_status" -eq 0 ]] || exit "$stop_status"
     broker_stopped=1
 fi
 if orm_instances_exist; then
     if [[ "$broker_stopped" -eq 1 ]]; then
-        if "$ORM_SYSTEMCTL" enable --now orm-broker.service >/dev/null 2>&1; then
+        if orm_restore_broker_state >/dev/null 2>&1; then
             restore_broker_on_exit=0
         fi
     fi
@@ -50,7 +54,7 @@ else
     instance_check=$?
     if [[ "$instance_check" -ne 1 ]]; then
         if [[ "$broker_stopped" -eq 1 ]]; then
-            if "$ORM_SYSTEMCTL" enable --now orm-broker.service >/dev/null 2>&1; then
+            if orm_restore_broker_state >/dev/null 2>&1; then
                 restore_broker_on_exit=0
             fi
         fi

@@ -171,3 +171,41 @@ orm_instances_exist() {
     done
     return 1
 }
+
+orm_capture_broker_state() {
+    local enabled active
+    enabled="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    case "$enabled" in
+        enabled|disabled|enabled-runtime) ;;
+        *) return 1 ;;
+    esac
+    case "$active" in
+        active|inactive|failed) ;;
+        *) return 1 ;;
+    esac
+    ORM_BROKER_ENABLED_BEFORE="$enabled"
+    ORM_BROKER_ACTIVE_BEFORE="$active"
+}
+
+orm_broker_state_matches_initial() {
+    local enabled active
+    enabled="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    [[ "$enabled" == "${ORM_BROKER_ENABLED_BEFORE:-}" \
+        && "$active" == "${ORM_BROKER_ACTIVE_BEFORE:-}" ]]
+}
+
+orm_restore_broker_state() {
+    case "${ORM_BROKER_ENABLED_BEFORE:-}" in
+        enabled) "$ORM_SYSTEMCTL" enable orm-broker.service || return 1 ;;
+        disabled) "$ORM_SYSTEMCTL" disable orm-broker.service || return 1 ;;
+        enabled-runtime) "$ORM_SYSTEMCTL" enable --runtime orm-broker.service || return 1 ;;
+        *) return 1 ;;
+    esac
+    case "${ORM_BROKER_ACTIVE_BEFORE:-}" in
+        active) "$ORM_SYSTEMCTL" start orm-broker.service || return 1 ;;
+        inactive|failed) "$ORM_SYSTEMCTL" stop orm-broker.service || return 1 ;;
+        *) return 1 ;;
+    esac
+}
