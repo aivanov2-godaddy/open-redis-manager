@@ -24,8 +24,8 @@ This catalog records the public product behavior observed on the reference site 
 
 | Feature | Expected behavior | Prototype |
 |---|---|---|
-| Fleet dashboard | Summarize managed/running accounts, connections, memory, backend availability and service health. | Overview |
-| Account manager | Search and filter accounts by state; inspect usage; start, stop, restart and edit within package limits. | Accounts |
+| Fleet dashboard | Summarize managed/running accounts, connections, memory, backend availability and service health. | The installed WHM page shows a root-only, read-only paginated inventory with normalized service states. Aggregate connections, memory and alerts remain unimplemented. |
+| Account manager | Search and filter accounts by state; inspect usage; start, stop, restart and edit within package limits. | Search and state filters apply to the current inventory page. Per-account operations, usage and package limits remain unimplemented. |
 | Backend discovery | Detect Redis and Valkey service, server/CLI binary, version and managed account counts. Explain selection and migration readiness. | WHM displays read-only discovery and lets root WHM select the installed default for future ORM instances; account counts and migration readiness remain unavailable. |
 | Redis command console | Run an allowlisted set of read-only diagnostics against a chosen account, or offer a carefully permissioned admin console with audit. | CLI |
 | Backups | Browse account snapshots and request targeted or fleet backups; report partial failures per account. | Backups |

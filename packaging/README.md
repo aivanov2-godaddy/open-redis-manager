@@ -4,7 +4,7 @@ This folder contains the cPanel and WHM registration files, authenticated UI ent
 
 - `cpanel/install.json` registers one feature group and one Jupiter interface link.
 - `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer, compares the LiveAPI username with the local broker identity, and shows only that account's private socket path and PHP, Node.js and Python client examples.
-- `systemd/orm-broker.service` runs the broker as root. Its fixed local protocol exposes only identity and per-account instance status/provision/start/stop; it accepts no command, path, username, backend or configuration values.
+- `systemd/orm-broker.service` runs the broker as root. Its fixed local protocol exposes identity, per-account instance status/provision/start/stop, and a UID-0-only paginated fleet inventory; it accepts no command, path, username, backend or configuration values.
 - `systemd/orm-instance@.service` runs each Redis-compatible process as its cPanel account, with an account-private Unix socket, TCP disabled, bounded resources, and access only to that account's data directory.
 - `src/Orm/Broker/InstanceManager.pm` verifies root-owned metadata and derives service/data paths only from the authenticated account mapping.
 - `whm/open_redis_manager.conf` registers a root-level WHM AppConfig entry guarded by `acls=all`.
@@ -34,7 +34,7 @@ The install/uninstall scripts and the new lifecycle manager still require a disp
 
 ## Current limits
 
-The WHM page requires root-level access and checks `REMOTE_USER` against cPanel's reseller ACL before displaying backend discovery or writing the selected backend policy. The policy is root-owned and affects new instances only. The cPanel page compares its LiveAPI username to the broker's kernel-derived peer identity. The broker resolves each operation from `SO_PEERCRED` and controls only the named account's fixed ORM systemd template; Redis TCP is disabled and its socket is private to that account. Configuration editing, connection secrets, monitoring, backup/restore, migration and production support remain unimplemented.
+The WHM page checks `REMOTE_USER` against cPanel's reseller ACL before displaying backend discovery or the root-only fleet view, and only root may change the selected backend policy. The policy is root-owned and affects new instances only. The cPanel page compares its LiveAPI username to the broker's kernel-derived peer identity. The broker resolves account operations from `SO_PEERCRED`; its fleet listing requires peer UID 0. Redis TCP is disabled and each socket is private to its account. Configuration editing, connection secrets, monitoring, backup/restore, migration and production support remain unimplemented.
 
 The cPanel `install.json` follows cPanel's documented groups/features model and points to a `.live.php` LiveAPI interface. WHM uses AppConfig with an explicit `all` ACL. The manual scripts in this folder now install the cPanel entry with `install_plugin`, place the interface/code/icon files in fixed documented locations, and register WHM through AppConfig. Uninstall uses `uninstall_plugin` and `unregister_appconfig` and only removes exact matching ORM files. The lifecycle has not been exercised on an actual cPanel server; do not use it on a production server.
 

@@ -5,7 +5,7 @@ namespace Orm\Cpanel;
 
 use Throwable;
 
-/** Sends only fixed, account-scoped operations to the local ORM broker. */
+/** Sends fixed ORM operations to the local broker and validates their bounded replies. */
 final class BrokerClient
 {
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
@@ -74,6 +74,61 @@ final class BrokerClient
             return null;
         }
         return ['success' => false, 'error' => $decoded['error'], 'version' => 1];
+    }
+
+    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */
+    public function requestFleetPage(int $offset): ?array
+    {
+        if ($offset < 0 || $offset > 10000) {
+            return null;
+        }
+        $request = json_encode(
+            ['offset' => $offset, 'operation' => 'fleet.list', 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        ) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 6, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($decoded) || ($decoded['success'] ?? null) !== true || ($decoded['version'] ?? null) !== 1
+            || ($decoded['offset'] ?? null) !== $offset || !is_int($decoded['total'] ?? null)
+            || $decoded['total'] < 0 || $decoded['total'] > 10000 || !is_array($decoded['entries'] ?? null)
+            || count($decoded['entries']) > 4) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($keys !== ['entries', 'offset', 'success', 'total', 'version']) {
+            return null;
+        }
+        $previous = '';
+        foreach ($decoded['entries'] as $entry) {
+            if (!is_array($entry) || !is_string($entry['username'] ?? null)
+                || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $entry['username']) !== 1
+                || $entry['username'] <= $previous || !is_string($entry['state'] ?? null)
+                || !in_array($entry['state'], ['stopped', 'starting', 'running', 'stopping', 'failed', 'unhealthy'], true)) {
+                return null;
+            }
+            $entryKeys = array_keys($entry);
+            sort($entryKeys);
+            if ($entryKeys !== ['state', 'username']) {
+                return null;
+            }
+            $previous = $entry['username'];
+        }
+        if ($offset + count($decoded['entries']) > $decoded['total']) {
+            return null;
+        }
+        return $decoded;
     }
 
     private function exchangeWithLocalBroker(string $request): ?string

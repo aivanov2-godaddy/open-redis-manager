@@ -46,4 +46,21 @@ $multiFrame = new BrokerClient(static fn (string $request): string =>
 );
 $assert($multiFrame->request('instance.status') === null, 'Reject multiple response frames.');
 
+$fleetRequests = [];
+$fleet = new BrokerClient(static function (string $request) use (&$fleetRequests): string {
+    $fleetRequests[] = $request;
+    return "{\"entries\":[{\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
+});
+$fleetPage = $fleet->requestFleetPage(30);
+$assert($fleetRequests[0] === "{\"offset\":30,\"operation\":\"fleet.list\",\"version\":1}\n",
+    'Send only the fixed fleet operation and bounded offset.');
+$assert($fleetPage['total'] === 31 && $fleetPage['entries'][0]['username'] === 'demo',
+    'Parse an account-scoped fleet page.');
+$assert($fleet->requestFleetPage(-1) === null, 'Reject negative fleet offsets before sending.');
+
+$badFleet = new BrokerClient(static fn (string $request): string =>
+    "{\"entries\":[{\"state\":\"running\",\"username\":\"../root\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+);
+$assert($badFleet->requestFleetPage(0) === null, 'Reject unsafe account names in fleet responses.');
+
 fwrite(STDOUT, "cPanel broker client checks passed: {$checks}\n");

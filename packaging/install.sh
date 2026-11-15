@@ -40,7 +40,7 @@ cleanup_on_error() {
                 "$ORM_BROKER_BIN" \
                 "$ORM_INSTANCE_LAUNCHER" \
                 "$ORM_BROKER_LIB/AccountResolver.pm" "$ORM_BROKER_LIB/BackendPolicy.pm" "$ORM_BROKER_LIB/Handler.pm" \
-                "$ORM_BROKER_LIB/InstanceManager.pm" \
+                "$ORM_BROKER_LIB/InstanceManager.pm" "$ORM_BROKER_LIB/FleetInventory.pm" \
                 "$ORM_BROKER_LIB/PeerCredentials.pm" "$ORM_BROKER_LIB/Protocol.pm" \
                 "$ORM_BROKER_LIB/Server.pm" "$ORM_BROKER_UNIT" "$ORM_INSTANCE_UNIT" \
                 "$ORM_CPanel_LIVE/index.live.php"
@@ -81,6 +81,7 @@ install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/AccountResolver.pm" "$ORM_BROKER_
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm" "$ORM_BROKER_LIB/BackendPolicy.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Handler.pm" "$ORM_BROKER_LIB/Handler.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/InstanceManager.pm" "$ORM_BROKER_LIB/InstanceManager.pm"
+install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/FleetInventory.pm" "$ORM_BROKER_LIB/FleetInventory.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm" "$ORM_BROKER_LIB/PeerCredentials.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm" "$ORM_BROKER_LIB/Protocol.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Server.pm" "$ORM_BROKER_LIB/Server.pm"

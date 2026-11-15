@@ -1,6 +1,6 @@
 # WHM administrator guide
 
-> This guide describes planned WHM workflows; the local prototype does not control a server.
+The installed WHM addon currently displays detected Redis and Valkey backends and the selected default for new instances. Root WHM administrators also have a read-only, paginated view of ORM-managed account names and normalized service states, with a per-page search and state filter.
 
 ## Dashboard and accounts
 
@@ -20,4 +20,6 @@ Show managed/running/stopped instances, aggregate memory and connections, backen
 
 ## Authorization
 
-Protect WHM routes with dedicated ACLs. Re-check identity and permission on every state change. A hidden button is not authorization. Refer to the [security model](../security-model.md).
+The fleet view is root-only. The WHM application asks the local broker for its inventory; the broker checks the kernel-derived peer UID and accepts the fleet operation only from UID 0. It lists only ORM metadata backed by a matching cPanel account record and valid local account identity. Names and state are escaped before rendering; IDs, paths, configuration, and credentials are omitted. Pagination keeps broker replies within the protocol size limit. Search and state filtering apply to the displayed page.
+
+Fleet status is read-only. The current page does not start, stop, repair, migrate, or reconfigure account services. Protect WHM routes with dedicated ACLs and re-check identity and permission on every future state change. A hidden button is not authorization. Refer to the [security model](../security-model.md).

@@ -12,6 +12,7 @@ use Orm::Broker::AccountResolver;
 use Orm::Broker::Handler;
 use Orm::Broker::PeerCredentials;
 use Orm::Broker::InstanceManager;
+use Orm::Broker::FleetInventory;
 use Orm::Broker::Protocol qw(max_frame_bytes encode_response);
 
 my $MAX_CLIENTS = 64;
@@ -38,6 +39,10 @@ sub run {
 
     my $resolver = Orm::Broker::AccountResolver->new(account_root => $account_root);
     my $instance_manager = Orm::Broker::InstanceManager->new();
+    my $fleet_inventory = Orm::Broker::FleetInventory->new(
+        resolver => $resolver,
+        instance_manager => $instance_manager,
+    );
     my $old_umask = umask(0111);
     my $server = IO::Socket::UNIX->new(
         Type => SOCK_STREAM,
@@ -124,14 +129,18 @@ sub run {
                 }
                 my $peer_uid = $clients{$fd}->{uid};
                 my $limit = $request->{operation} eq 'identity'
-                    ? $IDENTITY_RATE_LIMIT_PER_SECOND : $MUTATION_RATE_LIMIT_PER_SECOND;
-                if (!_rate_allowed(\%rates, $peer_uid, $now, $limit)) {
+                    ? $IDENTITY_RATE_LIMIT_PER_SECOND
+                    : $request->{operation} eq 'fleet.list' ? 1 : $MUTATION_RATE_LIMIT_PER_SECOND;
+                my $root_read = $request->{operation} eq 'fleet.list' ? 1 : 0;
+                if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read)) {
                     _write_and_close($selector, \%clients, $fd, {
                         error => 'rate_limited', success => JSON::PP::false, version => 1,
                     });
                     next;
                 }
-                my $response = Orm::Broker::Handler->handle_frame($frame, $peer_uid, $resolver, $instance_manager);
+                my $response = Orm::Broker::Handler->handle_frame(
+                    $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory
+                );
                 _write_and_close_encoded($selector, \%clients, $fd, $response);
                 next;
             }
@@ -164,8 +173,8 @@ sub run {
 }
 
 sub _rate_allowed {
-    my ($rates, $uid, $now, $limit) = @_;
-    return 0 if !defined($uid) || $uid == 0;
+    my ($rates, $uid, $now, $limit, $allow_root) = @_;
+    return 0 if !defined($uid) || ($uid == 0 && !$allow_root);
     my $window = $rates->{$uid};
     if (!$window || $now - $window->{started_at} >= 1) {
         $rates->{$uid} = { started_at => $now, count => 1 };
