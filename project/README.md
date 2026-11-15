@@ -34,6 +34,7 @@ Open a feature branch and pull request for each coherent implementation incremen
 - PR: [#10 — Add authenticated cPanel and WHM entrypoints](https://github.com/aivanov2-godaddy/open-redis-manager/pull/10) is open as a draft, stacked on PR #9.
 - PR: [#11 — Add development cPanel installer lifecycle](https://github.com/aivanov2-godaddy/open-redis-manager/pull/11) is open as a draft, stacked on PR #10.
 - PR: [#12 — Add application integration and update guides](https://github.com/aivanov2-godaddy/open-redis-manager/pull/12) is open as a draft, stacked on PR #11.
+- PR: [#13 — Add authenticated cPanel account context](https://github.com/aivanov2-godaddy/open-redis-manager/pull/13) is open as a draft, stacked on PR #12.
 - The cPanel page now displays the validated authenticated username from LiveAPI; Redis instance isolation and service operations remain unimplemented.
 - cPanel/WHM authentication shells, the WHM discovery view, and a development installer/uninstaller are in place. There is no account-instance adapter or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
 - Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.
