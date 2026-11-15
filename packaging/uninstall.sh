@@ -70,6 +70,7 @@ rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png
     "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
     "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" \
     "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" \
+    "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php" \
     "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
     "$ORM_BROKER_BIN" \
     "$ORM_INSTANCE_LAUNCHER" \

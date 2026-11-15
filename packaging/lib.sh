@@ -66,6 +66,7 @@ orm_install_paths_are_clear() {
         "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
         "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" \
         "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" \
+        "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php" \
         "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
         "$ORM_BROKER_BIN" \
         "$ORM_INSTANCE_LAUNCHER" \
@@ -144,6 +145,7 @@ $ORM_REPO_ROOT/src/Orm/Security/SessionRequestGuard.php|$ORM_3RDPARTY/src/Orm/Se
 $ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php|$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php
 $ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php|$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php
 $ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php|$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php
+$ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php|$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php
 $ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php|$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php
 $ORM_REPO_ROOT/bin/orm-broker.pl|$ORM_BROKER_BIN
 $ORM_REPO_ROOT/bin/orm-instance-launcher.pl|$ORM_INSTANCE_LAUNCHER

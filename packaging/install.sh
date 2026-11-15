@@ -35,6 +35,7 @@ cleanup_on_error() {
                 "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" \
                 "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" \
                 "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" \
+                "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php" \
                 "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
                 "$ORM_BROKER_BIN" \
                 "$ORM_INSTANCE_LAUNCHER" \
@@ -72,6 +73,7 @@ install -m 0644 "$ORM_REPO_ROOT/src/Orm/Security/SessionRequestGuard.php" "$ORM_
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php"
+install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php"
 install -m 0755 "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN"
 install -m 0755 "$ORM_REPO_ROOT/bin/orm-instance-launcher.pl" "$ORM_INSTANCE_LAUNCHER"

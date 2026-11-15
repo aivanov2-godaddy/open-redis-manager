@@ -19,4 +19,4 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM package policy | Per-package service availability and capacity limits. |
 | WHM branding | Provider identity, colors and a cPanel preview. |
 
-ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). They use demonstration data and do not imply a live control-panel integration.
+ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). The connection-details capture demonstrates the private Unix-socket path and PhpRedis example with synthetic data; it does not connect to a live cPanel account or cache service. Other prototype screens also use demonstration data.

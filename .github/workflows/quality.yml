@@ -34,6 +34,8 @@ jobs:
           prove -I src tests/*.t
       - name: Check cPanel broker client
         run: php tests/cpanel-broker-client.php
+      - name: Check cPanel connection details
+        run: php tests/cpanel-connection-details.php
       - name: Check cPanel and WHM session mutation guard
         run: php tests/session-request-guard.php
       - name: Stage instance launcher for systemd unit verification

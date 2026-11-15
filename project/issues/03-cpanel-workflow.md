@@ -14,5 +14,5 @@ Connect the cPanel prototype to account-scoped operations and connection guidanc
 ## Progress
 
 - PR #16 merged cPanel status, initialize, start, and stop through fixed broker operations. Account identity is derived from the socket peer UID, and the cPanel request accepts no account ID or configuration payload.
-- The page uses cPanel's session-tokenized POST route. Connection details, configuration, presets, metrics, and application integration remain future work.
+- The page uses cPanel's session-tokenized POST route and now shows the account-private socket path, default database, authentication mode, and a PhpRedis example for provisioned instances. Copy controls, password management, configuration, presets, metrics, and other application helpers remain future work.
 - Linux CI passes; live lifecycle actions still need verification on a disposable cPanel host.

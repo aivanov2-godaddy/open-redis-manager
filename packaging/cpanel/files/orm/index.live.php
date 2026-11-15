@@ -5,6 +5,7 @@ require_once '/usr/local/cpanel/php/cpanel.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
 $cpanel = new CPANEL();
@@ -21,6 +22,9 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     }
 }
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
+$connectionDetails = $brokerVerified
+    ? \Orm\Cpanel\ConnectionDetails::forAccount($account->username(), $instanceStatus)
+    : null;
 $stateClass = match ($instanceStatus['state'] ?? null) {
     'running' => 'is-running',
     'starting', 'stopping' => 'is-pending',
@@ -56,6 +60,14 @@ try {
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
         .orm-note { margin-top: 18px; color: #59677c; }
+        .orm-connection { margin-top: 18px; }
+        .orm-connection dl { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 10px 18px; }
+        .orm-connection dt { color: #59677c; }
+        .orm-connection dd { margin: 0; overflow-wrap: anywhere; }
+        .orm-connection details { margin-top: 14px; }
+        .orm-connection summary { cursor: pointer; font-weight: 700; }
+        .orm-connection pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: #f2f5f9; }
+        @media (max-width: 600px) { .orm-connection dl { grid-template-columns: 1fr; gap: 4px; } }
       </style>
       <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
@@ -94,7 +106,31 @@ try {
                 </form>
               </div>
               <p class="orm-note">Stopping the cache disconnects application clients until you start it again.</p>
-              <p class="orm-note">The instance uses an account-private Unix socket. Connection snippets, configuration, monitoring and backups are not enabled in this build yet.</p>
+              <?php if ($connectionDetails !== null): ?>
+                <section class="orm-connection" aria-labelledby="orm-connection-title">
+                  <h3 id="orm-connection-title">Connection details</h3>
+                  <dl>
+                    <dt>Endpoint</dt><dd>Private Unix socket</dd>
+                    <dt>Socket path</dt><dd><code><?= htmlspecialchars($connectionDetails['socket_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></dd>
+                    <dt>Default database</dt><dd><?= htmlspecialchars((string) $connectionDetails['database'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+                    <dt>Authentication</dt><dd>Socket permissions; no Redis AUTH password is configured.</dd>
+                  </dl>
+                  <p class="orm-note">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm that the PHP runtime used by your site can see this path, especially if CageFS is enabled.</p>
+                  <details open>
+                    <summary>PHP with PhpRedis</summary>
+                    <pre><code><?= htmlspecialchars($connectionDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                  </details>
+                  <details>
+                    <summary>Node.js with node-redis</summary>
+                    <pre><code><?= htmlspecialchars($connectionDetails['node_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                  </details>
+                  <details>
+                    <summary>Python with redis-py</summary>
+                    <pre><code><?= htmlspecialchars($connectionDetails['python_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                  </details>
+                </section>
+              <?php endif; ?>
+              <p class="orm-note">Configuration editing, monitoring and backups are not enabled in this build yet.</p>
             <?php endif; ?>
             </div>
           <?php endif; ?>

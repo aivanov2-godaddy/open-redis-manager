@@ -7,14 +7,14 @@ This catalog records the public product behavior observed on the reference site 
 | Feature | Expected behavior | Prototype |
 |---|---|---|
 | Status and lifecycle | Show online, stopped, degraded or unavailable state; initialize, start and stop only the current account instance. | Authenticated cPanel entry point supports backend-gated initialize, status, start and stop through the peer-credential broker. Linux CI passes; live lifecycle behavior remains unverified. Uses account-private Unix socket; no metrics yet. |
-| Connection details | Show host, port, database and credential with the secret hidden by default; copy values on explicit request. | Connection |
+| Connection details | Show the active endpoint, database and authentication mode; reveal or copy a secret only on explicit request. | The installed cPanel page shows the current account's private Unix socket path, database 0, and a PhpRedis example. ORM-managed instances do not expose TCP or configure Redis AUTH in this build; copy controls and secret management remain unimplemented. |
 | Health and preflight | Explain whether an instance exists, is running and has authentication configured; link each warning to a remedy. | Dashboard |
 | Metrics | Present memory, peak memory, connected clients, uptime, command rate and hit/miss ratio with a selectable time window. Mark stale samples. | Monitoring |
 | Presets | Offer WordPress, Laravel, Magento, session cache and generic starting profiles. Validate every saved setting against provider ceilings. | Configuration |
 | Advanced settings | Configure memory ceiling, eviction policy, database count, timeout, clients and persistence when provider exposure allows it. | Configuration |
 | Backups and restore | Create account-scoped backups, list retained snapshots, and take a safety snapshot before replacing current data during restore. | Backups |
 | Application detection | Detect common app markers without reading secrets or changing files; show an integration status that the user can correct. | Applications |
-| Connection helper | Render examples for WordPress, LiteSpeed Cache, Laravel, Magento, plain PHP, Node.js and Python. Mask secrets in generated diagnostics. | Applications |
+| Connection helper | Render examples for WordPress, LiteSpeed Cache, Laravel, Magento, plain PHP, Node.js and Python. Mask secrets in generated diagnostics. | The installed cPanel page includes PhpRedis, node-redis and redis-py Unix-socket examples. Framework-specific configuration and diagnostics remain unimplemented. |
 | Diagnostics export | Download a support bundle with configuration and health context while redacting credentials and private values. | Diagnostics |
 | Health guidance | Summarize the state with actionable suggestions for memory pressure, weak cache hit ratio, connection issues and disabled runtime clients. | Dashboard |
 | Safe live configuration | Apply an account-level memory change live where supported; preserve account ownership and report apply failures instead of implying the saved file took effect. | Configuration |
