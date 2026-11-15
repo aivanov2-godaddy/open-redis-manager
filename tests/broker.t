@@ -350,8 +350,11 @@ $current_snapshot = 'live before rollback';
 $fail_restore_start_once = 1;
 my $rolled_back_restore = $manager->dispatch('backup.restore', $account, undef, undef, $restore_id);
 is($rolled_back_restore->{error}, 'restore_failed', 'report a rejected restored RDB after rollback succeeds');
-is($rolled_back_restore->{safety_backup_id}, $restored->{safety_backup_id},
-    'identify the retained pre-restore snapshot when the attempted restore fails');
+like($rolled_back_restore->{safety_backup_id}, qr/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/,
+    'identify the fresh safety snapshot when the attempted restore fails');
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && (grep { $_->{id} eq $rolled_back_restore->{safety_backup_id} } @{$listed_backups->{backups}}),
+    'retain the failed attempt safety snapshot for manual recovery');
 open(my $rollback_dump, '<', $dump_path) or die "read rollback dump fixture: $!";
 binmode($rollback_dump);
 is(<$rollback_dump>, 'live before rollback', 'restore the safety snapshot after the selected backup fails to start');
