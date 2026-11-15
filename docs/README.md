@@ -15,6 +15,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 
 ## Operator guides
 
+- [Live cPanel smoke test](validation/cpanel-smoke.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [cPanel user guide](guides/cpanel.md)
