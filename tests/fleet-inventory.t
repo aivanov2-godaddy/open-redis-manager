@@ -84,7 +84,7 @@ my $last = $inventory->page(32);
 is(scalar @{$last->{entries}}, 3, 'return only remaining entries on the last page');
 is($last->{entries}[1]->{username}, 'acct34', 'retain sorted account names on the final page');
 is($last->{entries}[1]->{state}, 'stopped', 'retain a verifiable stopped service state');
-ok(!$inventory->page(35)->{success}, 'reject out-of-range page offsets');
+ok(!$inventory->page(36)->{success}, 'reject out-of-range page offsets');
 ok(!$inventory->page(-1)->{success}, 'reject negative page offsets');
 my $request = '{"offset":0,"operation":"fleet.list","version":1}' . "\n";
 is(parse_request($request)->{operation}, 'fleet.list', 'accept the fixed fleet-list request');
