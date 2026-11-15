@@ -103,4 +103,18 @@ orm_restore_broker_state
     exit 1
 }
 
+mock_enabled_state=enabled
+mock_active_state=failed
+orm_capture_broker_state
+orm_test_systemctl disable --now orm-broker.service
+orm_broker_state_matches_initial || {
+    printf 'failed broker state was not treated as non-active.\n' >&2
+    exit 1
+}
+orm_restore_broker_state
+[[ "$mock_enabled_state" == enabled && "$mock_active_state" == inactive ]] || {
+    printf 'rollback unexpectedly started a previously failed broker.\n' >&2
+    exit 1
+}
+
 printf 'Packaging instance-root guard tests passed.\n'
