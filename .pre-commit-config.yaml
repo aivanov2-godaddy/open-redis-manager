@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: php-lint
+        name: PHP syntax check
+        entry: python bin/lint-php.py
+        language: system
+        types: [php]
+      - id: php-account-context
+        name: cPanel account-context checks
+        entry: php tests/cpanel-account-context.php
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -7,7 +7,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM authenticated entry points and a development-only installer in [`packaging/`](packaging/README.md); the lifecycle has not been validated on a cPanel host.
+- cPanel and WHM entry points, a validated cPanel session identity display, and a development-only installer in [`packaging/`](packaging/README.md); the lifecycle has not been validated on a cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
