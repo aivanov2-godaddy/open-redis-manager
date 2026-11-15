@@ -16,13 +16,16 @@
 - Validate ports, memory limits, database counts, eviction policies, package IDs and backend identifiers against allowlists and provider limits.
 - Store credentials with restrictive permissions and display them masked. Keep secrets out of logs, audit payloads, diagnostics and support exports.
 - Rate-limit authentication-sensitive and expensive operations. Record denial and failure reasons without credential values.
+- Score memory use, client counts, evictions and operation rates as signals; report-only must be the initial mode, with warning or enforcement enabled only by scoped provider policy.
+- Protect AUTH from repeated failures with bounded rate limiting/lockout, detect weak or reused credentials without printing them, and preserve the previous working credential if rotation verification fails.
 - Audit root actions, credential rotation, restore, recovery, backend changes and policy changes.
-- Use report-only resource abuse detection as the initial mode; make warning/enforcement explicit, scoped and reversible.
 - Perform backup, validation and rollback before operations that can interrupt a running service or replace data.
 
 ## Data handling
 
 Metrics should be aggregated and retained only as long as the provider configures. Diagnostics should state their included fields and redact passwords, authorization headers, private keys, session IDs and user application content. No licensing or telemetry endpoint is required for the open-source core.
+
+The reference product also describes signed commercial licensing and billing lifecycle automation. ORM keeps licensing optional and outside the service-control core; neither commercial licensing nor WHMCS automation is implemented.
 
 ## Prototype boundary
 

@@ -2,19 +2,21 @@
 
 The reference product documents a broad range of application clients. Open Redis Manager will expose connection details and samples while leaving application-specific cache behavior to each application.
 
+Step-by-step connection examples are collected in the [application guides](guides/applications/README.md). They use placeholders and describe integration steps; they do not configure customer applications.
+
 | Integration | Use case | Planned helper |
 |---|---|---|
-| WordPress | Persistent object cache | Host/port/password configuration and setup checklist |
-| LiteSpeed Cache | WordPress object cache | Compatible connection field guide and extension preflight |
-| WooCommerce | Catalog, cart and object caching | WordPress setup plus checkout caution notes |
-| Laravel | Cache, sessions, queues and rate limiting | Environment variables and cache/session configuration example |
-| Magento | Cache and session storage | Connection prerequisites and validation checklist |
-| PHP | Custom app cache/session use | `phpredis` / compatible client availability check and minimal example |
-| Node.js | Application cache and sessions | `redis` client example |
-| Python | Application cache and sessions | `redis-py` example |
-| Custom APIs and dashboards | Hot data and repeated computation | Generic host/port/database setup |
-| Forums and membership sites | Sessions and repeated lookups | Generic session integration guidance |
-| CRMs and admin applications | Dashboard and record cache | Generic cache integration guidance |
+| WordPress | Persistent object cache | [Object-cache setup](guides/applications/wordpress.md) |
+| LiteSpeed Cache | WordPress object cache | [LiteSpeed setup and runtime checklist](guides/applications/litespeed-cache.md) |
+| WooCommerce | Catalog, cart and object caching | [WordPress setup and checkout checks](guides/applications/wordpress.md) |
+| Laravel | Cache, sessions, queues and rate limiting | [Laravel environment example](guides/applications/laravel.md) |
+| Magento | Cache backend | [Version-aware Magento setup](guides/applications/magento.md) |
+| PHP | Custom app cache/session use | [phpredis example](guides/applications/php.md) |
+| Node.js | Application cache and sessions | [node-redis example](guides/applications/nodejs.md) |
+| Python | Application cache and sessions | [redis-py example](guides/applications/python.md) |
+| Custom APIs and dashboards | Hot data and repeated computation | [Generic integration checklist](guides/applications/generic-apps.md) |
+| Forums and membership sites | Sessions and repeated lookups | [Generic integration checklist](guides/applications/generic-apps.md) |
+| CRMs and admin applications | Dashboard and record cache | [Generic integration checklist](guides/applications/generic-apps.md) |
 | CloudLinux PHP Selector | Extension visibility per PHP version | Admin checklist for enabling the PHP Redis extension |
 | CageFS | User runtime visibility | Admin checklist for refreshing the environment after extension changes |
 | EasyApache | PHP extension packages | Match extension packages to enabled PHP versions |

@@ -16,6 +16,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 ## Operator guides
 
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
+- [WHM update lifecycle](guides/update-lifecycle.md)
 - [cPanel user guide](guides/cpanel.md)
 - [WHM administrator guide](guides/whm.md)
 - [Configuration and presets](guides/configuration-presets.md)
@@ -26,5 +27,6 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [cPanel and WHM entry-point scaffold](../packaging/README.md)
 - [CloudLinux runtime integration](guides/cloudlinux.md)
 - [Application integrations](integrations.md)
+- [Application connection guides](guides/applications/README.md)
 - [Security model](security-model.md)
 - [Operations guide](operations.md)

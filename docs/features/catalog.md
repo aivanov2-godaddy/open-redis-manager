@@ -17,6 +17,7 @@ This catalog records the public product behavior observed on the reference site 
 | Connection helper | Render examples for WordPress, LiteSpeed Cache, Laravel, Magento, plain PHP, Node.js and Python. Mask secrets in generated diagnostics. | Applications |
 | Diagnostics export | Download a support bundle with configuration and health context while redacting credentials and private values. | Diagnostics |
 | Health guidance | Summarize the state with actionable suggestions for memory pressure, weak cache hit ratio, connection issues and disabled runtime clients. | Dashboard |
+| Safe live configuration | Apply an account-level memory change live where supported; preserve account ownership and report apply failures instead of implying the saved file took effect. | Configuration |
 
 ## WHM server administration
 
@@ -33,10 +34,13 @@ This catalog records the public product behavior observed on the reference site 
 | Package limits | Set eligibility, memory/client/database ceilings, backup retention and optional auto-provision behavior per package. | Packages |
 | Reseller quotas | Summarize accounts and consumption; cap new instances and aggregate memory without mutating existing services. | Resellers |
 | Security | Surface authentication failures, credential hygiene and resource-abuse signals; rotate credentials with rollback-safe sequencing. | Security |
+| Abuse reports | Score memory, client, eviction, and operation-rate signals; report findings first, with enforcement as a separate explicit policy. | Security |
+| Authentication protection | Rate-limit repeated authentication failures, audit lockouts without logging secrets, and detect weak or reused credentials without exposing values. | Security |
 | Branding | Configure provider product name, logo, support link and accessible color palette with live preview. | Branding |
 | Updates | Check release metadata and expose an administrator-approved update path that preserves existing accounts. | Updates |
 | Audit | Record privileged changes and operation results without secrets; support filtering and export. | Audit |
 | Backend migration | Snapshot, switch one account, verify health and connectivity, then roll back on failure. Require explicit confirmation and show downtime/data semantics. | Migration |
+| Update lifecycle | Show version/release state in WHM, preserve existing account configuration, and verify registration, visibility, health, and reported version after an update. | Updates |
 
 ## Integrations
 
