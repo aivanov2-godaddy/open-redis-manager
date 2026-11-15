@@ -33,6 +33,8 @@ ok(!encode_response([]), 'response encoder rejects non-object payloads');
 
 my $tmp = tempdir(CLEANUP => 1);
 my $account_root = "$tmp/accounts";
+my @test_groups = split /\s+/, $);
+my $test_gid = 0 + ($test_groups[0] // $<);
 make_path($account_root);
 chmod(0755, $account_root) or die "chmod account root: $!";
 my $account_file = "$account_root/ormtest";
@@ -44,10 +46,10 @@ chmod(0644, $account_file) or die "chmod account fixture: $!";
 my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
-    lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $< }; },
+    lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $test_gid }; },
 );
 is($resolver->resolve_uid(43210), 'ormtest', 'resolve a mapped UID through a trusted account record');
-is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $< }, 'resolve trusted UID and primary GID');
+is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $test_gid }, 'resolve trusted UID and primary GID');
 ok(!defined($resolver->resolve_uid(0)), 'reject root identity');
 ok(!defined($resolver->resolve_uid(undef)), 'reject missing UID');
 
@@ -119,8 +121,7 @@ my $manager = Orm::Broker::InstanceManager->new(
         return (1, '');
     },
 );
-my $groups = [split /\s+/, $)];
-my $account = { name => 'ormtest', uid => $<, gid => 0 + ($groups->[0] // $<) };
+my $account = { name => 'ormtest', uid => $<, gid => $test_gid };
 is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
