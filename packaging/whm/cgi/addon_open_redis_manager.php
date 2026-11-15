@@ -83,8 +83,9 @@ if (!$authorized) {
 
 WHM::header('Open Redis Manager', 0, 0);
 ?>
+<style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
-  <h1 id="orm-title">Open Redis Manager</h1>
+  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true"><rect x="1" y="1" width="62" height="62" rx="17" fill="#D92D20"/><g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.2"><path d="M32 10 49 19 32 28 15 19 32 10Z"/><path d="M15 19v8l17 9 17-9v-8"/><path d="M15 28v8l17 9 17-9v-8"/><path d="M15 37v4l17 9 17-9v-4"/></g><g fill="#FFFFFF"><circle cx="21" cy="23" r="1.6"/><circle cx="21" cy="32" r="1.6"/><circle cx="21" cy="41" r="1.6"/></g></svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
   <?php elseif ($report['status'] !== 'supported-platform'): ?>

@@ -20,6 +20,9 @@ sub parse_request {
     if ($frame =~ /\A\{"action":"(start|stop|restart)","operation":"fleet\.control","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { action => $1, operation => 'fleet.control', username => $2, version => 1 };
     }
+    if ($frame =~ /\A\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","operation":"backup\.restore","version":1\}\n\z/) {
+        return { backup_id => $1, operation => 'backup.restore', version => 1 };
+    }
     if ($frame =~ /\A\{"operation":"instance\.provision","preset":"(wordpress|laravel|magento|session|generic)","version":1\}\n\z/) {
         return { operation => 'instance.provision', preset => $1, version => 1 };
     }

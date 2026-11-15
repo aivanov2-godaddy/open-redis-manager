@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — Backups and recovery</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172235; font-family: Arial, sans-serif; }
+    .topbar { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 34px; color: #fff; background: #18283f; }
+    .brand-icon { width: 35px; height: 35px; }
+    .topbar strong { font-size: 17px; }
+    .topbar span { margin-left: auto; color: #d0d9e6; font-size: 13px; }
+    main { max-width: 940px; margin: 34px auto; padding: 0 24px; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    .subtitle { margin: 0 0 22px; color: #65748a; line-height: 1.5; }
+    .card { padding: 27px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+    .state { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 18px; padding: 6px 12px; border-radius: 999px; background: #e9f7ef; color: #176b3a; font-size: 13px; font-weight: 700; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #27a35e; }
+    h2 { margin: 0 0 8px; font-size: 21px; }
+    .explain { margin: 0 0 18px; color: #65748a; line-height: 1.5; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 15px; }
+    .toolbar p { margin: 0; color: #65748a; font-size: 13px; }
+    button { padding: 11px 17px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-size: 14px; font-weight: 700; }
+    .snapshot-list { margin: 0; padding: 0; list-style: none; border: 1px solid #e0e6ee; border-radius: 9px; overflow: hidden; }
+    .snapshot-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 17px 18px; border-bottom: 1px solid #e8edf3; }
+    .snapshot-list li:last-child { border-bottom: 0; }
+    .snapshot-title { margin: 0 0 5px; color: #1f3048; font-size: 14px; font-weight: 700; }
+    .snapshot-meta { margin: 0; color: #738096; font-size: 12px; }
+    .actions { display: flex; align-items: center; gap: 15px; }
+    .actions a { color: #2855d9; font-size: 13px; text-decoration: none; }
+    .actions button { padding: 8px 12px; border: 1px solid #efc7c7; background: #fff; color: #a42828; }
+    .warning { display: flex; gap: 12px; margin: 18px 0 0; padding: 15px 16px; border-left: 4px solid #bf7a18; border-radius: 5px; background: #fff8e9; color: #57390e; font-size: 13px; line-height: 1.55; }
+    .warning svg { width: 19px; height: 19px; flex: 0 0 19px; margin-top: 1px; }
+    .note { margin: 18px 0 0; color: #65748a; font-size: 12px; line-height: 1.5; }
+    .footer { margin: 18px 0; text-align: center; color: #7b8798; font-size: 12px; }
+    @media (max-width: 680px) { main { margin: 22px auto; padding: 0 14px; } .card { padding: 20px; } .toolbar { align-items: flex-start; flex-direction: column; } .snapshot-list li { grid-template-columns: 1fr; gap: 13px; } .actions { justify-content: flex-start; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <svg class="brand-icon" viewBox="0 0 64 64" aria-hidden="true"><rect x="1" y="1" width="62" height="62" rx="17" fill="#D92D20"/><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.2"><path d="M32 10 49 19 32 28 15 19 32 10Z"/><path d="M15 19v8l17 9 17-9v-8M15 28v8l17 9 17-9v-8M15 37v4l17 9 17-9v-4"/></g><g fill="#fff"><circle cx="21" cy="23" r="1.6"/><circle cx="21" cy="32" r="1.6"/><circle cx="21" cy="41" r="1.6"/></g></svg>
+    <strong>Open Redis Manager</strong>
+    <span>cPanel · synthetic preview</span>
+  </header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="subtitle">Manage explicit snapshots for this account. ORM does not enable persistence or schedule backups.</p>
+    <section class="card" aria-label="Synthetic ORM backup and restore preview">
+      <p class="state"><span class="dot"></span>Running</p>
+      <h2>Backups and recovery</h2>
+      <p class="explain">Create a point-in-time RDB snapshot, download a retained copy, or restore one to this cache.</p>
+      <div class="toolbar"><p>3 of 3 snapshots retained · newest first</p><button type="button">Create backup</button></div>
+      <ul class="snapshot-list">
+        <li><div><p class="snapshot-title">2026-11-16 12:42:10 UTC</p><p class="snapshot-meta">snapshot-1794832930-7d3a8c21.rdb · 18.4 MiB</p></div><div class="actions"><a href="#download-newest">Download backup</a><button type="button">Restore</button></div></li>
+        <li><div><p class="snapshot-title">2026-11-15 18:10:44 UTC</p><p class="snapshot-meta">snapshot-1794766244-1a6c903e.rdb · 17.9 MiB</p></div><div class="actions"><a href="#download-previous">Download backup</a><button type="button">Restore</button></div></li>
+        <li><div><p class="snapshot-title">2026-11-14 09:03:28 UTC</p><p class="snapshot-meta">snapshot-1794647008-b04fe277.rdb · 16.2 MiB</p></div><div class="actions"><a href="#download-oldest">Download backup</a><button type="button">Restore</button></div></li>
+      </ul>
+      <div class="warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3 22 20H2L12 3Z"/><path d="M12 9v5m0 3h.01" stroke-linecap="round"/></svg><div><strong>Restore interrupts cache access briefly.</strong> Writes newer than the selected snapshot may be lost. ORM creates and retains a safety snapshot first, validates the RDB, and verifies that the service starts afterward.</div></div>
+      <p class="note">Snapshots are limited to 128 MiB and three per account. If a restored snapshot cannot start, ORM attempts to restore the safety copy. This preview uses synthetic values and is not connected to cPanel or Redis/Valkey.</p>
+    </section>
+    <p class="footer">ORM · Account scoped cache service</p>
+  </main>
+</body>
+</html>

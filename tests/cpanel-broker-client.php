@@ -98,6 +98,49 @@ $assert($backupClient->request('backup.list')['backups'] === [$backupRow], 'Pars
 $assert($backupRequests[0] === "{\"operation\":\"backup.list\",\"version\":1}\n", 'Backup list requests contain no account identity or paths.');
 $assert($backupClient->request('backup.create')['backup'] === $backupRow, 'Parse a validated created backup receipt.');
 $assert($backupRequests[1] === "{\"operation\":\"backup.create\",\"version\":1}\n", 'Backup create requests contain no account identity or paths.');
+$restoreRequests = [];
+$restoreClient = new BrokerClient(static function (string $request) use (&$restoreRequests, $backupId): string {
+    $restoreRequests[] = $request;
+    return json_encode([
+        'backup_id' => $backupId,
+        'safety_backup_id' => 'snapshot-1794760001-b2c3d4e5.rdb',
+        'state' => 'running',
+        'success' => true,
+        'version' => 1,
+    ], JSON_THROW_ON_ERROR) . "\n";
+});
+$restored = $restoreClient->restoreBackup($backupId);
+$assert($restoreRequests[0] === "{\"backup_id\":\"{$backupId}\",\"operation\":\"backup.restore\",\"version\":1}\n",
+    'Restore requests contain only the selected opaque snapshot identifier.');
+$assert($restored === [
+    'backup_id' => $backupId,
+    'safety_backup_id' => 'snapshot-1794760001-b2c3d4e5.rdb',
+    'state' => 'running',
+    'success' => true,
+    'version' => 1,
+], 'Parse a restore receipt only when the selected snapshot and service state match.');
+$assert($restoreClient->restoreBackup('../other.rdb') === null,
+    'Reject path-like snapshot values before broker I/O.');
+$assert(count($restoreRequests) === 1, 'Do not send an invalid restore identifier to the broker.');
+$mismatchedRestore = new BrokerClient(static fn (string $request): string =>
+    "{\"backup_id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"safety_backup_id\":\"snapshot-1794760001-b2c3d4e5.rdb\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($mismatchedRestore->restoreBackup('snapshot-1794760002-c3d4e5f6.rdb') === null,
+    'Reject a success receipt for a different selected snapshot.');
+$malformedRestoreSafety = new BrokerClient(static fn (string $request): string =>
+    "{\"backup_id\":\"snapshot-1794760002-c3d4e5f6.rdb\",\"safety_backup_id\":\"../other.rdb\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($malformedRestoreSafety->restoreBackup('snapshot-1794760002-c3d4e5f6.rdb') === null,
+    'Reject an unsafe safety snapshot identifier.');
+$restoreFailure = new BrokerClient(static fn (string $request): string =>
+    "{\"error\":\"restore_failed\",\"safety_backup_id\":\"snapshot-1794760001-b2c3d4e5.rdb\",\"success\":false,\"version\":1}\n"
+);
+$assert($restoreFailure->restoreBackup($backupId) === [
+    'success' => false,
+    'error' => 'restore_failed',
+    'safety_backup_id' => 'snapshot-1794760001-b2c3d4e5.rdb',
+    'version' => 1,
+], 'Preserve the safety snapshot ID in a validated restore failure.');
 $malformedBackup = new BrokerClient(static fn (string $request): string =>
     "{\"backups\":[{\"created_at\":1794760000,\"id\":\"../other.rdb\",\"size_bytes\":4096}],\"success\":true,\"version\":1}\n"
 );

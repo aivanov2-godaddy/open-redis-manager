@@ -26,6 +26,9 @@ for my $operation (qw(backup.list backup.create)) {
     is(parse_request('{"operation":"' . $operation . '","version":1}' . "\n")->{operation},
         $operation, "accept fixed $operation request");
 }
+my $restore_request = '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","version":1}' . "\n";
+is(parse_request($restore_request)->{operation}, 'backup.restore', 'accept a canonical selected-backup restore request');
+is(parse_request($restore_request)->{backup_id}, 'snapshot-1794760000-a1b2c3d4.rdb', 'retain only the selected snapshot identifier');
 my $config_request = '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n";
 my $parsed_config = parse_request($config_request);
 ok($parsed_config && $parsed_config->{operation} eq 'instance.configure'
@@ -46,6 +49,9 @@ for my $invalid (
     '{"maxclients":50,"maxmemory_policy":"arbitrary","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
     '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":301,"version":1}' . "\n",
     '{"operation":"instance.configure","maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"timeout":0,"version":1}' . "\n",
+    '{"backup_id":"../other.rdb","operation":"backup.restore","version":1}' . "\n",
+    '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",
+    '{"operation":"backup.restore","backup_id":"snapshot-1794760000-a1b2c3d4.rdb","version":1}' . "\n",
 ) {
     ok(!parse_request($invalid), 'reject a non-canonical or oversized request');
 }
@@ -67,6 +73,7 @@ chmod(0644, $account_file) or die "chmod account fixture: $!";
 my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
+    restore_state_timeout => 1,
     lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $test_gid }; },
     lookup_name => sub { return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest'; return undef; },
 );
@@ -142,6 +149,11 @@ my $fail_config_always;
 my $fail_config_commit_once;
 my $fail_metrics_commit_once;
 my $fail_backup_once;
+my $fail_rdb_check;
+my $fail_restore_start_once;
+my $current_snapshot = 'synthetic RDB snapshot';
+my @restore_audit;
+my @rdb_check_calls;
 my $fail_config_get;
 my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
 my $manager = Orm::Broker::InstanceManager->new(
@@ -166,9 +178,20 @@ my $manager = Orm::Broker::InstanceManager->new(
         }
         open(my $snapshot, '>', $path) or return 0;
         binmode($snapshot);
-        print {$snapshot} 'synthetic RDB snapshot';
+        print {$snapshot} $current_snapshot;
         return close($snapshot) ? 1 : 0;
     },
+    rdb_check => sub {
+        my ($backend, $path, $checked_account) = @_;
+        push @rdb_check_calls, [$backend, $path, $checked_account->{name}];
+        return 0 if $fail_rdb_check;
+        open(my $checked, '<', $path) or return 0;
+        local $/;
+        my $content = <$checked>;
+        close($checked);
+        return defined($content) && $content =~ /\A(?:synthetic RDB snapshot|live pre-restore state|live before rollback)\z/;
+    },
+    restore_audit => sub { push @restore_audit, [@_]; return 1; },
     config_set => sub {
         my ($backend, $socket, $parameter, $value) = @_;
         push @config_calls, [$backend, $socket, $parameter, $value];
@@ -202,7 +225,10 @@ my $manager = Orm::Broker::InstanceManager->new(
         if ($args[0] eq 'is-active') {
             return ($unit_state eq 'active' || $unit_state eq 'activating' || $unit_state eq 'deactivating', $unit_state);
         }
-        if ($args[0] eq 'start') { $unit_state = 'active'; return (1, ''); }
+        if ($args[0] eq 'start') {
+            if ($fail_restore_start_once) { $fail_restore_start_once = 0; $unit_state = 'failed'; return (1, ''); }
+            $unit_state = 'active'; return (1, '');
+        }
         if ($args[0] eq 'stop') { $unit_state = 'inactive'; return (1, ''); }
         return (1, '');
     },
@@ -286,6 +312,54 @@ is($manager->dispatch('backup.create', $account)->{error}, 'backup_failed',
 $listed_backups = $manager->dispatch('backup.list', $account);
 ok($listed_backups->{success} && @{$listed_backups->{backups}} == 3,
     'preserve existing snapshots after a failed backup');
+my $restore_id = $listed_backups->{backups}->[1]->{id};
+my $dump_path = "$data_instances/ormtest/dump.rdb";
+open(my $old_dump, '>', $dump_path) or die "create previous dump fixture: $!";
+binmode($old_dump);
+print {$old_dump} 'old on-disk cache state';
+close($old_dump) or die "close previous dump fixture: $!";
+chmod(0600, $dump_path) or die "chmod previous dump fixture: $!";
+$current_snapshot = 'live pre-restore state';
+my $restored = $manager->dispatch('backup.restore', $account, undef, undef, $restore_id);
+ok($restored->{success} && $restored->{backup_id} eq $restore_id && $restored->{state} eq 'running',
+    'restore only the selected validated account snapshot and verify the service is running');
+like($restored->{safety_backup_id}, qr/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/,
+    'return the safety snapshot created before replacing cache data');
+open(my $restored_dump, '<', $dump_path) or die "read restored dump fixture: $!";
+binmode($restored_dump);
+local $/;
+is(<$restored_dump>, 'synthetic RDB snapshot', 'replace dump.rdb with the validated selected snapshot');
+close($restored_dump) or die "close restored dump fixture: $!";
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 3
+    && (grep { $_->{id} eq $restore_id } @{$listed_backups->{backups}})
+    && (grep { $_->{id} eq $restored->{safety_backup_id} } @{$listed_backups->{backups}}),
+    'retain both the selected snapshot and safety snapshot within the three-backup limit');
+is_deeply($restore_audit[-1], [$account->{uid}, 'ormtest', $restore_id, $restored->{safety_backup_id}, 'success', 'running'],
+    'audit restore actor, account, snapshot IDs, result, and service state');
+my $missing_restore = $manager->dispatch('backup.restore', $account, undef, undef, 'snapshot-0000000000-00000000.rdb');
+is($missing_restore->{error}, 'backup_not_found', 'reject a validly-shaped snapshot ID absent from this account');
+my $stop_calls_before_bad_rdb = scalar grep { $_->[0] eq 'stop' } @systemctl_calls;
+$fail_rdb_check = 1;
+is($manager->dispatch('backup.restore', $account, undef, undef, $restore_id)->{error}, 'backup_invalid',
+    'reject a snapshot that fails backend RDB validation');
+$fail_rdb_check = 0;
+is(scalar(grep { $_->[0] eq 'stop' } @systemctl_calls), $stop_calls_before_bad_rdb,
+    'do not stop or replace data when the selected RDB is invalid');
+$current_snapshot = 'live before rollback';
+$fail_restore_start_once = 1;
+my $rolled_back_restore = $manager->dispatch('backup.restore', $account, undef, undef, $restore_id);
+is($rolled_back_restore->{error}, 'restore_failed', 'report a rejected restored RDB after rollback succeeds');
+like($rolled_back_restore->{safety_backup_id}, qr/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/,
+    'identify the fresh safety snapshot when the attempted restore fails');
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && (grep { $_->{id} eq $rolled_back_restore->{safety_backup_id} } @{$listed_backups->{backups}}),
+    'retain the failed attempt safety snapshot for manual recovery');
+open(my $rollback_dump, '<', $dump_path) or die "read rollback dump fixture: $!";
+binmode($rollback_dump);
+is(<$rollback_dump>, 'live before rollback', 'restore the safety snapshot after the selected backup fails to start');
+close($rollback_dump) or die "close rollback dump fixture: $!";
+is($unit_state, 'active', 'restart the service after automatic rollback');
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],
@@ -464,6 +538,13 @@ ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.1, 1, 1, 1, 1),
     'keep root inventory reads available after a fleet control action');
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.2, 1, 1, 1, 'fleet.control'),
     'rate-limit repeated fleet control actions independently');
+my %backup_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 100, 1, 0, 60, 60),
+    'allow one account backup operation in its sixty-second window');
+ok(!Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 101, 1, 0, 60, 60),
+    'share the slow-operation limit between backup creation and restore');
+ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 101, 4, 0, 1, 1),
+    'keep ordinary account operations available while backup restore is rate-limited');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);
