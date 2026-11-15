@@ -43,6 +43,7 @@ This command does not mutate the host and is not exposed through the unauthentic
 - [Feature catalog](docs/features/catalog.md)
 - [Integration matrix](docs/integrations.md)
 - [Installation and compatibility plan](docs/installation.md)
+- [Live cPanel smoke test](docs/validation/cpanel-smoke.md)
 - [Security model](docs/security-model.md)
 - [Operations: monitoring, backups, recovery](docs/operations.md)
 - [Reference site content map](docs/features/website-content-map.md)
