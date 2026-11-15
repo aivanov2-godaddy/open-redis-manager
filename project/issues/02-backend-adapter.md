@@ -10,3 +10,9 @@ Create a backend interface for detection, provision, lifecycle, configuration, m
 - Every service/config path is derived from trusted account metadata.
 - No request data is interpolated into a shell command.
 - Migration is explicit, snapshot-backed, verified, and rolls back on failure.
+
+## Progress
+
+- The first read-only slice is available as `php bin/orm backend:discover --json`. It checks fixed common Linux binary paths and known systemd units; it does not change the host or inspect account data.
+- The command is CLI-only while the web prototype lacks cPanel authentication and WHM ACLs.
+- Supported cPanel package paths, Linux/systemd behavior, permissions, and live backend discovery still need validation on a disposable supported host before this issue can close.
