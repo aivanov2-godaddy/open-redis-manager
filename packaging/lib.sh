@@ -74,6 +74,7 @@ orm_install_paths_are_clear() {
         "$ORM_BROKER_LIB/BackendPolicy.pm" \
         "$ORM_BROKER_LIB/Handler.pm" \
         "$ORM_BROKER_LIB/InstanceManager.pm" \
+        "$ORM_BROKER_LIB/FleetInventory.pm" \
         "$ORM_BROKER_LIB/PeerCredentials.pm" \
         "$ORM_BROKER_LIB/Protocol.pm" \
         "$ORM_BROKER_LIB/Server.pm" \
@@ -153,6 +154,7 @@ $ORM_REPO_ROOT/src/Orm/Broker/AccountResolver.pm|$ORM_BROKER_LIB/AccountResolver
 $ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm|$ORM_BROKER_LIB/BackendPolicy.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Handler.pm|$ORM_BROKER_LIB/Handler.pm
 $ORM_REPO_ROOT/src/Orm/Broker/InstanceManager.pm|$ORM_BROKER_LIB/InstanceManager.pm
+$ORM_REPO_ROOT/src/Orm/Broker/FleetInventory.pm|$ORM_BROKER_LIB/FleetInventory.pm
 $ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm|$ORM_BROKER_LIB/PeerCredentials.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm|$ORM_BROKER_LIB/Protocol.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Server.pm|$ORM_BROKER_LIB/Server.pm

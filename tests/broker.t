@@ -11,6 +11,7 @@ use Orm::Broker::Handler;
 use Orm::Broker::BackendPolicy;
 use Orm::Broker::InstanceManager;
 use Orm::Broker::PeerCredentials;
+use Orm::Broker::Server;
 use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
 
 my $request = '{"operation":"identity","version":1}' . "\n";
@@ -121,6 +122,10 @@ ok(!(grep { $_->[-1] !~ /\Aorm-instance\@ormtest\.service\z/ && $_->[0] ne 'is-a
     'only the account-specific ORM systemd template is controlled');
 ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\Aorm-instance\@ormtest\.service\z/ } @systemctl_calls),
     'status never queries a global Redis or Valkey unit');
+my %root_rates;
+ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 0), 'deny root broker requests by default');
+ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 1), 'allow the explicitly gated root inventory operation');
+ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1.1, 1, 1), 'rate-limit root inventory requests');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);

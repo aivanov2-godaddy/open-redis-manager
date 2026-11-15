@@ -10,3 +10,7 @@ Provide administrators with fleet visibility and scoped maintenance operations.
 - Recovery scans before proposing repairs and only changes selected affected accounts.
 - Audit records include success/failure and omit secrets.
 - Backend health and migration readiness are visible without implicit migration.
+
+## Progress
+
+- PR #19 adds a root-only, paginated, read-only inventory of configured or unhealthy ORM accounts with normalized service state. Search and state filtering apply to the current page. Service controls, recovery, audit records, and migration readiness remain open.

@@ -75,7 +75,7 @@ rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png
     "$ORM_BROKER_BIN" \
     "$ORM_INSTANCE_LAUNCHER" \
     "$ORM_BROKER_LIB/AccountResolver.pm" "$ORM_BROKER_LIB/BackendPolicy.pm" \
-    "$ORM_BROKER_LIB/Handler.pm" "$ORM_BROKER_LIB/InstanceManager.pm" \
+    "$ORM_BROKER_LIB/Handler.pm" "$ORM_BROKER_LIB/InstanceManager.pm" "$ORM_BROKER_LIB/FleetInventory.pm" \
     "$ORM_BROKER_LIB/PeerCredentials.pm" "$ORM_BROKER_LIB/Protocol.pm" \
     "$ORM_BROKER_LIB/Server.pm" "$ORM_BROKER_UNIT" "$ORM_INSTANCE_UNIT"
 "$ORM_SYSTEMCTL" daemon-reload

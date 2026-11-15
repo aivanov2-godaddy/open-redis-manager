@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — WHM fleet</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #182434; background: #f3f6fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .topbar { height: 68px; display: flex; align-items: center; gap: 13px; padding: 0 36px; background: #fff; border-bottom: 1px solid #dce3ec; }
+    .mark { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 11px; color: white; background: #087d73; font-weight: 800; }
+    .product { font-weight: 750; font-size: 17px; }
+    .crumb { color: #65758a; }
+    main { max-width: 1160px; margin: 40px auto 70px; padding: 0 25px; }
+    .eyebrow { margin: 0 0 7px; color: #586b81; font-size: 14px; }
+    h1 { margin: 0; font-size: 30px; letter-spacing: -.5px; }
+    .intro { color: #5b6a7e; margin: 10px 0 25px; }
+    .notice { background: #eef5ff; border: 1px solid #c9dcf5; border-radius: 9px; padding: 13px 16px; color: #315477; margin-bottom: 23px; font-size: 14px; }
+    .panel { background: #fff; border: 1px solid #d9e1eb; border-radius: 12px; box-shadow: 0 5px 18px #27364b0a; overflow: hidden; }
+    .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 21px 24px; border-bottom: 1px solid #e5eaf0; }
+    h2 { margin: 0; font-size: 18px; }
+    .count { color: #68788d; font-size: 14px; margin-top: 4px; }
+    .scope { background: #e8f6f2; color: #08745e; border: 1px solid #bce6d8; border-radius: 999px; padding: 7px 11px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .filters { display: flex; flex-wrap: wrap; gap: 13px; padding: 17px 24px; border-bottom: 1px solid #e5eaf0; }
+    input, select { border: 1px solid #c8d2df; background: #fff; border-radius: 7px; height: 40px; padding: 0 12px; color: #243247; font: inherit; }
+    input { width: min(360px, 100%); }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: 15px 24px; border-bottom: 1px solid #edf0f4; }
+    thead th { font-size: 12px; color: #66768a; text-transform: uppercase; letter-spacing: .045em; background: #f9fafc; }
+    tbody th { font-weight: 650; }
+    .account { display: flex; align-items: center; gap: 11px; }
+    .avatar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #415a78; background: #edf2f8; font-size: 12px; font-weight: 800; }
+    .state { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 6px 10px; font-size: 13px; font-weight: 650; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .running { color: #0b7958; background: #e9f7f0; }
+    .stopped { color: #596b81; background: #eff2f6; }
+    .starting { color: #946400; background: #fff5d9; }
+    .unhealthy { color: #a53636; background: #fff0ee; }
+    .pagination { display: flex; justify-content: space-between; padding: 17px 24px; color: #68788d; font-size: 14px; }
+    .page-button { border: 1px solid #cbd5e1; background: #fff; color: #35475e; border-radius: 7px; padding: 8px 12px; font-weight: 650; }
+    .foot { text-align: center; color: #738197; font-size: 12px; margin: 21px; }
+    @media(max-width: 650px) { .topbar { padding: 0 17px; } main { margin-top: 25px; padding: 0 13px; } .panel-head { align-items: flex-start; flex-direction: column; } .filters { padding: 13px; } input { width: 100%; } th, td { padding: 12px 13px; } .optional { display: none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="mark">O</div><span class="product">Open Redis Manager</span><span class="crumb">›</span><span class="crumb">WHM · Fleet</span></header>
+  <main>
+    <p class="eyebrow">WHM / Open Redis Manager</p>
+    <h1>Managed instances</h1>
+    <p class="intro">Read-only service inventory for ORM-managed cPanel accounts.</p>
+    <div class="notice">Account names and normalized service states only. Service controls and recovery are not available in this view.</div>
+    <section class="panel" aria-labelledby="fleet-title">
+      <div class="panel-head"><div><h2 id="fleet-title">Account fleet</h2><div class="count">4 configured or unhealthy accounts · Page 1</div></div><div class="scope">● Root-only inventory</div></div>
+      <div class="filters"><input aria-label="Search this page" placeholder="Search account name…"><select aria-label="Filter by state"><option>All states</option><option>Running</option><option>Stopped</option><option>Starting</option><option>Unhealthy</option></select></div>
+      <table>
+        <thead><tr><th>cPanel account</th><th>Instance state</th></tr></thead>
+        <tbody>
+          <tr><th><span class="account"><span class="avatar">DE</span>demo</span></th><td><span class="state running"><i class="dot"></i>Running</span></td></tr>
+          <tr><th><span class="account"><span class="avatar">SH</span>shopuser</span></th><td><span class="state stopped"><i class="dot"></i>Stopped</span></td></tr>
+          <tr><th><span class="account"><span class="avatar">WE</span>webstore</span></th><td><span class="state starting"><i class="dot"></i>Starting</span></td></tr>
+          <tr><th><span class="account"><span class="avatar">AP</span>appcache</span></th><td><span class="state unhealthy"><i class="dot"></i>Unhealthy</span></td></tr>
+        </tbody>
+      </table>
+      <div class="pagination"><span>Showing 1–4 of 4</span><button class="page-button" disabled>Previous　 Next</button></div>
+    </section>
+    <p class="foot">Preview uses synthetic account names and states. No cPanel host or service is connected.</p>
+  </main>
+</body>
+</html>

@@ -18,5 +18,6 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM security | Firewall guidance, local binding and credential rotation. |
 | WHM package policy | Per-package service availability and capacity limits. |
 | WHM branding | Provider identity, colors and a cPanel preview. |
+| [ORM fleet inventory](../../screenshots/whm-fleet.png) | Synthetic example of the root-only read-only account status table. |
 
 ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). The connection-details capture demonstrates the private Unix-socket path and PhpRedis example with synthetic data; it does not connect to a live cPanel account or cache service. Other prototype screens also use demonstration data.

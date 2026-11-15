@@ -3,16 +3,35 @@ use strict;
 use warnings;
 use JSON::PP ();
 use Orm::Broker::Protocol qw(parse_request encode_response);
+use Orm::Broker::FleetInventory;
+
+sub _not_authorized {
+    return { error => 'not_authorized', success => JSON::PP::false, version => 1 };
+}
 
 sub handle_frame {
-    my ($class, $frame, $peer_uid, $resolver, $instance_manager) = @_;
+    my ($class, $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory) = @_;
     my $request = parse_request($frame);
     my $response;
     if (!$request) {
         $response = { error => 'invalid_request', success => JSON::PP::false, version => 1 };
     } else {
+        if ($request->{operation} eq 'fleet.list') {
+            if ($peer_uid != 0) {
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $fleet_response = eval { $fleet_inventory->page($request->{offset}) };
+                $response = ref($fleet_response) eq 'HASH' ? $fleet_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
+
         my $account = defined($resolver) ? eval { $resolver->resolve_account($peer_uid) } : undef;
-        if (ref($account) eq 'HASH' && $request->{operation} eq 'identity') {
+        if (defined($response)) {
+            # Fleet listing is handled above and never falls through to account operations.
+        } elsif (ref($account) eq 'HASH' && $request->{operation} eq 'identity') {
             $response = { success => JSON::PP::true, username => $account->{name}, version => 1 };
         } elsif (ref($account) eq 'HASH' && defined($instance_manager)) {
             $response = eval { $instance_manager->dispatch($request->{operation}, $account) };
