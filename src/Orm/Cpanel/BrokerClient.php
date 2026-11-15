@@ -12,6 +12,7 @@ final class BrokerClient
     private const MAX_RESPONSE_BYTES = 4096;
     private const OPERATIONS = [
         'instance.status',
+        'instance.metrics',
         'instance.provision',
         'instance.start',
         'instance.stop',
@@ -25,7 +26,7 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,error?:string}|null */
+    /** @return array{success:bool,version:int,state?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
     public function request(string $operation): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
@@ -56,6 +57,21 @@ final class BrokerClient
         if ($decoded['success']) {
             $keys = array_keys($decoded);
             sort($keys);
+            if (in_array('memory_used_bytes', $keys, true)) {
+                $metricKeys = ['commands_per_second', 'connected_clients', 'keyspace_hits', 'keyspace_misses',
+                    'memory_peak_bytes', 'memory_used_bytes', 'success', 'uptime_seconds', 'version'];
+                sort($metricKeys);
+                if ($keys !== $metricKeys) {
+                    return null;
+                }
+                foreach (['memory_used_bytes', 'memory_peak_bytes', 'connected_clients', 'uptime_seconds',
+                    'commands_per_second', 'keyspace_hits', 'keyspace_misses'] as $field) {
+                    if (!is_int($decoded[$field]) || $decoded[$field] < 0 || $decoded[$field] > 9_000_000_000_000_000) {
+                        return null;
+                    }
+                }
+                return $decoded;
+            }
             if ($keys !== ['state', 'success', 'version']
                 || !in_array($decoded['state'], ['not_configured', 'stopped', 'starting', 'running', 'stopping', 'failed'], true)) {
                 return null;
@@ -69,7 +85,7 @@ final class BrokerClient
             || !in_array($decoded['error'], [
                 'invalid_request', 'not_authorized', 'operation_failed', 'instance_unavailable',
                 'instance_exists', 'storage_unavailable', 'backend_policy_required', 'backend_unavailable',
-                'service_failed', 'not_configured', 'rate_limited',
+                'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
             ], true)) {
             return null;
         }

@@ -2,7 +2,7 @@
 
 ## Metrics
 
-The public reference names latency, memory/current peak, connections, uptime, command activity and trend history. The feature inventory also includes cache hits/misses. ORM should label the measurement interval and time range, indicate busy/stale samples and never equate a high health score with an uptime guarantee.
+The installed cPanel page currently requests one live Redis-compatible INFO sample for memory/current peak, connected clients, uptime, operations per second, and keyspace hits/misses. Values are fetched on page load, normalized to numeric fields, and are not retained. A failed sample is shown as unavailable. The public reference also names latency and trend history; those remain unimplemented. Future history must label its interval and time range, mark busy/stale samples, and never equate a high health score with an uptime guarantee.
 
 ## Health score
 

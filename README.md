@@ -37,7 +37,7 @@ php bin/orm backend:discover --json
 
 This command does not mutate the host and is not exposed through the unauthenticated prototype UI. Platform and package coverage limits are documented in [`docs/guides/backend-discovery.md`](docs/guides/backend-discovery.md).
 
-The installed cPanel and WHM entry points also expose a first lifecycle slice. WHM must choose an installed default backend; a cPanel user can initialize, view status, start, and stop only their own service. The cPanel page shows the account-private Unix socket path and PhpRedis, node-redis and redis-py examples for provisioned instances. Instances run under the cPanel account with TCP disabled, a 64 MiB cache limit, and persistence off by default. See the [instance lifecycle guide](docs/guides/instance-lifecycle.md) for current limits and validation status.
+The installed cPanel and WHM entry points also expose a first lifecycle slice. WHM must choose an installed default backend; a cPanel user can initialize, view status, read live metrics, start, and stop only their own service. The cPanel page shows the account-private Unix socket path and PhpRedis, node-redis and redis-py examples for provisioned instances. Current memory, client, uptime, operation-rate, and cache hit/miss values are fetched on page load, without historical retention. Instances run under the cPanel account with TCP disabled, a 64 MiB cache limit, and persistence off by default. See the [instance lifecycle guide](docs/guides/instance-lifecycle.md) for current limits and validation status.
 
 ## Documentation
 

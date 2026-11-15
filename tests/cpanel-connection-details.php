@@ -52,5 +52,9 @@ foreach ([
 $assert(str_contains($page, 'navigator.clipboard?.writeText'), 'copy through the browser clipboard API after a click');
 $assert(str_contains($page, 'role="status" aria-live="polite"'), 'announce copy success and failure accessibly');
 $assert(str_contains($page, 'Select and copy the example manually.'), 'explain the manual copy fallback');
+$assert(str_contains($page, "request('instance.metrics')"), 'request live metrics only for a running instance');
+$assert(str_contains($page, 'aria-labelledby="orm-usage-title"'), 'label the live usage section');
+$assert(str_contains($page, 'Cache hit ratio') && str_contains($page, 'Operations per second'), 'show activity and hit-ratio metrics');
+$assert(str_contains($page, 'history is not stored yet'), 'explain that current samples are not historical data');
 
 fwrite(STDOUT, "cPanel connection details checks passed: {$checks}\n");
