@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+
+use Orm\Backend\BackendDiscovery;
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit(1);
+}
+
+require dirname(__DIR__) . '/src/Orm/Backend/BackendDiscovery.php';
+
+$command = $argv[1] ?? '';
+$option = $argv[2] ?? null;
+if ($command !== 'backend:discover' || ($option !== null && $option !== '--json') || count($argv) > 3) {
+    fwrite(STDERR, "Usage: php bin/orm backend:discover [--json]\n");
+    exit(64);
+}
+
+$report = (new BackendDiscovery())->discover();
+fwrite(STDOUT, json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+exit($report['status'] === 'supported-platform' ? 0 : 2);

@@ -22,6 +22,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Backups and recovery](guides/backups-recovery.md)
 - [Monitoring and diagnostics](guides/monitoring-diagnostics.md)
 - [Redis and Valkey](guides/redis-valkey.md)
+- [Read-only backend discovery](guides/backend-discovery.md)
 - [CloudLinux runtime integration](guides/cloudlinux.md)
 - [Application integrations](integrations.md)
 - [Security model](security-model.md)

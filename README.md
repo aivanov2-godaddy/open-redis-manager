@@ -25,6 +25,16 @@ Open `http://127.0.0.1:8080/`. Use **cPanel** and **WHM** in the header to switc
 
 The planned product covers isolated per-account instances; Redis and Valkey backend discovery; cPanel lifecycle, metrics, configuration, presets, backups, application helpers and diagnostics; and WHM fleet operations, recovery, package and reseller policy, security, branding, audit, and updates. The observed feature inventory and delivery boundaries are in [`docs/features/catalog.md`](docs/features/catalog.md).
 
+## First functional slice
+
+The repository includes a read-only CLI discovery command for common Redis and Valkey server/client binaries and systemd unit states:
+
+```sh
+php bin/orm backend:discover --json
+```
+
+This command does not mutate the host and is not exposed through the unauthenticated prototype UI. Platform and package coverage limits are documented in [`docs/guides/backend-discovery.md`](docs/guides/backend-discovery.md).
+
 ## Documentation
 
 - [Product overview](docs/overview.md)

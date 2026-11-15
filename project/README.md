@@ -18,6 +18,8 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
 
+Issue #2 now has a CLI-only backend-discovery slice on branch `codex/orm-backend-discovery`. It is not wired to the prototype UI and does not complete the issue: supported cPanel package layouts and live Linux/systemd behavior remain to be validated on a disposable host.
+
 ## Pull request plan
 
 Open a feature branch and pull request for each coherent implementation increment after the corresponding issue is created. The first PR should deliver the prototype, docs, and UX screenshots; later PRs should ship one privileged boundary at a time. PRs require actual validation on the stated runtime and must disclose any screen that remains mock data.
