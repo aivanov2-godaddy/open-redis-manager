@@ -1,6 +1,6 @@
 # Installation, upgrade and uninstall
 
-> **Planned:** ORM has no installer yet. This guide is a design checklist, not a command to run on a cPanel server.
+> **Development stage:** a manual install/uninstall script now exists under [`packaging/`](../../packaging/README.md). It has not been run on a cPanel host and is not a production installer. This guide remains the checklist for the full lifecycle.
 
 ## Installation flow
 
@@ -25,6 +25,8 @@
 - Preserve account data and Redis/Valkey processes by default; allow explicit opt-in cleanup only after account-by-account review.
 - Remove only paths owned by ORM and report leftover user data without deleting it.
 - Verify cPanel/WHM registrations are removed while unrelated control-panel files stay untouched.
+
+The current uninstall script removes panel registrations and matching ORM interface files only. It does not remove Redis or Valkey processes, configuration, or data.
 
 ## Runtime prerequisites
 
