@@ -1,0 +1,20 @@
+# Reference screenshot map
+
+The reference site uses these product surfaces to explain its cPanel and WHM scope. The descriptions below are paraphrased from public accessible text; images and logos remain with their owner and are not redistributed here.
+
+| Surface | Information shown or workflow conveyed |
+|---|---|
+| cPanel overview | Service state, endpoint, AUTH controls, memory/database details and lifecycle shortcuts. |
+| cPanel monitoring | Latency, memory, connections, uptime, command activity and trend range. |
+| cPanel configuration and backups | Workload presets, settings, backup creation and restore. |
+| WHM dashboard | Fleet counts, total connections, available memory, backend version and history. |
+| WHM account management | Search/filter, per-account status, port, resource use and action links. |
+| WHM command console | Select an account, issue a Redis CLI command and read output. |
+| WHM backups | Account-specific and fleet snapshot workflows. |
+| WHM recovery | Scan results, health actions, restart/config/credential/permission repair. |
+| WHM global settings | Defaults, update checks, user CLI visibility and history retention. |
+| WHM security | Firewall guidance, local binding and credential rotation. |
+| WHM package policy | Per-package service availability and capacity limits. |
+| WHM branding | Provider identity, colors and a cPanel preview. |
+
+ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). They use demonstration data and do not imply a live control-panel integration.

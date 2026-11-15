@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible ORM problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Never attach credentials or unredacted customer/server data. The current UI is a demo and does not operate Redis."
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Include a concise description and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide minimal, safe steps.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: ORM revision or release
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: cPanel/WHM, OS, PHP, and Redis/Valkey versions. Do not include hostnames or account names.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      description: Remove passwords, tokens, IPs, account identifiers and customer data.
