@@ -70,13 +70,21 @@ is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, 
 ok(!defined($resolver->resolve_uid(0)), 'reject root identity');
 ok(!defined($resolver->resolve_uid(undef)), 'reject missing UID');
 
-chmod(0666, $account_file) or die "make writable account fixture: $!";
-ok(!defined($resolver->resolve_uid(43210)), 'reject group/world-writable account file');
-chmod(0644, $account_file) or die "restore account fixture mode: $!";
+SKIP: {
+    skip 'POSIX permission checks run on Linux CI', 1
+        if $^O eq 'MSWin32' || ($^O eq 'cygwin' && $ENV{WINDIR});
+    chmod(0666, $account_file) or die "make writable account fixture: $!";
+    ok(!defined($resolver->resolve_uid(43210)), 'reject group/world-writable account file');
+    chmod(0644, $account_file) or die "restore account fixture mode: $!";
+}
 unlink($account_file) or die "remove account fixture: $!";
-symlink("$tmp/outside", $account_file) or die "create symlink fixture: $!";
-ok(!defined($resolver->resolve_uid(43210)), 'reject a symlink account file');
-unlink($account_file) or die "remove symlink fixture: $!";
+SKIP: {
+    skip 'POSIX symlink checks run on Linux CI', 1
+        if $^O eq 'MSWin32' || ($^O eq 'cygwin' && $ENV{WINDIR});
+    symlink("$tmp/outside", $account_file) or die "create symlink fixture: $!";
+    ok(!defined($resolver->resolve_uid(43210)), 'reject a symlink account file');
+    unlink($account_file) or die "remove symlink fixture: $!";
+}
 open($file, '>', $account_file) or die "recreate account fixture: $!";
 print {$file} ('x' x 1_048_577);
 close($file) or die "close oversized fixture: $!";

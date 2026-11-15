@@ -237,12 +237,13 @@ sub _rollback_live_settings {
 sub _redis_config_get {
     my ($self, $backend, $socket) = @_;
     return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
-    return undef if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
     if (ref($self->{config_get}) eq 'CODE') {
+        return undef if !defined($socket) || ref($socket) || $socket =~ /[\r\n\0]/;
         my $settings = eval { $self->{config_get}->($backend, $socket) };
         return undef if !_valid_settings($settings);
         return { %{$settings} };
     }
+    return undef if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
     my %values;
     for my $parameter (qw(maxmemory maxmemory-policy maxclients timeout)) {
         # One pattern works on Redis and Valkey versions before multi-pattern CONFIG GET (7.0).
@@ -268,7 +269,7 @@ sub _redis_config_get {
 sub _redis_config_set {
     my ($self, $backend, $socket, $parameter, $value) = @_;
     return 0 if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
-    return 0 if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+    return 0 if !defined($socket) || ref($socket) || $socket =~ /[\r\n\0]/;
     return 0 if !defined($parameter) || !defined($value) || ref($parameter) || ref($value);
     return 0 if $parameter !~ /\A(?:maxmemory|maxmemory-policy|maxclients|timeout)\z/;
     return 0 if $value =~ /[\r\n\0]/;
@@ -280,6 +281,7 @@ sub _redis_config_set {
         my $ok = eval { $self->{config_set}->($backend, $socket, $parameter, $value) };
         return $ok ? 1 : 0;
     }
+    return 0 if $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
     my $output = _run_redis_cli($self, $backend, $socket, 'CONFIG', 'SET', $parameter, $value);
     return defined($output) && $output eq "OK\n" ? 1 : 0;
 }
