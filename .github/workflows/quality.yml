@@ -24,11 +24,17 @@ jobs:
         run: pre-commit run --all-files
       - name: Check packaging shell syntax
         run: bash -n packaging/install.sh packaging/uninstall.sh packaging/lib.sh
+      - name: Check packaging instance-root guards
+        run: sudo bash tests/packaging-guards.sh
       - name: Check live cPanel smoke-test entry point
         run: python tests/cpanel-live-smoke.py --help >/dev/null
       - name: Check broker Perl syntax and tests
         run: |
-          for file in src/Orm/Broker/*.pm bin/orm-broker.pl; do perl -I src -c "$file"; done
-          prove -I src tests/broker.t
-      - name: Verify systemd broker unit
-        run: systemd-analyze verify packaging/systemd/orm-broker.service
+          for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl; do perl -I src -c "$file"; done
+          prove -I src tests/*.t
+      - name: Check cPanel broker client
+        run: php tests/cpanel-broker-client.php
+      - name: Check cPanel and WHM session mutation guard
+        run: php tests/session-request-guard.php
+      - name: Verify ORM systemd units
+        run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service

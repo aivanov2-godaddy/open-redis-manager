@@ -18,7 +18,7 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
 
-Issue #2 has a CLI-only backend-discovery slice and now includes the identity-only broker foundation on branch `codex/orm-account-broker`. The broker does not manage Redis/Valkey; the account instance registry and service adapter remain future work.
+Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account provision/status/start/stop. This lifecycle slice is being developed on `codex/orm-account-instance-lifecycle`; it requires Linux CI and disposable cPanel lifecycle validation before merge.
 
 ## Pull request plan
 
@@ -29,7 +29,7 @@ Open a feature branch and pull request for each coherent implementation incremen
 - Upstream repository: public; it was empty when this work started.
 - Local repository: `main` targets the upstream default branch; the active implementation is developed as stacked feature branches.
 - GitHub: milestone #1 and issues #1–#7 are created.
-- PRs #8–#13 have been merged to `main`.
-- The current cPanel page cross-checks its LiveAPI username using a root-run identity-only broker; Redis instance isolation and service operations remain unimplemented.
-- cPanel/WHM authentication shells, the WHM discovery view, and a development installer/uninstaller are in place. There is no account-instance adapter or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
+- PRs #8–#15 have been merged to `main`.
+- The current lifecycle branch adds account-private Unix sockets, an account-owned systemd template, WHM backend selection, and cPanel provision/status/start/stop actions. The lifecycle itself has not yet passed Linux CI or a live disposable-host test.
+- Configuration/credentials, metrics, backups/restore, migration, package/reseller controls, and broad WHM operations remain open; issues #1, #2, #3, #5, #6, and #7 remain open.
 - Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.

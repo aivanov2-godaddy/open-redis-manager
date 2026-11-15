@@ -14,18 +14,25 @@ sub new {
         lookup => $args{lookup} // sub {
             my @entry = getpwuid($_[0]);
             return undef if !@entry || !defined($entry[0]) || !defined($entry[2]);
-            return { name => $entry[0], uid => $entry[2] };
+            return { name => $entry[0], uid => $entry[2], gid => $entry[3] };
         },
     }, $class;
 }
 
 sub resolve_uid {
     my ($self, $uid) = @_;
+    my $account = $self->resolve_account($uid);
+    return defined($account) ? $account->{name} : undef;
+}
+
+sub resolve_account {
+    my ($self, $uid) = @_;
     return undef if !defined($uid) || ref($uid) || $uid !~ /\A[0-9]+\z/ || $uid == 0;
 
     my $entry = eval { $self->{lookup}->($uid) };
     return undef if ref($entry) ne 'HASH';
     return undef if !defined($entry->{uid}) || $entry->{uid} != $uid;
+    return undef if !defined($entry->{gid}) || $entry->{gid} !~ /\A[0-9]+\z/;
     my $username = $entry->{name};
     return undef if !defined($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
 
@@ -49,7 +56,7 @@ sub resolve_uid {
     }
 
     close($handle) or return undef;
-    return $username;
+    return { name => $username, uid => 0 + $uid, gid => 0 + $entry->{gid} };
 }
 
 1;

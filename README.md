@@ -2,12 +2,12 @@
 
 An open-source Redis and Valkey control panel for cPanel and WHM. This repository starts with a standalone, dependency-free PHP prototype and a documented implementation plan for a production cPanel integration.
 
-> **Status:** early development. The demo screens use sample data. The cPanel/WHM scaffolds and installer have not been validated on a cPanel host. A root-run identity-only broker is under development; it does not operate Redis or Valkey. Do not install on a production server.
+> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed account-scoped broker for initialization, status, start and stop. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
 
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM entry points, a cPanel session identity check with a root-run Linux peer-identity broker, and a development-only installer in [`packaging/`](packaging/README.md); the lifecycle has not been validated on a cPanel host.
+- cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
@@ -27,7 +27,7 @@ Open `http://127.0.0.1:8080/`. Use **cPanel** and **WHM** in the header to switc
 
 The planned product covers isolated per-account instances; Redis and Valkey backend discovery; cPanel lifecycle, metrics, configuration, presets, backups, application helpers and diagnostics; and WHM fleet operations, recovery, package and reseller policy, security, branding, audit, and updates. The observed feature inventory and delivery boundaries are in [`docs/features/catalog.md`](docs/features/catalog.md).
 
-## First functional slice
+## Functional slices
 
 The repository includes a read-only CLI discovery command for common Redis and Valkey server/client binaries and systemd unit states:
 
@@ -37,6 +37,8 @@ php bin/orm backend:discover --json
 
 This command does not mutate the host and is not exposed through the unauthenticated prototype UI. Platform and package coverage limits are documented in [`docs/guides/backend-discovery.md`](docs/guides/backend-discovery.md).
 
+The installed cPanel and WHM entry points also expose a first lifecycle slice. WHM must choose an installed default backend; a cPanel user can initialize, view status, start, and stop only their own service. Instances run under the cPanel account with a private Unix socket, TCP disabled, a 64 MiB cache limit, and persistence off by default. See the [instance lifecycle guide](docs/guides/instance-lifecycle.md) for current limits and validation status.
+
 ## Documentation
 
 - [Product overview](docs/overview.md)
@@ -44,6 +46,7 @@ This command does not mutate the host and is not exposed through the unauthentic
 - [Integration matrix](docs/integrations.md)
 - [Installation and compatibility plan](docs/installation.md)
 - [Live cPanel smoke test](docs/validation/cpanel-smoke.md)
+- [Instance lifecycle](docs/guides/instance-lifecycle.md)
 - [Security model](docs/security-model.md)
 - [Operations: monitoring, backups, recovery](docs/operations.md)
 - [Reference site content map](docs/features/website-content-map.md)

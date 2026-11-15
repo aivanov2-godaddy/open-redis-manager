@@ -8,11 +8,17 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use lib 'src';
 use Orm::Broker::AccountResolver;
 use Orm::Broker::Handler;
+use Orm::Broker::BackendPolicy;
+use Orm::Broker::InstanceManager;
 use Orm::Broker::PeerCredentials;
 use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
 
 my $request = '{"operation":"identity","version":1}' . "\n";
 is(parse_request($request)->{operation}, 'identity', 'accept the one canonical identity request');
+for my $operation (qw(instance.status instance.provision instance.start instance.stop)) {
+    my $frame = '{"operation":"' . $operation . '","version":1}' . "\n";
+    is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
+}
 for my $invalid (
     '', '{}', $request . "\n", '{"version":1,"operation":"identity"}' . "\n",
     '{"operation":"identity","version":2}' . "\n", ('x' x (max_frame_bytes() + 1)),
@@ -35,9 +41,10 @@ chmod(0644, $account_file) or die "chmod account fixture: $!";
 my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
-    lookup => sub { return { name => 'ormtest', uid => $_[0] }; },
+    lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $< }; },
 );
 is($resolver->resolve_uid(43210), 'ormtest', 'resolve a mapped UID through a trusted account record');
+is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $< }, 'resolve trusted UID and primary GID');
 ok(!defined($resolver->resolve_uid(0)), 'reject root identity');
 ok(!defined($resolver->resolve_uid(undef)), 'reject missing UID');
 
@@ -57,7 +64,7 @@ ok(!defined($resolver->resolve_uid(43210)), 'reject oversized account file');
 my $unsafe_resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
-    lookup => sub { return { name => '../root', uid => $_[0] }; },
+    lookup => sub { return { name => '../root', uid => $_[0], gid => $< }; },
 );
 ok(!defined($unsafe_resolver->resolve_uid(43210)), 'reject unsafe mapped account names');
 
@@ -65,6 +72,79 @@ my $denied = Orm::Broker::Handler->handle_frame($request, 0, $resolver);
 like($denied, qr/"success":false/, 'handler denies root peer identity');
 my $invalid = Orm::Broker::Handler->handle_frame('{}' . "\n", 43210, $resolver);
 like($invalid, qr/"error":"invalid_request"/, 'handler returns a generic invalid-request response');
+
+my @groups = split /\s+/, $);
+my $test_gid = 0 + ($groups[0] // $<);
+my $etc_instances = "$tmp/etc/instances";
+my $data_instances = "$tmp/var/lib/instances";
+make_path($etc_instances, $data_instances);
+chmod(0750, $etc_instances) or die "chmod instance config root: $!";
+chmod(0700, $data_instances) or die "chmod instance data root: $!";
+my $policy_path = "$tmp/etc/backend-policy.json";
+open(my $policy_file, '>', $policy_path) or die "create backend policy: $!";
+print {$policy_file} '{"backend":"redis","version":1}' . "\n";
+close($policy_file) or die "close backend policy: $!";
+chmod(0600, $policy_path) or die "chmod backend policy: $!";
+my $policy = Orm::Broker::BackendPolicy->new(path => $policy_path, expected_owner_uid => $<);
+is($policy->selected_backend(), 'redis', 'read a root-owned explicit backend policy');
+
+my $unit_state = 'inactive';
+my @systemctl_calls;
+my $manager = Orm::Broker::InstanceManager->new(
+    etc_root => $etc_instances,
+    data_root => $data_instances,
+    policy => $policy,
+    expected_owner_uid => $<,
+    binary_paths => { redis => ['/usr/bin/redis-server'], valkey => ['/usr/bin/valkey-server'] },
+    binary_probe => sub { return $_[0] eq 'redis' && $_[1] eq '/usr/bin/redis-server'; },
+    systemctl_call => sub {
+        my (@args) = @_;
+        push @systemctl_calls, [@args];
+        if ($args[0] eq 'is-active') {
+            return ($unit_state eq 'active' || $unit_state eq 'activating' || $unit_state eq 'deactivating', $unit_state);
+        }
+        if ($args[0] eq 'start') { $unit_state = 'active'; return (1, ''); }
+        if ($args[0] eq 'stop') { $unit_state = 'inactive'; return (1, ''); }
+        return (1, '');
+    },
+);
+my $groups = [split /\s+/, $)];
+my $account = { name => 'ormtest', uid => $<, gid => 0 + ($groups->[0] // $<) };
+is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
+my $provisioned = $manager->dispatch('instance.provision', $account);
+ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
+is($manager->dispatch('instance.status', { name => 'ormother', uid => $< + 1, gid => $account->{gid} })->{state},
+    'not_configured', 'another account cannot see the first account manifest');
+is($manager->dispatch('instance.stop', $account)->{state}, 'stopped', 'stop the account-scoped unit');
+is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
+ok(!(grep { $_->[-1] !~ /\Aorm-instance\@ormtest\.service\z/ && $_->[0] ne 'is-active' } @systemctl_calls),
+    'only the account-specific ORM systemd template is controlled');
+ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\Aorm-instance\@ormtest\.service\z/ } @systemctl_calls),
+    'status never queries a global Redis or Valkey unit');
+my $manifest_path = "$etc_instances/ormtest/manifest.json";
+ok(-f $manifest_path, 'provisioning writes a trusted manifest');
+my @manifest_stat = stat($manifest_path);
+is($manifest_stat[4], $<, 'manifest is owned by the privileged manager');
+is($manifest_stat[5], $account->{gid}, 'manifest is readable by only the account group');
+my $data_path = "$data_instances/ormtest";
+my @data_stat = stat($data_path);
+is($data_stat[4], $account->{uid}, 'runtime data belongs to the cPanel account');
+is($data_stat[2] & 0777, 0700, 'runtime data is private to the cPanel account');
+open(my $config_file, '<', "$etc_instances/ormtest/redis.conf") or die "read generated config: $!";
+my $generated_config = do { local $/; <$config_file> };
+close($config_file);
+like($generated_config, qr/^port 0$/m, 'Redis TCP listener is disabled');
+like($generated_config, qr/^unixsocketperm 700$/m, 'Redis Unix socket is account-private');
+my $forged = $manager->dispatch('instance.start', { name => 'ormtest', uid => $< + 1, gid => $account->{gid} });
+ok(!$forged->{success}, 'manifest UID mismatch fails closed');
+ok(!$manager->dispatch('instance.some-other-action', $account)->{success}, 'unknown lifecycle operation is rejected');
+my $no_policy = Orm::Broker::BackendPolicy->new(path => "$tmp/etc/missing-policy.json", expected_owner_uid => $<);
+my $no_policy_manager = Orm::Broker::InstanceManager->new(
+    etc_root => $etc_instances, data_root => $data_instances, policy => $no_policy,
+    expected_owner_uid => $<, binary_probe => sub { 1 },
+);
+is($no_policy_manager->dispatch('instance.provision', { name => 'newacct', uid => $<, gid => $account->{gid} })->{error},
+    'backend_policy_required', 'provisioning requires an explicit provider backend policy');
 
 socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 is(Orm::Broker::PeerCredentials->uid_from_socket($left), $<, 'read peer UID from Linux socket credentials');

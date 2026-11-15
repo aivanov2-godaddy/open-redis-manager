@@ -15,4 +15,6 @@ Create a backend interface for detection, provision, lifecycle, configuration, m
 
 - The first read-only slice is available as `php bin/orm backend:discover --json`. It checks fixed common Linux binary paths and known systemd units; it does not change the host or inspect account data.
 - The standalone command is CLI-only. The separate WHM entrypoint calls the same discovery class only after AppConfig and the PHP ACL check grant root-level access; the unauthenticated prototype UI remains disconnected.
+- The current lifecycle branch adds a root-only WHM selection for the installed default backend, account-derived instance manifests/configuration, and fixed systemd provision/start/stop/status operations through the broker. It uses no TCP listener and does not touch an existing Redis/Valkey unit.
+- Linux tests and `systemd-analyze verify` for the instance template are required. The live cPanel smoke test still covers identity only; actual lifecycle remains unverified.
 - Supported cPanel package paths, Linux/systemd behavior, permissions, and live backend discovery still need validation on a disposable supported host before this issue can close.

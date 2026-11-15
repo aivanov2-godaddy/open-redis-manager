@@ -14,9 +14,11 @@ sub parse_request {
     my ($frame) = @_;
     return undef if !defined($frame) || ref($frame);
     return undef if length($frame) > $MAX_FRAME_BYTES;
-    return undef if $frame ne '{"operation":"identity","version":1}' . "\n";
+    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.provision|instance\.start|instance\.stop)","version":1\}\n\z/;
 
-    return { operation => 'identity', version => 1 };
+    my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;
+    return undef if !defined($operation);
+    return { operation => $operation, version => 1 };
 }
 
 sub encode_response {

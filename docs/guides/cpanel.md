@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point now reads and displays only the current authenticated username from cPanel LiveAPI; the Redis account manager remains unimplemented.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialize, status, start, and stop actions. Configuration, connection details, metrics, backups, and restore remain unimplemented.
 
 ## Overview
 
@@ -8,7 +8,7 @@ The account page should show service/backend state, allocated and used memory, c
 
 ## Lifecycle and connection details
 
-- Initialize/start and stop only the authenticated cPanel account's instance.
+- Initialize/start and stop only the authenticated cPanel account's instance. See the [instance lifecycle guide](instance-lifecycle.md).
 - Show the private endpoint, port, database and a secret masked by default.
 - Reveal/copy a secret only after explicit user action and avoid persisting it in the browser.
 - Explain that a compatible application client and application configuration are still required.
@@ -25,4 +25,4 @@ Create account-scoped snapshots within provider retention. Before restore, expla
 
 The cPanel entry point derives the account identity from cPanel's `Variables::get_user_information` UAPI response and validates it before rendering. It then compares that name with the identity returned by the local ORM broker, which maps the kernel-reported peer UID to a system account and a trusted cPanel account record. It does not accept an account name from query parameters or form fields. Never expose WHM-only controls in the cPanel route. The UAPI request asks only for the `user` value; either identity check failing leaves the page unavailable.
 
-The cPanel PHP execution UID and broker mapping have not been verified on a cPanel host. This check does not yet provide account instance isolation because there is no instance registry or service adapter. See the [cPanel LiveAPI guide](https://api.docs.cpanel.net/guides/guide-to-the-liveapi-system/guide-to-the-liveapi-system-php-class) and [cPanel variables reference](https://api.docs.cpanel.net/guides/guide-to-cpanel-variables), which recommends the UAPI Variables functions over deprecated `cpanelprint()` calls.
+The live smoke test confirmed the LiveAPI username and broker identity match on one test host, but the new service lifecycle has not been validated there. Forms submit through cPanel's session-tokenized interface; broker calls reject submitted identity and derive the target from `SO_PEERCRED`. See the [cPanel LiveAPI guide](https://api.docs.cpanel.net/guides/guide-to-the-liveapi-system/guide-to-the-liveapi-system-php-class) and [cPanel variables reference](https://api.docs.cpanel.net/guides/guide-to-cpanel-variables), which recommends the UAPI Variables functions over deprecated `cpanelprint()` calls.
