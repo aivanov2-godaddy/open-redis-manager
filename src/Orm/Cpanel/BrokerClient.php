@@ -264,6 +264,61 @@ final class BrokerClient
         return $decoded;
     }
 
+    /** @return array{success:bool,version:int,action?:string,audit_logged?:bool,state?:string,username?:string,error?:string}|null */
+    public function controlFleetAccount(string $username, string $action): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
+            || !in_array($action, ['start', 'stop', 'restart'], true)) {
+            return null;
+        }
+        $request = json_encode(
+            ['action' => $action, 'operation' => 'fleet.control', 'username' => $username, 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        ) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 4, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($decoded['success']) {
+            if ($keys !== ['action', 'audit_logged', 'state', 'success', 'username', 'version']
+                || ($decoded['action'] ?? null) !== $action || ($decoded['username'] ?? null) !== $username
+                || !is_bool($decoded['audit_logged'] ?? null)
+                || !in_array($decoded['state'] ?? null, ['stopped', 'starting', 'running', 'stopping', 'failed'], true)) {
+                return null;
+            }
+            return $decoded;
+        }
+        if (!in_array($keys, [['audit_logged', 'error', 'success', 'version'], ['error', 'success', 'version']], true)
+            || !in_array($decoded['error'] ?? null, [
+                'invalid_request', 'not_authorized', 'operation_failed', 'account_unavailable',
+                'instance_unavailable', 'not_configured', 'service_failed', 'rate_limited',
+            ], true)) {
+            return null;
+        }
+        if (array_key_exists('audit_logged', $decoded) && !is_bool($decoded['audit_logged'])) {
+            return null;
+        }
+        return [
+            'success' => false,
+            'error' => $decoded['error'],
+            'version' => 1,
+            ...(array_key_exists('audit_logged', $decoded) ? ['audit_logged' => $decoded['audit_logged']] : []),
+        ];
+    }
+
     private function exchangeWithLocalBroker(string $request): ?string
     {
         $errno = 0;

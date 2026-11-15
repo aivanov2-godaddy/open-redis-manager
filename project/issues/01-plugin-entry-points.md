@@ -15,7 +15,7 @@ Register account and administrator surfaces through supported cPanel/WHM interfa
 
 - Added a cPanel `install.json` group/feature definition and `.live.php` page using the documented LiveAPI session wrapper.
 - Added a WHM AppConfig registration with `acls=all`, a WHM PHP entrypoint, and a fail-closed check of the authenticated user against the fixed reseller ACL file.
-- The cPanel entrypoint is a LiveAPI shell and does not access account data. The WHM entrypoint verifies the root-level ACL and renders only the read-only binary/version/service discovery result; it does not inspect account state or mutate the host.
+- The cPanel entrypoint uses LiveAPI and the peer-credential broker for the signed-in account. The WHM entrypoint verifies the root-level ACL, renders read-only backend discovery, and delegates the fixed root-only account lifecycle controls to the broker. The issue's later progress history documents the expanded surfaces.
 - The cPanel page now obtains the username from the current LiveAPI session through UAPI, validates it, and renders it escaped. It still does not read or mutate account instance state; the response format and behavior must be confirmed on supported cPanel versions.
 - Added a Jupiter-targeted development installer/uninstaller using cPanel `install_plugin`/`uninstall_plugin` and WHM `register_appconfig`/`unregister_appconfig`, with collision checks and exact-file comparison before removal.
 - Supported cPanel/WHM versions and OS, upgrades, cPanel-host file placement/permissions, CSRF for future mutations, account isolation, and real server validation remain open until tested on a disposable cPanel host.

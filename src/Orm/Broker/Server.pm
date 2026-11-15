@@ -132,10 +132,12 @@ sub run {
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
                     : $request->{operation} eq 'fleet.list' ? 1
                     : $request->{operation} eq 'instance.metrics' ? 4
-                    : $request->{operation} eq 'backup.create' ? 1 : $MUTATION_RATE_LIMIT_PER_SECOND;
+                    : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'fleet.control') ? 1
+                    : $MUTATION_RATE_LIMIT_PER_SECOND;
                 my $rate_window = $request->{operation} eq 'backup.create' ? 60 : 1;
-                my $root_read = $request->{operation} eq 'fleet.list' ? 1 : 0;
-                if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window)) {
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control)\z/ ? 1 : 0;
+                my $rate_bucket = $request->{operation} eq 'fleet.control' ? 'fleet.control' : $rate_window;
+                if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
                     _write_and_close($selector, \%clients, $fd, {
                         error => 'rate_limited', success => JSON::PP::false, version => 1,
                     });
@@ -176,10 +178,11 @@ sub run {
 }
 
 sub _rate_allowed {
-    my ($rates, $uid, $now, $limit, $allow_root, $window_seconds) = @_;
+    my ($rates, $uid, $now, $limit, $allow_root, $window_seconds, $bucket) = @_;
     $window_seconds = 1 if !defined($window_seconds) || $window_seconds < 1;
     return 0 if !defined($uid) || ($uid == 0 && !$allow_root);
-    my $rate_key = $uid . ':' . $window_seconds;
+    $bucket = $window_seconds if !defined($bucket);
+    my $rate_key = $uid . ':' . $bucket;
     my $window = $rates->{$rate_key};
     if (!$window || $now - $window->{started_at} >= $window_seconds) {
         $rates->{$rate_key} = { started_at => $now, count => 1 };

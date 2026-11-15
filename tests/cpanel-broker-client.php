@@ -164,4 +164,35 @@ $badFleet = new BrokerClient(static fn (string $request): string =>
 );
 $assert($badFleet->requestFleetPage(0) === null, 'Reject unsafe account names in fleet responses.');
 
+$controlRequests = [];
+$controlClient = new BrokerClient(static function (string $request) use (&$controlRequests): string {
+    $controlRequests[] = $request;
+    return "{\"action\":\"restart\",\"audit_logged\":true,\"state\":\"starting\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$controlResult = $controlClient->controlFleetAccount('demo', 'restart');
+$assert($controlRequests[0] === "{\"action\":\"restart\",\"operation\":\"fleet.control\",\"username\":\"demo\",\"version\":1}\n",
+    'Send only a fixed fleet control action and validated target name.');
+$assert($controlResult === ['action' => 'restart', 'audit_logged' => true, 'state' => 'starting', 'success' => true, 'username' => 'demo', 'version' => 1],
+    'Parse a normalized transitional service state for a fleet action.');
+$assert($controlClient->controlFleetAccount('../root', 'restart') === null
+    && $controlClient->controlFleetAccount('demo', 'CONFIG') === null,
+    'Reject unsafe target names and actions before broker I/O.');
+$assert(count($controlRequests) === 1, 'Do not send malformed fleet action requests.');
+$mismatchedControl = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"stop\",\"state\":\"stopped\",\"success\":true,\"username\":\"other\",\"version\":1}\n"
+);
+$assert($mismatchedControl->controlFleetAccount('demo', 'stop') === null,
+    'Reject fleet action receipts for a different action or account.');
+$controlWithoutAudit = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"start\",\"audit_logged\":false,\"state\":\"starting\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($controlWithoutAudit->controlFleetAccount('demo', 'start')['audit_logged'] === false,
+    'Keep an unconfirmed audit status separate from a successful service request.');
+$controlFailure = new BrokerClient(static fn (string $request): string =>
+    "{\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"version\":1}\n"
+);
+$assert($controlFailure->controlFleetAccount('demo', 'start') === [
+    'success' => false, 'error' => 'not_configured', 'version' => 1, 'audit_logged' => true,
+], 'Parse a fixed safe fleet action failure.');
+
 fwrite(STDOUT, "cPanel broker client checks passed: {$checks}\n");

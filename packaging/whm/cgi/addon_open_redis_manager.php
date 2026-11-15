@@ -19,8 +19,51 @@ $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' 
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
+$fleetControlMessage = null;
+$controlRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.control';
+if ($controlRequest) {
+    $username = $_POST['username'] ?? null;
+    $action = $_POST['fleet_action'] ?? null;
+    $control = is_string($username) && is_string($action)
+        ? $fleetClient->controlFleetAccount($username, $action)
+        : null;
+    if ($control === null) {
+        $fleetControlMessage = ['type' => 'error', 'text' => 'The account action could not be verified. Refresh the page and try again.'];
+    } elseif ($control['success']) {
+        $fleetControlMessage = [
+            'type' => 'success',
+            'text' => ucfirst($control['action']) . ' requested for ' . $control['username'] . '. Current state: ' . $control['state'] . '.'
+                . ($control['audit_logged'] ? ' The result was recorded in the system authentication log.'
+                    : ' Warning: the service action may have completed, but its audit record could not be confirmed.'),
+        ];
+        if (is_array($fleetPage)) {
+            foreach ($fleetPage['entries'] as &$entry) {
+                if ($entry['username'] === $control['username']) {
+                    $entry['state'] = $control['state'];
+                }
+            }
+            unset($entry);
+        }
+    } else {
+        $fleetMessages = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'instance_unavailable' => 'The selected cache instance could not be verified.',
+            'not_configured' => 'The selected account does not have an ORM instance.',
+            'rate_limited' => 'Wait a moment before sending another account action.',
+            'service_failed' => 'The service action could not be completed. Check its status before trying again.',
+        ];
+        $fleetControlMessage = [
+            'type' => 'error',
+            'text' => ($fleetMessages[$control['error'] ?? ''] ?? 'The account action was rejected.')
+                . (array_key_exists('audit_logged', $control) && !$control['audit_logged']
+                    ? ' The denial could not be confirmed in the audit log.' : ''),
+        ];
+    }
+}
 $policyMessage = null;
-if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'backend.select') {
     $submittedBackend = $_POST['backend'] ?? null;
     $available = is_string($submittedBackend) && in_array($submittedBackend, ['redis', 'valkey'], true)
         ? array_filter($report['backends'] ?? [], static fn (array $backend): bool =>
@@ -51,6 +94,9 @@ WHM::header('Open Redis Manager', 0, 0);
     <?php if ($rootAuthorized): ?>
     <section aria-labelledby="orm-fleet-title">
       <h2 id="orm-fleet-title">Managed ORM instances</h2>
+      <?php if ($fleetControlMessage !== null): ?>
+        <p role="<?= $fleetControlMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetControlMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
       <?php if ($fleetPage === null): ?>
         <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
       <?php else: ?>
@@ -69,12 +115,21 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="unhealthy">Unhealthy</option>
         </select>
         <table>
-          <thead><tr><th scope="col">cPanel account</th><th scope="col">Instance state</th></tr></thead>
+          <thead><tr><th scope="col">cPanel account</th><th scope="col">Instance state</th><th scope="col">Service actions</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                 <th scope="row"><?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
                 <td><?= htmlspecialchars(ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                <td>
+                  <form method="post" class="orm-fleet-actions">
+                    <input type="hidden" name="orm_action" value="fleet.control">
+                    <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <button type="submit" name="fleet_action" value="start"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M5 3.5v13l11-6.5z" fill="currentColor"/></svg> Start</button>
+                    <button type="submit" name="fleet_action" value="stop" onclick="return confirm('Stop the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may fail until it is started again.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><rect x="4.5" y="4.5" width="11" height="11" rx="1" fill="currentColor"/></svg> Stop</button>
+                    <button type="submit" name="fleet_action" value="restart" onclick="return confirm('Restart the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may briefly lose access.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M15.7 7.5A6 6 0 0 0 5.3 5.7L3.5 7.5M3.5 4v3.5H7M4.3 12.5a6 6 0 0 0 10.4 1.8l1.8-1.8m0 3.5v-3.5H13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Restart</button>
+                  </form>
+                </td>
               </tr>
             <?php endforeach; ?>
           </tbody>
@@ -100,7 +155,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <p>No ORM-managed instances have been initialized.</p>
         <?php endif; ?>
       <?php endif; ?>
-      <p>This root-only, read-only view lists account names and normalized service states. It does not show IDs, paths, configuration or credentials, and it does not control services.</p>
+      <p>This root-only view lists account names and normalized states. Start, stop, and restart requests are validated again by the broker and recorded in the system authentication log. It does not show paths, configuration, or credentials.</p>
     </section>
     <?php endif; ?>
     <section aria-labelledby="orm-backends-title">
@@ -133,6 +188,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <p>New ORM instances will use <strong><?= htmlspecialchars(ucfirst($policy), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Existing services are unchanged.</p>
       <?php endif; ?>
       <form method="post">
+        <input type="hidden" name="orm_action" value="backend.select">
         <label for="orm-backend">Backend</label>
         <select id="orm-backend" name="backend" required>
           <?php foreach ($report['backends'] as $backend): ?>
