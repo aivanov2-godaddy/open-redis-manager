@@ -28,3 +28,18 @@ await client.quit();
 Ensure the application's runtime supports ES modules or adapt the import to its module format. Do not log configuration objects that contain the password.
 
 See the [node-redis client configuration guide](https://github.com/redis/node-redis/blob/master/docs/client-configuration.md) for supported connection options.
+
+## Connect to an ORM-managed instance
+
+The ORM cPanel page shows the socket path for your provisioned instance. Pass it as the `socket.path` option:
+
+```js
+import { createClient } from 'redis';
+
+const client = createClient({
+  socket: { path: '/var/lib/orm-instances/<your-cpanel-account>/redis.sock' },
+});
+await client.connect();
+```
+
+ORM-managed instances use Unix socket permissions and do not configure Redis AUTH or expose TCP. This example has not yet been validated across cPanel Node.js runtime configurations.

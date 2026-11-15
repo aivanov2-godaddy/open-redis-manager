@@ -3,7 +3,7 @@
 This folder contains the cPanel and WHM registration files, authenticated UI entry points, and the first manual installer lifecycle for Open Redis Manager:
 
 - `cpanel/install.json` registers one feature group and one Jupiter interface link.
-- `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer, and compares the LiveAPI username with the local broker identity before displaying it.
+- `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer, compares the LiveAPI username with the local broker identity, and shows only that account's private socket path and PHP, Node.js and Python client examples.
 - `systemd/orm-broker.service` runs the broker as root. Its fixed local protocol exposes only identity and per-account instance status/provision/start/stop; it accepts no command, path, username, backend or configuration values.
 - `systemd/orm-instance@.service` runs each Redis-compatible process as its cPanel account, with an account-private Unix socket, TCP disabled, bounded resources, and access only to that account's data directory.
 - `src/Orm/Broker/InstanceManager.pm` verifies root-owned metadata and derives service/data paths only from the authenticated account mapping.

@@ -19,7 +19,7 @@ On initialization, ORM creates a per-account service using `orm-instance@<accoun
 
 ## Not implemented yet
 
-The service adapter is an initial control-plane slice, not a complete cache product. Connection snippets and secrets, account configuration editing, metrics and historical graphs, application discovery, backups, restore, recovery, migration, package/reseller limits, and audit history still need implementation. Applications connect through the Unix socket; TCP host/port details are not provided by this slice.
+The installed cPanel page displays the account's Unix socket path, database 0, and connection examples for PhpRedis, node-redis and redis-py. This build does not configure Redis AUTH or expose a TCP endpoint; access is controlled by the account-owned, mode-0700 socket directory. Framework-specific configuration, account configuration editing, metrics and historical graphs, application discovery, backups, restore, recovery, migration, package/reseller limits, and audit history still need implementation.
 
 ## Validation status
 

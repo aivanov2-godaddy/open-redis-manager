@@ -17,4 +17,17 @@ Load the password from a protected environment/configuration source. Avoid hard-
 
 The example uses a short-lived cache value. Use application-specific expiration and invalidation rules; Redis cache content should be safe to rebuild unless the operator has deliberately chosen a persistence strategy.
 
-See the [phpredis project documentation](https://github.com/phpredis/phpredis) for supported methods and options.
+See the [phpredis project documentation](https://github.com/phpredis/phpredis) for supported methods and options. Its maintainers also document a [Unix socket connection example](https://github.com/phpredis/phpredis/issues/1664).
+
+## Connect to an ORM-managed instance
+
+The installed ORM cPanel page displays the socket path for your own provisioned instance. Use that path with PhpRedis:
+
+```php
+<?php
+$redis = new Redis();
+$redis->connect('/var/lib/orm-instances/<your-cpanel-account>/redis.sock');
+$redis->select(0);
+```
+
+ORM-managed instances disable TCP and rely on the account-owned socket directory for access control. This build does not configure Redis AUTH, so do not add a password to this example. Only use the path shown in your own cPanel page; paths are account-specific. This example has not yet been validated across cPanel PHP versions.
