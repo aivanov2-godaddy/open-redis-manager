@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — Usage metrics</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172235; font-family: Arial, sans-serif; }
+    .topbar { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 34px; color: #fff; background: #18283f; }
+    .brand-icon { width: 35px; height: 35px; }
+    .topbar strong { font-size: 17px; }
+    .topbar span { margin-left: auto; color: #d0d9e6; font-size: 13px; }
+    main { max-width: 1050px; margin: 34px auto; padding: 0 24px; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    .subtitle { margin: 0 0 22px; color: #65748a; }
+    .card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+    .state { display: inline-block; margin: 0; padding: 6px 12px; border-radius: 999px; background: #e9f7ef; color: #176b3a; font-size: 13px; font-weight: 700; }
+    .section-head { display: flex; align-items: center; gap: 12px; margin: 22px 0 13px; }
+    h2 { margin: 0; font-size: 18px; }
+    .fresh { margin-left: auto; padding: 7px 10px; border-radius: 6px; background: #fff6e5; color: #714b0b; font-size: 12px; font-weight: 700; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .metric { min-height: 104px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+    .label { display: flex; align-items: center; gap: 9px; color: #59677c; font-size: 13px; }
+    .metric svg { width: 19px; height: 19px; color: #317a9d; }
+    .value { display: block; margin-top: 9px; font-size: 22px; }
+    .metrics-note { margin: 14px 0 0; color: #65748a; font-size: 12px; }
+    .connection { margin-top: 25px; padding-top: 20px; border-top: 1px solid #e7ebf1; }
+    dl { display: grid; grid-template-columns: 180px 1fr; gap: 12px 16px; margin: 16px 0 0; font-size: 14px; }
+    dt { color: #65748a; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    code { color: #254a74; }
+    .note { margin: 17px 0 0; color: #65748a; font-size: 13px; line-height: 1.55; }
+    .footer { margin: 18px 0; text-align: center; color: #7b8798; font-size: 12px; }
+    @media (max-width: 720px) { main { margin: 22px auto; padding: 0 14px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card { padding: 18px; } dl { grid-template-columns: 1fr; gap: 4px; } dd { margin-bottom: 8px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <svg class="brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>
+    <strong>Open Redis Manager</strong>
+    <span>cPanel · demo</span>
+  </header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="subtitle">A private Redis-compatible cache for this cPanel account.</p>
+    <section class="card" aria-label="Synthetic ORM monitoring preview">
+      <p class="state">Stopped</p>
+      <div class="section-head"><h2>Usage metrics</h2><span class="fresh">Stale sample</span></div>
+      <div class="metrics">
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="2"/></svg>Memory used</span><strong class="value">18.4 MiB</strong></div>
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5m0 14h16M7 15l4-4 3 2 5-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Memory peak</span><strong class="value">22.1 MiB</strong></div>
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-15a3 3 0 0 1 0 6m1 3a5 5 0 0 1 3 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Connected clients</span><strong class="value">4</strong></div>
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Uptime</span><strong class="value">3d 06h</strong></div>
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h3l3-7 4 4 3-8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Operations per second</span><strong class="value">126/s</strong></div>
+        <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Cache hit ratio</span><strong class="value">97.6%</strong></div>
+      </div>
+      <p class="metrics-note">Last sample captured 2026-11-15 14:32:00 UTC. The cache is stopped; this is the latest saved sample and may be up to 30 days old. No history is stored.</p>
+      <section class="connection" aria-labelledby="connection-title">
+        <h2 id="connection-title">Connection details</h2>
+        <dl>
+          <dt>Endpoint</dt><dd>Private Unix socket</dd>
+          <dt>Socket path</dt><dd><code>/var/lib/orm-instances/demo/redis.sock</code></dd>
+          <dt>Default database</dt><dd>0</dd>
+          <dt>Authentication</dt><dd>Socket permissions; no Redis AUTH password is configured.</dd>
+        </dl>
+        <p class="note">Only processes running as this cPanel account can access the socket. TCP is disabled.</p>
+      </section>
+    </section>
+    <p class="footer">Synthetic demo preview. No cPanel account or Redis service is connected.</p>
+  </main>
+</body>
+</html>

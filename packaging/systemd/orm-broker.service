@@ -18,6 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 PrivateNetwork=true
 ProtectSystem=strict
+ReadWritePaths=/etc/orm-instances /var/lib/orm-instances
 ProtectHome=read-only
 ProtectKernelTunables=true
 ProtectKernelModules=true

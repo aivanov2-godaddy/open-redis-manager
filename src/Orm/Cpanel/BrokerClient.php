@@ -31,7 +31,7 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int}|null */
+    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
     public function request(string $operation, ?string $preset = null, ?array $config = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
@@ -91,7 +91,7 @@ final class BrokerClient
             sort($keys);
             if (in_array('memory_used_bytes', $keys, true)) {
                 $metricKeys = ['commands_per_second', 'connected_clients', 'keyspace_hits', 'keyspace_misses',
-                    'memory_peak_bytes', 'memory_used_bytes', 'success', 'uptime_seconds', 'version'];
+                    'memory_peak_bytes', 'memory_used_bytes', 'retained', 'sampled_at', 'stale', 'success', 'uptime_seconds', 'version'];
                 sort($metricKeys);
                 if ($keys !== $metricKeys) {
                     return null;
@@ -101,6 +101,11 @@ final class BrokerClient
                     if (!is_int($decoded[$field]) || $decoded[$field] < 0 || $decoded[$field] > 9_000_000_000_000_000) {
                         return null;
                     }
+                }
+                if (!is_int($decoded['sampled_at']) || $decoded['sampled_at'] < 0 || $decoded['sampled_at'] > 9_999_999_999
+                    || !is_bool($decoded['stale']) || !is_bool($decoded['retained'])
+                    || ($decoded['stale'] && !$decoded['retained'])) {
+                    return null;
                 }
                 return $decoded;
             }

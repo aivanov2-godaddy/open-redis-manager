@@ -50,7 +50,9 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     }
 }
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
-$liveMetrics = $brokerVerified && ($instanceStatus['state'] ?? null) === 'running'
+$canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceStatus['success'] ?? false) === true
+    && ($instanceStatus['state'] ?? null) !== 'not_configured';
+$liveMetrics = $canRequestMetrics
     ? $instanceClient->request('instance.metrics')
     : null;
 $connectionDetails = $brokerVerified
@@ -115,6 +117,7 @@ try {
         .orm-metric-icon { width: 18px; height: 18px; color: #317a9d; }
         .orm-metric-value { display: block; margin-top: 8px; color: #172235; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
         .orm-metrics-note { color: #59677c; font-size: 13px; }
+        .orm-metrics-note.is-stale { padding: 10px 12px; border-left: 3px solid #b77813; border-radius: 4px; background: #fff6e5; color: #714b0b; }
         .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
@@ -164,9 +167,9 @@ try {
             <?php if (!empty($instanceStatus['preset'])): ?>
               <p class="orm-note">Setup preset: <strong><?= htmlspecialchars(ucfirst($instanceStatus['preset']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></p>
             <?php endif; ?>
-            <?php if ($instanceStatus['state'] === 'running'): ?>
+            <?php if ($instanceStatus['state'] !== 'not_configured'): ?>
               <section aria-labelledby="orm-usage-title">
-                <h3 id="orm-usage-title">Live usage</h3>
+                <h3 id="orm-usage-title">Usage metrics</h3>
                 <?php if ($hasLiveMetrics): ?>
                   <div class="orm-metrics">
                     <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="2"/></svg>Memory used</span><strong class="orm-metric-value"><?= htmlspecialchars($formatBytes($liveMetrics['memory_used_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
@@ -176,9 +179,17 @@ try {
                     <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h3l3-7 4 4 3-8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Operations per second</span><strong class="orm-metric-value"><?= number_format($liveMetrics['commands_per_second']) ?>/s</strong></div>
                     <div class="orm-metric"><span class="orm-metric-label"><svg class="orm-metric-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Cache hit ratio</span><strong class="orm-metric-value"><?= htmlspecialchars($hitRatio, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
                   </div>
-                  <p class="orm-metrics-note">Live sample from Redis-compatible INFO statistics. Refresh this page for a new sample; history is not stored yet.</p>
+                  <p class="orm-metrics-note<?= $liveMetrics['stale'] ? ' is-stale' : '' ?>" role="status">
+                    <strong><?= $liveMetrics['stale'] ? 'Stale sample' : 'Current sample' ?>.</strong>
+                    Captured <?= htmlspecialchars(gmdate('Y-m-d H:i:s', $liveMetrics['sampled_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC.
+                    <?php if ($liveMetrics['stale'] || $liveMetrics['retained']): ?>
+                      This latest sample is saved for up to 30 days; no history is stored.
+                    <?php else: ?>
+                      This live sample could not be saved for fallback use. No history is stored.
+                    <?php endif; ?>
+                  </p>
                 <?php else: ?>
-                  <p class="orm-metrics-note" role="status">Live usage metrics are temporarily unavailable. Refresh this page to try again.</p>
+                  <p class="orm-metrics-note" role="status">No recent usage sample is available. ORM could not return live metrics or a saved sample.</p>
                 <?php endif; ?>
               </section>
             <?php endif; ?>
@@ -289,7 +300,7 @@ try {
                   </script>
                 </section>
               <?php endif; ?>
-              <p class="orm-note">Metrics are sampled live and are not retained. Backups and restore are not enabled in this build.</p>
+              <p class="orm-note">Backups and restore are not enabled in this build.</p>
             <?php endif; ?>
             </div>
           <?php endif; ?>

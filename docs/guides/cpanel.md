@@ -1,10 +1,10 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, current-metrics and bounded configuration actions. Initialization offers five fixed workload presets. Historical metrics, credential management, backups and restore remain unimplemented.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, and bounded configuration actions. Initialization offers five fixed workload presets. Historical metrics, credential management, backups and restore remain unimplemented.
 
 ## Overview
 
-The account page should show service/backend state, allocated and used memory, connection count, hit ratio, health/preflight checks and sample time. Temporary monitoring failures should retain last-known values and mark them stale.
+The account page shows service state, current or retained memory, connection count, hit ratio, and sample time. The latest successful sample is retained for up to 30 days, labeled stale when the service is stopped or live sampling fails, and removed after expiry. No trend history is stored.
 
 ## Lifecycle and connection details
 
