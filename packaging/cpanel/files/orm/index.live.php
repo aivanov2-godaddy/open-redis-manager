@@ -18,7 +18,14 @@ $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
     $allowedActions = ['provision', 'start', 'stop'];
     if (is_string($action) && in_array($action, $allowedActions, true)) {
-        $actionResult = $instanceClient->request('instance.' . $action);
+        if ($action === 'provision') {
+            $preset = $_POST['orm_preset'] ?? 'generic';
+            $actionResult = is_string($preset)
+                ? $instanceClient->request('instance.provision', $preset)
+                : null;
+        } else {
+            $actionResult = $instanceClient->request('instance.' . $action);
+        }
     }
 }
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
@@ -55,6 +62,7 @@ $errorMessages = [
     'backend_policy_required' => 'Your hosting provider must select an installed backend before you can initialize a cache.',
     'backend_unavailable' => 'The selected cache backend is not available right now. Contact your hosting provider.',
     'instance_exists' => 'An instance record already exists. Refresh this page or contact your hosting provider.',
+    'invalid_request' => 'Choose one of the available setup presets and try again.',
     'not_configured' => 'Initialize the cache before starting it.',
     'rate_limited' => 'Please wait a moment before trying another action.',
     'service_failed' => 'The cache service could not complete that action. Refresh the page and check its status.',
@@ -85,6 +93,10 @@ try {
         .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
+        .orm-preset-form { max-width: 560px; margin-top: 18px; }
+        .orm-preset-form label { display: block; margin-bottom: 7px; font-weight: 700; }
+        .orm-preset-form select { width: 100%; padding: 10px 12px; border: 1px solid #bac6d5; border-radius: 7px; color: #172235; background: #fff; font: inherit; }
+        .orm-preset-help { color: #59677c; font-size: 14px; }
         .orm-note { margin-top: 18px; color: #59677c; }
         .orm-connection { margin-top: 18px; }
         .orm-connection dl { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 10px 18px; }
@@ -118,6 +130,9 @@ try {
           <?php else: ?>
             <div class="orm-card">
             <p class="orm-state <?= htmlspecialchars($stateClass, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $instanceStatus['state'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+            <?php if (!empty($instanceStatus['preset'])): ?>
+              <p class="orm-note">Setup preset: <strong><?= htmlspecialchars(ucfirst($instanceStatus['preset']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></p>
+            <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'running'): ?>
               <section aria-labelledby="orm-usage-title">
                 <h3 id="orm-usage-title">Live usage</h3>
@@ -137,9 +152,18 @@ try {
               </section>
             <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'not_configured'): ?>
-              <p>Initialize a private Redis-compatible cache instance. The backend must first be selected by your hosting provider.</p>
-              <form method="post">
+              <p>Choose a starting profile, then initialize a private Redis-compatible cache instance. Your hosting provider must first select the backend.</p>
+              <form method="post" class="orm-preset-form">
                 <input type="hidden" name="orm_action" value="provision">
+                <label for="orm-preset">Configuration preset</label>
+                <select id="orm-preset" name="orm_preset" required>
+                  <option value="generic" selected>Generic — 64 MiB</option>
+                  <option value="wordpress">WordPress — 48 MiB</option>
+                  <option value="laravel">Laravel — 32 MiB</option>
+                  <option value="magento">Magento — 64 MiB</option>
+                  <option value="session">Session cache — 32 MiB</option>
+                </select>
+                <p class="orm-preset-help">Each profile uses the same private socket, 16 databases, 100-client ceiling, and non-persistent cache policy. Memory never exceeds the current 64 MiB host cap. Package-specific limits are not available in this build.</p>
                 <button type="submit">Initialize cache</button>
               </form>
             <?php else: ?>

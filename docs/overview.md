@@ -33,4 +33,4 @@ Applications use their Redis client to connect to an account-scoped loopback end
 
 ## Current implementation status
 
-The PHP demo is a static interaction prototype with sample values. The installed cPanel/WHM entry points can select a backend and provision, inspect, start, or stop a per-account Redis/Valkey process through a closed local broker. Configuration, credentials, monitoring, backup, restore, and migration remain unimplemented. See the [instance lifecycle guide](guides/instance-lifecycle.md) and [feature catalog](features/catalog.md).
+The PHP demo is a static interaction prototype with sample values. The installed cPanel/WHM entry points can select a backend and provision, inspect, start, stop, and sample current usage for a per-account Redis/Valkey process through a closed local broker. cPanel initialization offers five fixed, server-validated workload presets. Existing-instance configuration editing, credentials, metric history, backup, restore, and migration remain unimplemented. See the [instance lifecycle guide](guides/instance-lifecycle.md) and [feature catalog](features/catalog.md).

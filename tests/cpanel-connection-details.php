@@ -56,5 +56,10 @@ $assert(str_contains($page, "request('instance.metrics')"), 'request live metric
 $assert(str_contains($page, 'aria-labelledby="orm-usage-title"'), 'label the live usage section');
 $assert(str_contains($page, 'Cache hit ratio') && str_contains($page, 'Operations per second'), 'show activity and hit-ratio metrics');
 $assert(str_contains($page, 'history is not stored yet'), 'explain that current samples are not historical data');
+$assert(str_contains($page, 'name="orm_preset"'), 'offer a preset when initializing an instance');
+foreach (['generic', 'wordpress', 'laravel', 'magento', 'session'] as $preset) {
+    $assert(str_contains($page, 'value="' . $preset . '"'), 'expose the ' . $preset . ' setup preset');
+}
+$assert(str_contains($page, "request('instance.provision', \$preset)"), 'send the selected preset through the broker client');
 
 fwrite(STDOUT, "cPanel connection details checks passed: {$checks}\n");

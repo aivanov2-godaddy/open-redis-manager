@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialize, status, start, and stop actions. Configuration, connection details, metrics, backups, and restore remain unimplemented.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop and current-metrics actions. Initialization offers five fixed workload presets. Historical metrics, existing-instance configuration editing, credentials, backups, and restore remain unimplemented.
 
 ## Overview
 
@@ -9,13 +9,13 @@ The account page should show service/backend state, allocated and used memory, c
 ## Lifecycle and connection details
 
 - Initialize/start and stop only the authenticated cPanel account's instance. See the [instance lifecycle guide](instance-lifecycle.md).
-- Show the private endpoint, port, database and a secret masked by default.
-- Reveal/copy a secret only after explicit user action and avoid persisting it in the browser.
+- Show the current private Unix socket endpoint and database. This build has TCP disabled and does not configure a Redis AUTH secret.
+- Do not imply a secret exists; future credential handling must reveal or copy only after explicit user action and avoid persisting it in the browser.
 - Explain that a compatible application client and application configuration are still required.
 
 ## Configuration and apps
 
-Use the [configuration and presets guide](configuration-presets.md). The application helper should include WordPress, LiteSpeed Cache, Laravel, Magento, PHP, Node.js and Python examples with placeholders unless the account user asks to reveal credentials.
+Use the [configuration and presets guide](configuration-presets.md). The current page offers initial workload presets and PhpRedis, node-redis and redis-py examples. The application helper still needs WordPress, LiteSpeed Cache, Laravel, and Magento snippets.
 
 ## Backups and diagnostics
 

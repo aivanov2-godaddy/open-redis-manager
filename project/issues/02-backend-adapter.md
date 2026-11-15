@@ -13,6 +13,8 @@ Create a backend interface for detection, provision, lifecycle, configuration, m
 
 ## Progress
 
+- cPanel provisioning accepts only the fixed WordPress, Laravel, Magento, session-cache, or generic preset ID. The broker selects the memory cap and persists the selected preset in manifest v2; existing v1 manifests remain compatible and map to Generic.
+
 - The first read-only slice is available as `php bin/orm backend:discover --json`. It checks fixed common Linux binary paths and known systemd units; it does not change the host or inspect account data.
 - The standalone command is CLI-only. The separate WHM entrypoint calls the same discovery class only after AppConfig and the PHP ACL check grant root-level access; the unauthenticated prototype UI remains disconnected.
 - PR #16 merged the root-only WHM selection for the installed default backend, account-derived instance manifests/configuration, and fixed systemd provision/start/stop/status operations through the broker. It uses no TCP listener and does not touch an existing Redis/Valkey unit.

@@ -23,6 +23,23 @@ $assert($status === ['success' => true, 'state' => 'running', 'version' => 1], '
 $assert($requests[0] === "{\"operation\":\"instance.status\",\"version\":1}\n", 'Send a canonical operation with no account-supplied identity.');
 $assert($client->request('instance.provision') === $status, 'Allow the fixed provision operation.');
 $assert($requests[1] === "{\"operation\":\"instance.provision\",\"version\":1}\n", 'Provision requests contain no paths, settings, or usernames.');
+$presetRequests = [];
+$presetClient = new BrokerClient(static function (string $request) use (&$presetRequests): string {
+    $presetRequests[] = $request;
+    return "{\"preset\":\"wordpress\",\"state\":\"running\",\"success\":true,\"version\":1}\n";
+});
+$presetStatus = $presetClient->request('instance.provision', 'wordpress');
+$assert($presetStatus === ['success' => true, 'state' => 'running', 'version' => 1, 'preset' => 'wordpress'],
+    'Parse the selected account preset from the status response.');
+$assert($presetRequests[0] === "{\"operation\":\"instance.provision\",\"preset\":\"wordpress\",\"version\":1}\n",
+    'Send only the fixed provision operation and an allowlisted preset.');
+$assert($presetClient->request('instance.provision', '../root') === null,
+    'Reject unsupported preset values before sending a broker request.');
+$assert(count($presetRequests) === 1, 'Do not send an invalid preset to the broker.');
+$unexpectedPreset = new BrokerClient(static fn (string $request): string =>
+    "{\"preset\":\"../root\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($unexpectedPreset->request('instance.status') === null, 'Reject an invalid preset in a broker response.');
 $metricResponse = "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n";
 $metricsClient = new BrokerClient(static function (string $request) use (&$requests, $metricResponse): string {
     $requests[] = $request;

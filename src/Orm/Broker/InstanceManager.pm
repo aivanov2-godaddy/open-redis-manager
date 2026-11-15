@@ -16,6 +16,13 @@ my %CLIENT_BINARIES = (
 );
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
+my %PRESET_MEMORY_BYTES = (
+    wordpress => 48 * 1024 * 1024,
+    laravel => 32 * 1024 * 1024,
+    magento => 64 * 1024 * 1024,
+    session => 32 * 1024 * 1024,
+    generic => 64 * 1024 * 1024,
+);
 
 sub new {
     my ($class, %args) = @_;
@@ -34,13 +41,13 @@ sub new {
 }
 
 sub dispatch {
-    my ($self, $operation, $account) = @_;
+    my ($self, $operation, $account, $preset) = @_;
     return _failure('not_authorized') if ref($account) ne 'HASH';
     return _failure('invalid_request') if !_valid_account($account);
 
     return $self->status($account) if $operation eq 'instance.status';
     return $self->metrics($account) if $operation eq 'instance.metrics';
-    return $self->provision($account) if $operation eq 'instance.provision';
+    return $self->provision($account, defined($preset) ? $preset : 'generic') if $operation eq 'instance.provision';
     return $self->start($account) if $operation eq 'instance.start';
     return $self->stop($account) if $operation eq 'instance.stop';
     return _failure('invalid_request');
@@ -59,16 +66,18 @@ sub status {
     return _failure('instance_unavailable') if !$manifest;
     my ($ok, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
     return _failure('instance_unavailable') if !$ok && $state ne 'inactive' && $state ne 'failed';
-    return _state('running') if $state eq 'active';
-    return _state('starting') if $state eq 'activating' || $state eq 'reloading';
-    return _state('stopping') if $state eq 'deactivating';
-    return _state('failed') if $state eq 'failed';
-    return _state('stopped') if $state eq 'inactive';
+    return _state('running', $manifest->{preset}) if $state eq 'active';
+    return _state('starting', $manifest->{preset}) if $state eq 'activating' || $state eq 'reloading';
+    return _state('stopping', $manifest->{preset}) if $state eq 'deactivating';
+    return _state('failed', $manifest->{preset}) if $state eq 'failed';
+    return _state('stopped', $manifest->{preset}) if $state eq 'inactive';
     return _failure('instance_unavailable');
 }
 
 sub provision {
-    my ($self, $account) = @_;
+    my ($self, $account, $preset) = @_;
+    $preset = 'generic' if !defined($preset);
+    return _failure('invalid_request') if ref($preset) || !exists($PRESET_MEMORY_BYTES{$preset});
     return _failure('instance_exists') if -e $self->_manifest_path($account->{name})
         || -l $self->_manifest_path($account->{name})
         || -e $self->_account_config_dir($account->{name})
@@ -82,6 +91,8 @@ sub provision {
     return _failure('backend_policy_required') if !defined($backend);
     my $binary = $self->_available_binary($backend);
     return _failure('backend_unavailable') if !defined($binary);
+    my $memory_bytes = $PRESET_MEMORY_BYTES{$preset};
+    return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
 
     my $config_dir = $self->_account_config_dir($account->{name});
     my $data_dir = $self->_account_data_dir($account->{name});
@@ -105,11 +116,12 @@ sub provision {
         data => $data_dir,
         gid => 0 + $account->{gid},
         socket => $socket,
+        preset => $preset,
         uid => 0 + $account->{uid},
-        version => 1,
+        version => 2,
     };
     my $manifest_json = JSON::PP->new->canonical(1)->encode($manifest) . "\n";
-    my $config = _redis_config($data_dir, $socket);
+    my $config = _redis_config($data_dir, $socket, $memory_bytes);
     if (!$self->_atomic_write(File::Spec->catfile($config_dir, 'redis.conf'), $config, 0640, $self->{expected_owner_uid}, $account->{gid})) {
         return $self->_rollback_provision($account, $config_dir, $data_dir, 1, 'storage_unavailable');
     }
@@ -256,9 +268,18 @@ sub _read_manifest {
     my $manifest = eval { JSON::PP->new->decode($json) };
     return undef if ref($manifest) ne 'HASH';
     my @keys = sort keys %{$manifest};
-    return undef if join(',', @keys) ne 'backend,config,data,gid,socket,uid,version';
-    return undef if ($manifest->{version} // 0) != 1
-        || ($manifest->{uid} // -1) != $account->{uid}
+    my $manifest_version = $manifest->{version} // 0;
+    if ($manifest_version == 1) {
+        return undef if join(',', @keys) ne 'backend,config,data,gid,socket,uid,version';
+        $manifest->{preset} = 'generic';
+    } elsif ($manifest_version == 2) {
+        return undef if join(',', @keys) ne 'backend,config,data,gid,preset,socket,uid,version';
+        return undef if !defined($manifest->{preset}) || ref($manifest->{preset})
+            || !exists($PRESET_MEMORY_BYTES{$manifest->{preset}});
+    } else {
+        return undef;
+    }
+    return undef if ($manifest->{uid} // -1) != $account->{uid}
         || ($manifest->{gid} // -1) != $account->{gid};
     return undef if !defined($manifest->{backend}) || $manifest->{backend} !~ /\A(?:redis|valkey)\z/;
     my $expected_data = $self->_account_data_dir($account->{name});
@@ -381,7 +402,9 @@ sub _account_config_dir { return File::Spec->catdir($_[0]->{etc_root}, $_[1]); }
 sub _account_data_dir { return File::Spec->catdir($_[0]->{data_root}, $_[1]); }
 
 sub _redis_config {
-    my ($data, $socket) = @_;
+    my ($data, $socket, $memory_bytes) = @_;
+    $memory_bytes = $MAX_MEMORY_BYTES if !defined($memory_bytes);
+    return undef if $memory_bytes !~ /\A[0-9]+\z/ || $memory_bytes > $MAX_MEMORY_BYTES;
     return join("\n",
         'daemonize no',
         'supervised no',
@@ -394,7 +417,7 @@ sub _redis_config {
         'dbfilename dump.rdb',
         'save ""',
         'appendonly no',
-        'maxmemory ' . $MAX_MEMORY_BYTES,
+        'maxmemory ' . $memory_bytes,
         'maxmemory-policy allkeys-lru',
         'databases 16',
         'timeout 0',
@@ -412,7 +435,11 @@ sub _valid_account {
     return 1;
 }
 
-sub _state { return { success => JSON::PP::true, state => $_[0], version => 1 }; }
+sub _state {
+    my ($state, $preset) = @_;
+    return { success => JSON::PP::true, state => $state, version => 1,
+        (defined($preset) ? (preset => $preset) : ()) };
+}
 sub _failure { return { error => $_[0], success => JSON::PP::false, version => 1 }; }
 
 1;
