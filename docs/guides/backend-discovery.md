@@ -1,6 +1,6 @@
 # Read-only backend discovery
 
-ORM now includes a CLI-only first implementation slice for Redis and Valkey discovery. It is separate from the prototype web UI because that UI does not yet authenticate users or enforce cPanel/WHM ACLs.
+ORM includes read-only discovery for Redis and Valkey. It is available as a CLI command and through the authenticated, root-ACL-protected WHM entrypoint. The unauthenticated prototype `index.php` does not call host discovery.
 
 ## Run it
 
@@ -16,7 +16,7 @@ On other platforms, it prints an `unsupported-platform` report and exits with st
 
 ## Safety boundary
 
-- CLI only; the command is not called from `index.php` or an HTTP route.
+- The standalone command is CLI-only. The WHM route calls the same class only after AppConfig and the entrypoint verify root-level WHM ACL access.
 - Linux only for host discovery.
 - Checks fixed common binary paths; it does not search `PATH`, accept paths or service names from input, or read Redis configuration and credentials.
 - Version and systemd state checks use fixed argument arrays, without a shell. Each subprocess has a short timeout and bounded output.
@@ -25,6 +25,6 @@ On other platforms, it prints an `unsupported-platform` report and exits with st
 
 ## Known limits
 
-Linux execution, systemd behavior, package-specific paths, permissions, cPanel integration, and installed Redis/Valkey hosts have not yet been validated in this Windows development environment. Non-systemd services and binaries outside the known paths are reported as unknown/not detected; that result does not prove the backend is absent. The WHM Backends screen still uses demonstration data until authenticated plugin entry points exist.
+Linux execution, systemd behavior, package-specific paths, permissions, cPanel integration, and installed Redis/Valkey hosts have not yet been validated in this Windows development environment. Non-systemd services and binaries outside the known paths are reported as unknown/not detected; that result does not prove the backend is absent. The prototype WHM Backends screen still uses demonstration data. The separate authenticated WHM entrypoint displays discovery results but is not packaged or installed by an installer.
 
-Next work tracked by [issue #2](https://github.com/aivanov2-godaddy/open-redis-manager/issues/2) is to validate supported package layouts on disposable cPanel hosts and then wire the discovery report through an authenticated WHM service boundary.
+Next work tracked by [issue #2](https://github.com/aivanov2-godaddy/open-redis-manager/issues/2) is to validate supported package layouts on disposable cPanel hosts and then connect trusted ORM account metadata to this discovery view.

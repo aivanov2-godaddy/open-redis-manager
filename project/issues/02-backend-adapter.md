@@ -14,5 +14,5 @@ Create a backend interface for detection, provision, lifecycle, configuration, m
 ## Progress
 
 - The first read-only slice is available as `php bin/orm backend:discover --json`. It checks fixed common Linux binary paths and known systemd units; it does not change the host or inspect account data.
-- The command is CLI-only while the web prototype lacks cPanel authentication and WHM ACLs.
+- The standalone command is CLI-only. The separate WHM entrypoint calls the same discovery class only after AppConfig and the PHP ACL check grant root-level access; the unauthenticated prototype UI remains disconnected.
 - Supported cPanel package paths, Linux/systemd behavior, permissions, and live backend discovery still need validation on a disposable supported host before this issue can close.

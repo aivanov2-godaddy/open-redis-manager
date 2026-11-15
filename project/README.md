@@ -27,6 +27,9 @@ Open a feature branch and pull request for each coherent implementation incremen
 ## Current status
 
 - Upstream repository: public; it was empty when this work started.
-- Local repository: `main` and `origin` now target the repo; implementation is prepared on `codex/orm-foundation`.
+- Local repository: `main` targets the upstream default branch; the active implementation is developed as stacked feature branches.
 - GitHub: milestone #1 and issues #1–#7 are created.
-- PR: [#8 — Add ORM prototype, docs, and planning foundation](https://github.com/aivanov2-godaddy/open-redis-manager/pull/8) is open as a draft.
+- PR: [#8 — Add ORM prototype, docs, and planning foundation](https://github.com/aivanov2-godaddy/open-redis-manager/pull/8) is open as a draft against `main`.
+- PR: [#9 — Add read-only Redis backend discovery CLI](https://github.com/aivanov2-godaddy/open-redis-manager/pull/9) is open as a draft, stacked on PR #8.
+- PR: [#10 — Add authenticated cPanel and WHM entrypoints](https://github.com/aivanov2-godaddy/open-redis-manager/pull/10) is open as a draft, stacked on PR #9.
+- cPanel/WHM authentication shells and the WHM discovery view are in place. There is still no installer, account-instance adapter, or validation on an actual cPanel host; issues #1, #2, and #7 remain open.
