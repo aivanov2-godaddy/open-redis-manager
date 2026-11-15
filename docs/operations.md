@@ -1,6 +1,6 @@
 # Operations guide
 
-This guide describes intended operating behavior for the production plugin. The current screens are a prototype only.
+This guide describes the intended operating behavior and identifies which controls are implemented in the current development build.
 
 ## Monitoring
 
@@ -8,10 +8,12 @@ Track service state, allocated and used memory, memory peak, connected clients, 
 
 ## Backups and restore
 
-- Keep snapshots under the owning account's boundary and apply retention limits from provider policy.
-- A backup should report whether it completed and its size/time; fleet runs should show per-account outcomes.
-- Before restore, create a safety snapshot of the current data and verify ownership/permissions after writing.
-- Document whether the operation pauses the service, loses writes, or affects clients before the user confirms it.
+- The cPanel page can create, list, and download an explicit RDB snapshot for the signed-in account. It does not enable Redis persistence or schedule jobs. The Redis-compatible service remains online during transfer; snapshot generation can add CPU and disk I/O load.
+- ORM keeps the three newest successful snapshots per account. It removes the oldest only after a replacement has been generated and validated. A failed transfer leaves prior snapshots in place.
+- Snapshots live beneath `/var/lib/orm-instances/.orm-backups/<account>`; the shared directory is root-controlled and each account directory and file is non-writable by that account. Only the matching cPanel account can read its snapshots. The broker validates ownership, type, link count, permissions and size before listing or serving a download.
+- Backups are capped at 128 MiB and each transfer has a 60-second deadline. Large caches can exceed these limits; the UI reports an unavailable or failed operation without exposing command output.
+- ORM has no restore UI or restore operation yet. Before implementing restore, create a safety snapshot, verify the resulting service state, and explain interruption and write-loss risks before confirmation. WHM fleet backups and per-account fleet results are also not implemented.
+- Uninstall refuses while instance data remains, including backups. To uninstall or reinstall, first copy any required snapshots out of band, then remove the ORM data using the documented administrative procedure. Uninstall intentionally preserves account data.
 
 ## Recovery
 

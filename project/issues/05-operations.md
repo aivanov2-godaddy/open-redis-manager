@@ -13,4 +13,4 @@ Build account-safe backups and useful operational visibility.
 
 ## Progress
 
-- The installed cPanel page requests bounded metrics for every configured account. The broker returns the fixed numeric allowlist, capture time and stale marker; it atomically retains one root-owned `0600` sample for up to 30 days and falls back to it when stopped or when probing fails. Metric history, diagnostics export, and backups/restore remain open; disposable-host validation is still required.
+- The installed cPanel page requests bounded metrics for every configured account. The broker returns the fixed numeric allowlist, capture time and stale marker; it atomically retains one root-owned `0600` sample for up to 30 days and falls back to it when stopped or when probing fails. Account-scoped RDB snapshot creation, listing, download, and three-snapshot retention are implemented; restore, metric history, diagnostics export, WHM fleet backup, and disposable-host validation remain open.

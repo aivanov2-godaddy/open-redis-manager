@@ -39,6 +39,12 @@ touch "$ORM_INSTANCE_DATA/instance-marker"
 assert_status 0
 
 reset_roots
+mkdir -m 0711 "$ORM_INSTANCE_DATA/.orm-backups"
+mkdir -m 0750 "$ORM_INSTANCE_DATA/.orm-backups/demo"
+touch "$ORM_INSTANCE_DATA/.orm-backups/demo/snapshot-marker.rdb"
+assert_status 0
+
+reset_roots
 touch "$ORM_INSTANCE_ROOT/instance-marker"
 assert_status 0
 

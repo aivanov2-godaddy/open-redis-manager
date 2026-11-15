@@ -16,7 +16,7 @@ $instanceClient = new \Orm\Cpanel\BrokerClient();
 $actionResult = null;
 $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
-    $allowedActions = ['provision', 'configure', 'start', 'stop'];
+    $allowedActions = ['provision', 'configure', 'start', 'stop', 'backup.create'];
     if (is_string($action) && in_array($action, $allowedActions, true)) {
         if ($action === 'provision') {
             $preset = $_POST['orm_preset'] ?? 'generic';
@@ -44,6 +44,8 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     'timeout' => $timeout,
                 ])
                 : null;
+        } elseif ($action === 'backup.create') {
+            $actionResult = $instanceClient->request('backup.create');
         } else {
             $actionResult = $instanceClient->request('instance.' . $action);
         }
@@ -55,6 +57,50 @@ $canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceS
 $liveMetrics = $canRequestMetrics
     ? $instanceClient->request('instance.metrics')
     : null;
+$canRequestBackups = $brokerVerified && is_array($instanceStatus) && ($instanceStatus['success'] ?? false) === true
+    && ($instanceStatus['state'] ?? null) !== 'not_configured';
+$backupList = $canRequestBackups ? $instanceClient->request('backup.list') : null;
+$downloadFailure = false;
+$requestedBackup = $_GET['orm_backup'] ?? null;
+if ($requestedBackup !== null) {
+    $backupFound = is_string($requestedBackup)
+        && preg_match('/\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/', $requestedBackup) === 1
+        && is_array($backupList) && ($backupList['success'] ?? false) === true
+        && (bool) array_filter($backupList['backups'], static fn (array $backup): bool => $backup['id'] === $requestedBackup);
+    $backupDirectory = $account !== null
+        ? '/var/lib/orm-instances/.orm-backups/' . $account->username()
+        : '';
+    $backupPath = $backupFound ? $backupDirectory . '/' . $requestedBackup : '';
+    $backupStat = $backupFound ? @lstat($backupPath) : false;
+    $resolvedDirectory = $backupFound ? @realpath($backupDirectory) : false;
+    $resolvedBackup = $backupFound ? @realpath($backupPath) : false;
+    $backupStream = $backupFound && is_array($backupStat) && (($backupStat['mode'] & 0170000) === 0100000)
+        && $backupStat['uid'] === 0 && $backupStat['nlink'] === 1 && ($backupStat['mode'] & 0777) === 0640
+        && $backupStat['size'] > 0 && $backupStat['size'] <= 134217728
+        && is_string($resolvedDirectory) && is_string($resolvedBackup)
+        && $resolvedBackup === $resolvedDirectory . '/' . $requestedBackup
+        ? @fopen($backupPath, 'rb')
+        : false;
+    if (is_resource($backupStream)) {
+        $openedStat = fstat($backupStream);
+        if (is_array($openedStat) && $openedStat['dev'] === $backupStat['dev']
+            && $openedStat['ino'] === $backupStat['ino'] && $openedStat['uid'] === 0
+            && $openedStat['nlink'] === 1 && ($openedStat['mode'] & 0777) === 0640
+            && $openedStat['size'] === $backupStat['size']) {
+            header('Content-Type: application/octet-stream');
+            header('Content-Disposition: attachment; filename="' . $requestedBackup . '"');
+            header('Content-Length: ' . $openedStat['size']);
+            header('X-Content-Type-Options: nosniff');
+            fpassthru($backupStream);
+            fclose($backupStream);
+            $cpanel->end();
+            return;
+        }
+        fclose($backupStream);
+    }
+    http_response_code(404);
+    $downloadFailure = true;
+}
 $connectionDetails = $brokerVerified
     ? \Orm\Cpanel\ConnectionDetails::forAccount($account->username(), $instanceStatus)
     : null;
@@ -94,6 +140,11 @@ $errorMessages = [
     'configuration_uncertain' => 'The settings could not be fully verified. Refresh this page and contact your hosting provider if the problem continues.',
     'service_failed' => 'The cache service could not complete that action. Refresh the page and check its status.',
     'storage_unavailable' => 'The cache could not be initialized because its private storage is unavailable.',
+    'backup_failed' => 'The snapshot transfer did not complete. No new backup was kept.',
+    'backup_invalid' => 'The generated snapshot did not pass validation and was discarded.',
+    'backup_in_progress' => 'A backup is already running for this cache. Wait before starting another.',
+    'backup_retention_failed' => 'The new snapshot was saved, but ORM could not remove older backups. Contact your hosting provider.',
+    'backup_storage_unavailable' => 'Backup storage is unavailable or failed security checks. Contact your hosting provider.',
 ];
 try {
     if (!$brokerVerified) {
@@ -132,6 +183,9 @@ try {
         .orm-config-impact { padding: 12px; border-left: 3px solid #bf7a18; background: #fff8e9; color: #57390e; }
         .orm-preset-help { color: #59677c; font-size: 14px; }
         .orm-note { margin-top: 18px; color: #59677c; }
+        .orm-backup-list { display: grid; gap: 9px; max-width: 720px; margin: 16px 0 0; padding: 0; list-style: none; }
+        .orm-backup-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 14px; border: 1px solid #dce3ed; border-radius: 8px; background: #fff; }
+        .orm-backup-list a { font-weight: 700; }
         .orm-connection { margin-top: 18px; }
         .orm-connection dl { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 10px 18px; }
         .orm-connection dt { color: #59677c; }
@@ -157,7 +211,10 @@ try {
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
             <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status"><?= $action === 'configure' ? 'Configuration saved.' : 'Action accepted.' ?> Current state: <?= htmlspecialchars($actionResult['state'] ?? 'unknown', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
+            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state'])): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
+          <?php endif; ?>
+          <?php if ($downloadFailure): ?>
+            <p role="alert">The requested backup is unavailable or failed file validation.</p>
           <?php endif; ?>
           <?php if ($instanceStatus === null || !$instanceStatus['success']): ?>
             <p role="alert">The local ORM service is temporarily unavailable. Contact the server administrator.</p>
@@ -190,6 +247,30 @@ try {
                   </p>
                 <?php else: ?>
                   <p class="orm-metrics-note" role="status">No recent usage sample is available. ORM could not return live metrics or a saved sample.</p>
+                <?php endif; ?>
+              </section>
+              <section aria-labelledby="orm-backups-title">
+                <h3 id="orm-backups-title">Backups</h3>
+                <p class="orm-note">Create an RDB snapshot while the cache stays online. The transfer may use extra CPU and disk I/O. ORM keeps the three newest snapshots; creating another removes the oldest.</p>
+                <form method="post" class="orm-preset-form">
+                  <input type="hidden" name="orm_action" value="backup.create">
+                  <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>>Create backup</button>
+                </form>
+                <?php if (is_array($backupList) && ($backupList['success'] ?? false) === true): ?>
+                  <?php if ($backupList['backups'] === []): ?>
+                    <p class="orm-note">No backups have been created for this cache.</p>
+                  <?php else: ?>
+                    <ul class="orm-backup-list">
+                      <?php foreach ($backupList['backups'] as $backup): ?>
+                        <li>
+                          <span><?= htmlspecialchars(gmdate('Y-m-d H:i:s', $backup['created_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC · <?= htmlspecialchars($formatBytes($backup['size_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
+                          <a href="?orm_backup=<?= rawurlencode($backup['id']) ?>">Download backup</a>
+                        </li>
+                      <?php endforeach; ?>
+                    </ul>
+                  <?php endif; ?>
+                <?php else: ?>
+                  <p class="orm-note" role="status">Backup inventory is temporarily unavailable.</p>
                 <?php endif; ?>
               </section>
             <?php endif; ?>
@@ -300,7 +381,7 @@ try {
                   </script>
                 </section>
               <?php endif; ?>
-              <p class="orm-note">Backups and restore are not enabled in this build.</p>
+              <p class="orm-note">WHM fleet backups and restore are not enabled in this build.</p>
             <?php endif; ?>
             </div>
           <?php endif; ?>
