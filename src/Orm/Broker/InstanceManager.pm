@@ -403,7 +403,8 @@ sub create_backup {
     my ($directory, $directory_state) = $self->_backup_directory($account, 1);
     return _failure('backup_storage_unavailable') if !$directory || $directory_state ne 'ready';
     my $lock_path = File::Spec->catfile($directory, 'backup.lock');
-    return _failure('backup_storage_unavailable') if !sysopen(my $lock, $lock_path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
+    my $lock;
+    return _failure('backup_storage_unavailable') if !sysopen($lock, $lock_path, O_WRONLY | O_CREAT | O_NOFOLLOW, 0600);
     my @lock_stat = stat($lock);
     if (!@lock_stat || !S_ISREG($lock_stat[2]) || $lock_stat[4] != $self->{expected_owner_uid}
         || $lock_stat[5] != $self->{expected_owner_uid} || $lock_stat[3] != 1 || ($lock_stat[2] & 0777) != 0600) {
@@ -424,13 +425,14 @@ sub create_backup {
     my $backup_id;
     my $temporary;
     for (1 .. 3) {
-        $backup_id = sprintf('snapshot-%010d-%08x.rdb', $created_at, int(rand(0x100000000)));
-        $temporary = File::Spec->catfile($directory, '.snapshot-' . $$ . '-' . sprintf('%08x', int(rand(0x100000000))) . '.tmp');
+        $backup_id = sprintf('snapshot-%010d-%08x.rdb', $created_at, int(rand(4294967296)));
+        $temporary = File::Spec->catfile($directory, '.snapshot-' . $$ . '-' . sprintf('%08x', int(rand(4294967296))) . '.tmp');
         last if !-e $temporary && !-l $temporary && !-e File::Spec->catfile($directory, $backup_id)
             && !-l File::Spec->catfile($directory, $backup_id);
         undef $temporary;
     }
-    if (!defined($temporary) || !sysopen(my $stage, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) {
+    my $stage;
+    if (!defined($temporary) || !sysopen($stage, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600)) {
         close($lock);
         return _failure('backup_storage_unavailable');
     }
