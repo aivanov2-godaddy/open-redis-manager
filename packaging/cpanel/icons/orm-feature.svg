@@ -1,10 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A custom white R monogram with three connected cache nodes on a vivid Redis-red tile.</desc>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
-  <path d="M75 205V53h66c35 0 55 18 55 48s-20 48-55 48H75m62 0 60 56" fill="none" stroke="#FFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M116 87h24c10 0 16 5 16 14s-6 14-16 14h-24" fill="none" stroke="#FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="116" cy="87" r="6" fill="#FFF"/>
-  <circle cx="140" cy="101" r="6" fill="#FFF"/>
-  <circle cx="116" cy="115" r="6" fill="#FFF"/>
+  <desc id="orm-desc">Three dimensional white cache layers with connected status nodes on a Redis-red tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="26" y1="20" x2="226" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F04438"/>
+      <stop offset="1" stop-color="#B42318"/>
+    </linearGradient>
+    <linearGradient id="face" x1="73" y1="110" x2="183" y2="185" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FCE9E7"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(118 0 0 118 82 70)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <g id="cache-layer">
+      <path d="M72 29 128 58 128 78 72 49Z" fill="url(#face)"/>
+      <path d="M184 29 128 58 128 78 184 49Z" fill="#FFFFFF"/>
+      <path d="M72 29 128 0 184 29 128 58Z" fill="#FFFFFF"/>
+      <path d="M128 13 156 29 128 43 100 29Z" fill="#D92D20"/>
+      <path d="M82 34 128 58 128 63 82 39Z" fill="#D92D20" fill-opacity=".18"/>
+      <path d="M174 34 128 58 128 63 174 39Z" fill="#8F1D16" fill-opacity=".16"/>
+    </g>
+  </defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#tile)"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#glow)"/>
+  <g aria-hidden="true">
+    <use href="#cache-layer" transform="translate(0 133)"/>
+    <use href="#cache-layer" transform="translate(0 93)"/>
+    <use href="#cache-layer" transform="translate(0 53)"/>
+    <path d="M128 72v16" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="128" cy="71" r="4" fill="#FFFFFF"/>
+    <circle cx="128" cy="87" r="4" fill="#FFFFFF"/>
+  </g>
 </svg>
