@@ -49,4 +49,4 @@ See [integration matrix](../integrations.md) for PHP extensions, frameworks, con
 
 ## Public roadmap themes captured from the reference
 
-The reference site lists deeper observability and slow-log tools, background workers and auto-healing, cross-server export/import, an API and webhooks, cluster/Sentinel support and another control panel. These are recorded as ideas for independent planning, not commitments or claims that this project has implemented them.
+The reference's versioned 2.7–3.0 roadmap is summarized in [Reference release and roadmap summary](../roadmap-reference.md). Those vendor plans are discovery inputs, not ORM commitments or implementation claims.

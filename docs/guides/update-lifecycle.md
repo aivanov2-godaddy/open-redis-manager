@@ -2,7 +2,7 @@
 
 ## Reference product behavior
 
-The public reference documentation describes an in-WHM update flow that checks the current product version, applies the current release, and asks the administrator to verify that WHM and cPanel still load, accounts remain visible, provider settings remain available, and the displayed version matches the release. It also states that supported updates preserve existing Redis instances and account configuration. These are vendor claims, not guarantees for ORM.
+The public reference [update page](https://cpanelredismanager.com/upgrade.php) describes an in-WHM update flow that checks the current product version, applies the current release, and asks the administrator to verify that WHM and cPanel still load, accounts remain visible, provider settings remain available, and the displayed version matches the release. It also states that supported updates preserve existing Redis instances and account configuration. These are vendor claims, not guarantees for ORM.
 
 The reference site also describes a special cleanup path for its own pre-v2.0.3 plugin and an uninstall command that can remove Redis instances and configuration. Those procedures are specific to that commercial product. Do not run them against ORM or another installation.
 
