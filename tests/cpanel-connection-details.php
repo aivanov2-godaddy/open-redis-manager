@@ -57,7 +57,8 @@ $assert(str_contains($page, "request('instance.metrics')") && str_contains($page
 $assert(str_contains($page, 'aria-labelledby="orm-usage-title"'), 'label the live usage section');
 $assert(str_contains($page, 'Cache hit ratio') && str_contains($page, 'Operations per second'), 'show activity and hit-ratio metrics');
 $assert(str_contains($page, 'Stale sample') && str_contains($page, 'sampled_at'), 'label stale values and show their sample time');
-$assert(str_contains($page, 'up to 30 days; no history is stored'), 'explain latest-sample retention without promising history');
+$assert(str_contains($page, 'This latest sample is saved for up to 30 days.')
+    && str_contains($page, 'Hourly history'), 'explain latest-sample retention and the separate hourly history view');
 $assert(str_contains($page, 'could not be saved for fallback use'), 'disclose a failed snapshot write to the account user');
 $assert(str_contains($page, 'name="orm_preset"'), 'offer a preset when initializing an instance');
 foreach (['generic', 'wordpress', 'laravel', 'magento', 'session'] as $preset) {

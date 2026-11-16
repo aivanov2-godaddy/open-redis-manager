@@ -8,6 +8,26 @@ grep -Fxq 'ReadWritePaths=/etc/orm-instances /var/lib/orm-instances' "$ORM_PACKA
     printf 'broker writable paths must be limited to the ORM instance metadata and data roots.\n' >&2
     exit 1
 }
+grep -Fxq 'Wants=orm-metrics-collect@%i.timer' "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" || {
+    printf 'instance service must activate its account-scoped metrics timer.\n' >&2
+    exit 1
+}
+grep -Fxq 'User=%i' "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" || {
+    printf 'metrics collection must run as its cPanel account.\n' >&2
+    exit 1
+}
+grep -Fxq 'RestrictAddressFamilies=AF_UNIX' "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" || {
+    printf 'metrics collection must use only Unix-domain sockets.\n' >&2
+    exit 1
+}
+grep -Fxq 'OnCalendar=hourly' "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" || {
+    printf 'metrics history must use a bounded hourly schedule.\n' >&2
+    exit 1
+}
+grep -Fq 'orm-metrics-collect@.timer|$ORM_METRICS_TIMER' "$ORM_PACKAGE_ROOT/lib.sh" || {
+    printf 'installer tracking must include the hourly metrics timer.\n' >&2
+    exit 1
+}
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-packaging-guards.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 

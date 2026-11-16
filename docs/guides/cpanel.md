@@ -1,10 +1,10 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, and explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Historical metrics, credential management, and WHM fleet backups remain unimplemented.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, and explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Credential management and WHM fleet backups remain unimplemented; disposable-host validation is still required.
 
 ## Overview
 
-The account page shows service state, current or retained memory, connection count, hit ratio, and sample time. The latest successful sample is retained for up to 30 days, labeled stale when the service is stopped or live sampling fails, and removed after expiry. No trend history is stored.
+The account page shows service state, current or retained memory, connection count, hit ratio, and sample time. The latest successful sample is retained for up to 30 days, labeled stale when the service is stopped or live sampling fails, and removed after expiry. A separate per-account timer collects one hourly sample while the cache is running; root-owned history is capped at 720 samples/30 days and charted over 24 hours or 7 days.
 
 ## Lifecycle and connection details
 

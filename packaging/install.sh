@@ -39,10 +39,11 @@ cleanup_on_error() {
                 "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
                 "$ORM_BROKER_BIN" \
                 "$ORM_INSTANCE_LAUNCHER" \
+                "$ORM_METRICS_COLLECTOR" \
                 "$ORM_BROKER_LIB/AccountResolver.pm" "$ORM_BROKER_LIB/BackendPolicy.pm" "$ORM_BROKER_LIB/Handler.pm" \
                 "$ORM_BROKER_LIB/InstanceManager.pm" "$ORM_BROKER_LIB/FleetInventory.pm" \
                 "$ORM_BROKER_LIB/PeerCredentials.pm" "$ORM_BROKER_LIB/Protocol.pm" \
-                "$ORM_BROKER_LIB/Server.pm" "$ORM_BROKER_UNIT" "$ORM_INSTANCE_UNIT" \
+                "$ORM_BROKER_LIB/Server.pm" "$ORM_BROKER_UNIT" "$ORM_INSTANCE_UNIT" "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER" \
                 "$ORM_CPanel_LIVE/index.live.php"
             "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || true
             rmdir -- "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" 2>/dev/null || true
@@ -77,6 +78,7 @@ install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php" "$ORM_3RDP
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php"
 install -m 0755 "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN"
 install -m 0755 "$ORM_REPO_ROOT/bin/orm-instance-launcher.pl" "$ORM_INSTANCE_LAUNCHER"
+install -m 0755 "$ORM_REPO_ROOT/bin/orm-metrics-collect.pl" "$ORM_METRICS_COLLECTOR"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/AccountResolver.pm" "$ORM_BROKER_LIB/AccountResolver.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm" "$ORM_BROKER_LIB/BackendPolicy.pm"
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Handler.pm" "$ORM_BROKER_LIB/Handler.pm"
@@ -87,9 +89,11 @@ install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm" "$ORM_BROKER_LIB/Pro
 install -m 0644 "$ORM_REPO_ROOT/src/Orm/Broker/Server.pm" "$ORM_BROKER_LIB/Server.pm"
 install -m 0644 "$ORM_PACKAGE_ROOT/systemd/orm-broker.service" "$ORM_BROKER_UNIT"
 install -m 0644 "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" "$ORM_INSTANCE_UNIT"
+install -m 0644 "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" "$ORM_METRICS_SERVICE"
+install -m 0644 "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "$ORM_METRICS_TIMER"
 "$ORM_SYSTEMCTL" daemon-reload
 broker_started=1
 "$ORM_SYSTEMCTL" enable --now orm-broker.service
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
-printf 'Open Redis Manager installed. WHM backend selection and account-scoped Redis/Valkey lifecycle controls are available; credential management and restore remain under development.\n'
+printf 'Open Redis Manager installed. Account-scoped lifecycle, hourly usage history, and backup/restore controls are available; disposable-host validation is still required.\n'

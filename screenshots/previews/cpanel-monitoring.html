@@ -25,6 +25,18 @@
     .metric svg { width: 19px; height: 19px; color: #317a9d; }
     .value { display: block; margin-top: 9px; font-size: 22px; }
     .metrics-note { margin: 14px 0 0; color: #65748a; font-size: 12px; }
+    .history { margin-top: 20px; }
+    .history-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .history-head h2 { margin: 0; }
+    .ranges { display: flex; gap: 6px; }
+    .ranges span { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 7px; color: #34445d; font-size: 13px; }
+    .ranges .selected { border-color: #2855d9; background: #2855d9; color: white; }
+    .history-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .history-card { padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+    .history-card h3 { margin: 0 0 8px; color: #59677c; font-size: 13px; font-weight: 600; }
+    .history-card strong { font-size: 20px; }
+    .history-card svg { display: block; width: 100%; margin-top: 8px; }
+    .history-card p { margin: 2px 0 0; color: #59677c; font-size: 12px; }
     .connection { margin-top: 25px; padding-top: 20px; border-top: 1px solid #e7ebf1; }
     dl { display: grid; grid-template-columns: 180px 1fr; gap: 12px 16px; margin: 16px 0 0; font-size: 14px; }
     dt { color: #65748a; }
@@ -32,12 +44,13 @@
     code { color: #254a74; }
     .note { margin: 17px 0 0; color: #65748a; font-size: 13px; line-height: 1.55; }
     .footer { margin: 18px 0; text-align: center; color: #7b8798; font-size: 12px; }
-    @media (max-width: 720px) { main { margin: 22px auto; padding: 0 14px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card { padding: 18px; } dl { grid-template-columns: 1fr; gap: 4px; } dd { margin-bottom: 8px; } }
+    @media (max-width: 720px) { main { margin: 22px auto; padding: 0 14px; } .metrics, .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card { padding: 18px; } dl { grid-template-columns: 1fr; gap: 4px; } dd { margin-bottom: 8px; } }
+    @media (max-width: 480px) { .history-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <svg class="brand-icon" viewBox="0 0 40 40" aria-hidden="true"><rect x="1" y="1" width="38" height="38" rx="11" fill="#22b8a7"/><path d="M9 13h22v4H9zm0 7h22v4H9zm0 7h14v4H9z" fill="#112238"/></svg>
+    <img class="brand-icon" src="../../assets/orm-mark.svg" alt="">
     <strong>Open Redis Manager</strong>
     <span>cPanel · demo</span>
   </header>
@@ -55,7 +68,15 @@
         <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h3l3-7 4 4 3-8h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Operations per second</span><strong class="value">126/s</strong></div>
         <div class="metric"><span class="label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Cache hit ratio</span><strong class="value">97.6%</strong></div>
       </div>
-      <p class="metrics-note">Live sample from Redis-compatible INFO statistics. Refresh this page for a new sample; history is not stored yet.</p>
+      <p class="metrics-note">Latest sample is retained privately for up to 30 days. Hourly samples are collected while this cache is running.</p>
+      <section class="history" aria-labelledby="history-title">
+        <div class="history-head"><h2 id="history-title">Hourly history</h2><div class="ranges" aria-label="Metrics history range"><span class="selected">24 hours</span><span>7 days</span></div></div>
+        <div class="history-grid">
+          <article class="history-card"><h3>Memory used</h3><strong>18.4 MiB</strong><svg viewBox="0 0 300 88" role="img" aria-label="Memory usage trend, 18 hourly samples"><path d="M8 80H292M8 44H292M8 8H292" fill="none" stroke="#e2e8f0"/><polyline points="8,62 24,57 40,60 56,47 72,52 88,40 104,43 120,32 136,37 152,28 168,36 184,23 200,29 216,18 232,25 248,16 264,22 292,12" fill="none" stroke="#d92d20" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><p>18 hourly samples</p></article>
+          <article class="history-card"><h3>Connected clients</h3><strong>4</strong><svg viewBox="0 0 300 88" role="img" aria-label="Connected clients trend, 18 hourly samples"><path d="M8 80H292M8 44H292M8 8H292" fill="none" stroke="#e2e8f0"/><polyline points="8,60 24,60 40,42 56,42 72,42 88,42 104,23 120,23 136,42 152,42 168,42 184,23 200,23 216,42 232,42 248,42 264,23 292,23" fill="none" stroke="#317a9d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><p>18 hourly samples</p></article>
+          <article class="history-card"><h3>Cache hit ratio</h3><strong>97.6%</strong><svg viewBox="0 0 300 88" role="img" aria-label="Cache hit ratio trend, 18 hourly samples"><path d="M8 80H292M8 44H292M8 8H292" fill="none" stroke="#e2e8f0"/><polyline points="8,35 24,34 40,37 56,29 72,30 88,26 104,31 120,23 136,25 152,20 168,23 184,18 200,22 216,16 232,19 248,14 264,17 292,12" fill="none" stroke="#16804a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><p>18 hourly samples</p></article>
+        </div>
+      </section>
       <section class="connection" aria-labelledby="connection-title">
         <h2 id="connection-title">Connection details</h2>
         <dl>

@@ -1,0 +1,33 @@
+[Unit]
+Description=Collect ORM metrics for %i
+BindsTo=orm-instance@%i.service
+After=orm-instance@%i.service orm-broker.service
+ConditionPathExists=/etc/orm-instances/%i/manifest.json
+
+[Service]
+Type=oneshot
+User=%i
+Group=%i
+ExecStart=/usr/local/cpanel/3rdparty/orm/bin/orm-metrics-collect.pl
+TimeoutStartSec=10s
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=32M
+CPUQuota=5%
+TasksMax=8
+LimitNOFILE=64

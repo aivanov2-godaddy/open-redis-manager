@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly ORM metrics collection for %i
+BindsTo=orm-instance@%i.service
+After=orm-instance@%i.service
+
+[Timer]
+OnCalendar=hourly
+AccuracySec=1min
+RandomizedDelaySec=10min
+Persistent=true
+Unit=orm-metrics-collect@%i.service

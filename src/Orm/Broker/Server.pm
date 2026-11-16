@@ -131,7 +131,7 @@ sub run {
                 my $limit = $request->{operation} eq 'identity'
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
                     : $request->{operation} eq 'fleet.list' ? 1
-                    : $request->{operation} eq 'instance.metrics' ? 4
+                    : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                         || $request->{operation} eq 'fleet.control') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;

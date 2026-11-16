@@ -59,6 +59,7 @@ sub handle_frame {
                         timeout => $request->{timeout},
                     } : undef,
                     $request->{operation} eq 'backup.restore' ? $request->{backup_id} : undef,
+                    $request->{operation} eq 'metrics.history' ? $request->{range} : undef,
                 )
             };
             $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 }

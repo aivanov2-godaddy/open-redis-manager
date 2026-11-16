@@ -4,7 +4,7 @@ This guide describes the intended operating behavior and identifies which contro
 
 ## Monitoring
 
-Track service state, allocated and used memory, memory peak, connected clients, uptime, command throughput, cache hit ratio, evictions and last sample time. A failed sample should display a stale marker with the last known value. Avoid reading large key sets during routine monitoring.
+Track service state, allocated and used memory, memory peak, connected clients, uptime, command throughput, cache hit ratio, evictions and last sample time. The installed cPanel page provides current values and hourly memory, client, and hit-ratio trends for 24 hours or 7 days. Collection runs hourly under the account identity while its instance is active; root-owned history is retained for up to 30 days and capped at 720 samples. A failed live sample displays the last known value with a stale marker. Avoid reading large key sets during routine monitoring.
 
 ## Backups and restore
 

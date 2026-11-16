@@ -6,6 +6,7 @@ use JSON::PP ();
 
 our @EXPORT_OK = qw(parse_request encode_response max_frame_bytes);
 my $MAX_FRAME_BYTES = 4096;
+my $MAX_RESPONSE_BYTES = 40960;
 my $JSON = JSON::PP->new->canonical(1)->utf8(1)->allow_nonref(0);
 
 sub max_frame_bytes { return $MAX_FRAME_BYTES; }
@@ -22,6 +23,9 @@ sub parse_request {
     }
     if ($frame =~ /\A\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","operation":"backup\.restore","version":1\}\n\z/) {
         return { backup_id => $1, operation => 'backup.restore', version => 1 };
+    }
+    if ($frame =~ /\A\{"operation":"metrics\.history","range":"(24h|7d)","version":1\}\n\z/) {
+        return { operation => 'metrics.history', range => $1, version => 1 };
     }
     if ($frame =~ /\A\{"operation":"instance\.provision","preset":"(wordpress|laravel|magento|session|generic)","version":1\}\n\z/) {
         return { operation => 'instance.provision', preset => $1, version => 1 };
@@ -51,7 +55,7 @@ sub encode_response {
     return undef if ref($response) ne 'HASH';
 
     my $encoded = eval { $JSON->encode($response) . "\n" };
-    return undef if !defined($encoded) || length($encoded) > $MAX_FRAME_BYTES;
+    return undef if !defined($encoded) || length($encoded) > $MAX_RESPONSE_BYTES;
     return $encoded;
 }
 
