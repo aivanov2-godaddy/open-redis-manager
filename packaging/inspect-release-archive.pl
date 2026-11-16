@@ -62,7 +62,7 @@ close $required_handle
     or die "ORM release archive: could not finish reading required-file manifest.\n";
 scalar(keys %required) >= 40
     or die "ORM release archive: required-file manifest is incomplete.\n";
-for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/apply-release.sh packaging/release-install-map.txt packaging/compare-release-preview.pl packaging/release-required-files.txt)) {
+for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/apply-release.sh packaging/adopt-install-manifest.sh packaging/release-install-map.txt packaging/compare-release-preview.pl packaging/release-required-files.txt)) {
     exists($required{$core_file})
         or die "ORM release archive: required-file manifest omits a core package file.\n";
 }
