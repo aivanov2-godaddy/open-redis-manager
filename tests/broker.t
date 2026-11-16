@@ -26,6 +26,11 @@ for my $operation (qw(backup.list backup.create)) {
     is(parse_request('{"operation":"' . $operation . '","version":1}' . "\n")->{operation},
         $operation, "accept fixed $operation request");
 }
+is(parse_request('{"operation":"fleet.backup.create","username":"acct01","version":1}' . "\n")->
+    { operation }, 'fleet.backup.create', 'accept a canonical root fleet backup request');
+my $fleet_restore = parse_request('{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n");
+ok($fleet_restore && $fleet_restore->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb'
+    && $fleet_restore->{username} eq 'acct01', 'accept a canonical account-scoped fleet restore request');
 for my $range (qw(24h 7d)) {
     is(parse_request('{"operation":"metrics.history","range":"' . $range . '","version":1}' . "\n")->{range},
         $range, "accept a canonical $range metrics history request");
@@ -54,6 +59,8 @@ for my $invalid (
     '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":301,"version":1}' . "\n",
     '{"operation":"instance.configure","maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"timeout":0,"version":1}' . "\n",
     '{"backup_id":"../other.rdb","operation":"backup.restore","version":1}' . "\n",
+    '{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n",
+    '{"backup_id":"../x.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n",
     '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",
     '{"operation":"backup.restore","backup_id":"snapshot-1794760000-a1b2c3d4.rdb","version":1}' . "\n",
     '{"operation":"metrics.history","range":"30d","version":1}' . "\n",
@@ -621,6 +628,13 @@ ok(!Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 101, 1, 0, 60, 60)
     'share the slow-operation limit between backup creation and restore');
 ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 101, 4, 0, 1, 1),
     'keep ordinary account operations available while backup restore is rate-limited');
+my %fleet_backup_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_backup_rates, 0, 100, 1, 1, 60, 'fleet.backup:acct01'),
+    'allow a root fleet backup in its per-account slow-operation bucket');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_backup_rates, 0, 101, 1, 1, 60, 'fleet.backup:acct02'),
+    'rate-limit fleet backup actions per account instead of blocking the whole fleet');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_backup_rates, 0, 101, 1, 1, 60, 'fleet.backup:acct01'),
+    'share the slow-operation limit between snapshot creation and restore for one account');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);

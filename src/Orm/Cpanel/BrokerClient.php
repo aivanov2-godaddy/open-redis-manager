@@ -10,6 +10,7 @@ final class BrokerClient
 {
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
     private const MAX_RESPONSE_BYTES = 40960;
+    private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
         'instance.metrics',
@@ -86,8 +87,10 @@ final class BrokerClient
             $payload,
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         ) . "\n";
+        $timeoutSeconds = in_array($operation, ['backup.create', 'backup.restore'], true)
+            ? self::BACKUP_OPERATION_TIMEOUT_SECONDS : 35;
         $response = $this->exchange === null
-            ? $this->exchangeWithLocalBroker($request)
+            ? $this->exchangeWithLocalBroker($request, $timeoutSeconds)
             : ($this->exchange)($request);
         if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
             || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
@@ -304,7 +307,7 @@ final class BrokerClient
         return $this->request('metrics.history', null, null, null, $range);
     }
 
-    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */
+    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string,backups_available:bool,backups:list<array{id:string,created_at:int,size_bytes:int}>}>}|null */
     public function requestFleetPage(int $offset): ?array
     {
         if ($offset < 0 || $offset > 10000) {
@@ -348,8 +351,16 @@ final class BrokerClient
             }
             $entryKeys = array_keys($entry);
             sort($entryKeys);
-            if ($entryKeys !== ['state', 'username']) {
+            if ($entryKeys !== ['backups', 'backups_available', 'state', 'username']
+                || !is_bool($entry['backups_available']) || !is_array($entry['backups'])
+                || count($entry['backups']) > 3
+                || (!$entry['backups_available'] && $entry['backups'] !== [])) {
                 return null;
+            }
+            foreach ($entry['backups'] as $backup) {
+                if (!self::validBackup($backup)) {
+                    return null;
+                }
             }
             $previous = $entry['username'];
         }
@@ -414,7 +425,95 @@ final class BrokerClient
         ];
     }
 
-    private function exchangeWithLocalBroker(string $request): ?string
+    /** @return array{success:bool,version:int,action:string,username:string,audit_logged?:bool,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,state?:string,error?:string}|null */
+    public function backupFleetAccount(string $username, string $action, ?string $backupId = null): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
+            || !in_array($action, ['create', 'restore'], true)
+            || ($action === 'create' && $backupId !== null)
+            || ($action === 'restore' && !self::validBackupId($backupId))) {
+            return null;
+        }
+        $operation = 'fleet.backup.' . $action;
+        $payload = $action === 'create'
+            ? ['operation' => $operation, 'username' => $username, 'version' => 1]
+            : ['backup_id' => $backupId, 'operation' => $operation, 'username' => $username, 'version' => 1];
+        $request = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, self::BACKUP_OPERATION_TIMEOUT_SECONDS)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 6, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $expectedAction = 'backup.' . $action;
+        $keys = array_keys($decoded);
+        sort($keys);
+        if (!$decoded['success'] && $keys === ['error', 'success', 'version']
+            && in_array($decoded['error'] ?? null, ['invalid_request', 'not_authorized', 'operation_failed', 'rate_limited'], true)) {
+            return [
+                'action' => $expectedAction,
+                'error' => $decoded['error'],
+                'success' => false,
+                'username' => $username,
+                'version' => 1,
+            ];
+        }
+        if ($decoded['success']) {
+            if (($decoded['action'] ?? null) !== $expectedAction || ($decoded['username'] ?? null) !== $username
+                || !is_bool($decoded['audit_logged'] ?? null)) {
+                return null;
+            }
+            if ($action === 'create') {
+                if ($keys !== ['action', 'audit_logged', 'backup', 'success', 'username', 'version']
+                    || !self::validBackup($decoded['backup'] ?? null)) {
+                    return null;
+                }
+            } elseif ($keys !== ['action', 'audit_logged', 'backup_id', 'safety_backup_id', 'state', 'success', 'username', 'version']
+                || ($decoded['backup_id'] ?? null) !== $backupId
+                || !self::validBackupId($decoded['safety_backup_id'] ?? null)
+                || ($decoded['state'] ?? null) !== 'running') {
+                return null;
+            }
+            return $decoded;
+        }
+
+        $allowedFailures = [
+            ['action', 'audit_logged', 'error', 'success', 'username', 'version'],
+            ['action', 'audit_logged', 'error', 'safety_backup_id', 'success', 'username', 'version'],
+        ];
+        $withoutAudit = [
+            ['action', 'error', 'success', 'username', 'version'],
+            ['action', 'error', 'safety_backup_id', 'success', 'username', 'version'],
+        ];
+        if (!in_array($keys, [...$allowedFailures, ...$withoutAudit], true)
+            || ($decoded['action'] ?? null) !== $expectedAction || ($decoded['username'] ?? null) !== $username
+            || !in_array($decoded['error'] ?? null, [
+                'invalid_request', 'not_authorized', 'operation_failed', 'account_unavailable', 'not_configured',
+                'not_running', 'backup_not_found', 'backup_failed', 'backup_invalid', 'backup_in_progress',
+                'backup_retention_failed', 'backup_storage_unavailable', 'restore_validation_unavailable',
+                'restore_failed', 'restore_rollback_failed', 'rate_limited',
+            ], true)) {
+            return null;
+        }
+        if (array_key_exists('audit_logged', $decoded) && !is_bool($decoded['audit_logged'])) {
+            return null;
+        }
+        if (array_key_exists('safety_backup_id', $decoded) && !self::validBackupId($decoded['safety_backup_id'])) {
+            return null;
+        }
+        return $decoded;
+    }
+
+    private function exchangeWithLocalBroker(string $request, int $timeoutSeconds = 35): ?string
     {
         $errno = 0;
         $error = '';
@@ -429,7 +528,7 @@ final class BrokerClient
             return null;
         }
 
-        stream_set_timeout($stream, 35);
+        stream_set_timeout($stream, $timeoutSeconds);
         $written = 0;
         while ($written < strlen($request)) {
             $count = @fwrite($stream, substr($request, $written));

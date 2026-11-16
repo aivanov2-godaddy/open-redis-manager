@@ -133,11 +133,18 @@ sub run {
                     : $request->{operation} eq 'fleet.list' ? 1
                     : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
-                        || $request->{operation} eq 'fleet.control') ? 1
+                        || $request->{operation} eq 'fleet.control'
+                        || $request->{operation} eq 'fleet.backup.create'
+                        || $request->{operation} eq 'fleet.backup.restore') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
-                my $rate_window = ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore') ? 60 : 1;
-                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control)\z/ ? 1 : 0;
-                my $rate_bucket = $request->{operation} eq 'fleet.control' ? 'fleet.control' : $rate_window;
+                my $rate_window = ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
+                    || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore') ? 60 : 1;
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control|fleet\.backup\.(?:create|restore))\z/ ? 1 : 0;
+                my $rate_bucket = $request->{operation} eq 'fleet.control'
+                    ? 'fleet.control'
+                    : $request->{operation} =~ /\Afleet\.backup\./
+                        ? 'fleet.backup:' . $request->{username}
+                        : $rate_window;
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
                     _write_and_close($selector, \%clients, $fd, {
                         error => 'rate_limited', success => JSON::PP::false, version => 1,

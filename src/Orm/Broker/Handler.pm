@@ -42,10 +42,26 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore') {
+            my $action = $request->{operation} eq 'fleet.backup.create' ? 'backup.create' : 'backup.restore';
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $action) }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $backup_response = eval {
+                    $fleet_inventory->backup($request->{username}, $action, $request->{backup_id})
+                };
+                $response = ref($backup_response) eq 'HASH' ? $backup_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
 
         my $account = defined($resolver) ? eval { $resolver->resolve_account($peer_uid) } : undef;
         if (defined($response)) {
-            # Fleet listing is handled above and never falls through to account operations.
+            # Root-only fleet operations are handled above and never fall through to account operations.
         } elsif (ref($account) eq 'HASH' && $request->{operation} eq 'identity') {
             $response = { success => JSON::PP::true, username => $account->{name}, version => 1 };
         } elsif (ref($account) eq 'HASH' && defined($instance_manager)) {

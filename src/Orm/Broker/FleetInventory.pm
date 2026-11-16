@@ -8,6 +8,8 @@ use Sys::Syslog qw(:standard :macros);
 # Status checks use systemctl with a five-second timeout; four checks stay below the 35-second WHM client timeout.
 my $PAGE_SIZE = 4;
 my $MAX_METADATA_ENTRIES = 10_000;
+my $MAX_BACKUPS_PER_ACCOUNT = 3;
+my $MAX_BACKUP_BYTES = 134_217_728;
 
 sub new {
     my ($class, %args) = @_;
@@ -71,12 +73,78 @@ sub control {
     };
 }
 
+sub backup {
+    my ($self, $username, $action, $backup_id) = @_;
+    return _failure('invalid_request') if !defined($username) || ref($username)
+        || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/ || !defined($action) || ref($action)
+        || $action !~ /\A(?:backup\.create|backup\.restore)\z/
+        || ($action eq 'backup.create' && defined($backup_id))
+        || ($action eq 'backup.restore' && (!defined($backup_id) || ref($backup_id)
+            || $backup_id !~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/));
+
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || $account->{name} ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+
+    my $manager = $self->{instance_manager};
+    my $method = $action eq 'backup.create' ? 'create_backup' : 'restore_backup';
+    my $result = eval { $manager->$method($account, $backup_id) }
+        if defined($manager) && eval { $manager->can($method) };
+    if (ref($result) ne 'HASH') {
+        my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+        return _fleet_failure('operation_failed', $username, $action, $audited);
+    }
+
+    if ($result->{success}) {
+        my %response = (
+            action => $action,
+            username => $username,
+            success => JSON::PP::true,
+            version => 1,
+        );
+        if ($action eq 'backup.create') {
+            my $backup = $result->{backup};
+            if (!_valid_backup_entry($backup)) {
+                my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+                return _fleet_failure('operation_failed', $username, $action, $audited);
+            }
+            $response{backup} = {
+                id => $backup->{id},
+                created_at => 0 + $backup->{created_at},
+                size_bytes => 0 + $backup->{size_bytes},
+            };
+        } else {
+            if (!defined($result->{backup_id}) || $result->{backup_id} ne $backup_id
+                || !_valid_backup_id($result->{safety_backup_id}) || ($result->{state} // '') ne 'running') {
+                my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+                return _fleet_failure('operation_failed', $username, $action, $audited);
+            }
+            $response{backup_id} = $backup_id;
+            $response{safety_backup_id} = $result->{safety_backup_id};
+            $response{state} = 'running';
+        }
+        my $audited = _audit_event($self, 0, $username, $action, 'success', 'running');
+        $response{audit_logged} = $audited ? JSON::PP::true : JSON::PP::false;
+        return \%response;
+    }
+
+    my $error = defined($result->{error}) && !ref($result->{error})
+        && $result->{error} =~ /\A(?:invalid_request|operation_failed|not_configured|not_running|backup_not_found|backup_failed|backup_invalid|backup_in_progress|backup_retention_failed|backup_storage_unavailable|restore_validation_unavailable|restore_failed|restore_rollback_failed|rate_limited)\z/
+        ? $result->{error} : 'operation_failed';
+    my $safety_id = _valid_backup_id($result->{safety_backup_id}) ? $result->{safety_backup_id} : undef;
+    my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
+    return _fleet_failure($error, $username, $action, $audited, $safety_id);
+}
+
 sub page {
     my ($self, $offset) = @_;
     return _failure('invalid_request') if !defined($offset) || ref($offset)
         || $offset !~ /\A(?:0|[1-9][0-9]{0,5})\z/;
     return _failure('operation_failed') if !eval { $self->{resolver}->can('resolve_account') }
-        || !eval { $self->{instance_manager}->can('status') };
+        || !eval { $self->{instance_manager}->can('status') }
+        || !eval { $self->{instance_manager}->can('backups') };
 
     my @root_stat = lstat($self->{instance_root});
     return _failure('operation_failed') if !@root_stat || !S_ISDIR($root_stat[2])
@@ -129,7 +197,34 @@ sub page {
                 ? $status->{state} : 'unhealthy';
             $state = 'unhealthy' if !defined($state)
                 || $state !~ /\A(?:stopped|starting|running|stopping|failed)\z/;
-            push @page, { username => $candidate->{username}, state => $state };
+            my $backup_response = eval { $self->{instance_manager}->backups($candidate->{account}) };
+            my @backups;
+            my $backups_available = 0;
+            if (ref($backup_response) eq 'HASH' && $backup_response->{success}
+                && ref($backup_response->{backups}) eq 'ARRAY'
+                && @{$backup_response->{backups}} <= $MAX_BACKUPS_PER_ACCOUNT) {
+                $backups_available = 1;
+                for my $backup (@{$backup_response->{backups}}) {
+                    if (!_valid_backup_entry($backup)) {
+                        $backups_available = 0;
+                        @backups = ();
+                        last;
+                    }
+                    push @backups, {
+                        id => $backup->{id},
+                        created_at => 0 + $backup->{created_at},
+                        size_bytes => 0 + $backup->{size_bytes},
+                    };
+                }
+            } else {
+                $backups_available = 0;
+            }
+            push @page, {
+                backups => \@backups,
+                backups_available => $backups_available ? JSON::PP::true : JSON::PP::false,
+                username => $candidate->{username},
+                state => $state,
+            };
         }
     }
     return {
@@ -148,16 +243,53 @@ sub _failure {
     return $response;
 }
 
+sub _fleet_failure {
+    my ($error, $username, $action, $audited, $safety_backup_id) = @_;
+    my $response = {
+        action => $action,
+        audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+        error => $error,
+        success => JSON::PP::false,
+        username => $username,
+        version => 1,
+    };
+    $response->{safety_backup_id} = $safety_backup_id if defined($safety_backup_id);
+    return $response;
+}
+
+sub _valid_backup_id {
+    my ($backup_id) = @_;
+    return defined($backup_id) && !ref($backup_id)
+        && $backup_id =~ /\Asnapshot-([0-9]{10})-[a-f0-9]{8}[.]rdb\z/;
+}
+
+sub _valid_backup_entry {
+    my ($backup) = @_;
+    return 0 if ref($backup) ne 'HASH' || !_valid_backup_id($backup->{id});
+    return 0 if !defined($backup->{created_at}) || ref($backup->{created_at})
+        || $backup->{created_at} !~ /\A[0-9]{10}\z/;
+    return 0 if $backup->{created_at} != substr($backup->{id}, 9, 10);
+    return 0 if !defined($backup->{size_bytes}) || ref($backup->{size_bytes})
+        || $backup->{size_bytes} !~ /\A[1-9][0-9]*\z/ || $backup->{size_bytes} > $MAX_BACKUP_BYTES;
+    return 1;
+}
+
 sub _audit_control {
     my ($self, $username, $action, $outcome, $state) = @_;
+    return _audit_event($self, 0, $username, $action, $outcome, $state);
+}
+
+sub _audit_event {
+    my ($self, $peer_uid, $username, $action, $outcome, $state) = @_;
+    $peer_uid = 0 if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $state = 'unavailable' if !defined($state) || $state !~ /\A(?:stopped|starting|running|stopping|failed|unavailable)\z/;
     if (ref($self->{audit}) eq 'CODE') {
-        my $recorded = eval { $self->{audit}->(0, $username, $action, $outcome, $state) };
+        my $recorded = eval { $self->{audit}->($peer_uid, $username, $action, $outcome, $state) };
         return $recorded ? 1 : 0;
     }
     my $recorded = eval {
         openlog('orm-broker', 'pid', 'authpriv');
-        syslog(LOG_NOTICE, 'fleet_control actor_uid=0 account=%s action=%s result=%s state=%s', $username, $action, $outcome, $state)
+        syslog(LOG_NOTICE, 'fleet_operation actor_uid=%s account=%s action=%s result=%s state=%s', $peer_uid, $username, $action, $outcome, $state)
             or die "syslog write failed";
         closelog();
         1;
@@ -170,20 +302,9 @@ sub audit_denial {
     my ($self, $peer_uid, $username, $action) = @_;
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
-    $action = 'invalid' if !defined($action) || ref($action) || $action !~ /\A(?:start|stop|restart)\z/;
-    if (ref($self->{audit}) eq 'CODE') {
-        my $recorded = eval { $self->{audit}->($peer_uid, $username, $action, 'not_authorized', 'unavailable') };
-        return $recorded ? 1 : 0;
-    }
-    my $recorded = eval {
-        openlog('orm-broker', 'pid', 'authpriv');
-        syslog(LOG_NOTICE, 'fleet_control actor_uid=%s account=%s action=%s result=not_authorized state=unavailable',
-            $peer_uid, $username, $action) or die "syslog write failed";
-        closelog();
-        1;
-    };
-    eval { closelog(); };
-    return $recorded ? 1 : 0;
+    $action = 'invalid' if !defined($action) || ref($action)
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore)\z/;
+    return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
 1;

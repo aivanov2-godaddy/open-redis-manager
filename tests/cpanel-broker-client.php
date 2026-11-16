@@ -226,7 +226,7 @@ $assert($multiFrame->request('instance.status') === null, 'Reject multiple respo
 $fleetRequests = [];
 $fleet = new BrokerClient(static function (string $request) use (&$fleetRequests): string {
     $fleetRequests[] = $request;
-    return "{\"entries\":[{\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
+    return "{\"entries\":[{\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
 });
 $fleetPage = $fleet->requestFleetPage(30);
 $assert($fleetRequests[0] === "{\"offset\":30,\"operation\":\"fleet.list\",\"version\":1}\n",
@@ -236,9 +236,13 @@ $assert($fleetPage['total'] === 31 && $fleetPage['entries'][0]['username'] === '
 $assert($fleet->requestFleetPage(-1) === null, 'Reject negative fleet offsets before sending.');
 
 $badFleet = new BrokerClient(static fn (string $request): string =>
-    "{\"entries\":[{\"state\":\"running\",\"username\":\"../root\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+    "{\"entries\":[{\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"../root\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
 );
 $assert($badFleet->requestFleetPage(0) === null, 'Reject unsafe account names in fleet responses.');
+$malformedFleetBackups = new BrokerClient(static fn (string $request): string =>
+    "{\"entries\":[{\"backups\":[{\"created_at\":1794760000,\"id\":\"../x.rdb\",\"size_bytes\":4096}],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+);
+$assert($malformedFleetBackups->requestFleetPage(0) === null, 'Reject unsafe snapshot metadata in fleet responses.');
 
 $controlRequests = [];
 $controlClient = new BrokerClient(static function (string $request) use (&$controlRequests): string {
@@ -270,5 +274,28 @@ $controlFailure = new BrokerClient(static fn (string $request): string =>
 $assert($controlFailure->controlFleetAccount('demo', 'start') === [
     'success' => false, 'error' => 'not_configured', 'version' => 1, 'audit_logged' => true,
 ], 'Parse a fixed safe fleet action failure.');
+
+$fleetBackupRequests = [];
+$fleetBackup = new BrokerClient(static function (string $request) use (&$fleetBackupRequests): string {
+    $fleetBackupRequests[] = $request;
+    return "{\"action\":\"backup.create\",\"audit_logged\":true,\"backup\":{\"created_at\":1794760000,\"id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"size_bytes\":4096},\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$fleetBackupResult = $fleetBackup->backupFleetAccount('demo', 'create');
+$assert($fleetBackupRequests[0] === "{\"operation\":\"fleet.backup.create\",\"username\":\"demo\",\"version\":1}\n",
+    'Send a canonical fleet backup request with only the validated account.');
+$assert(($fleetBackupResult['success'] ?? false) && $fleetBackupResult['backup']['id'] === 'snapshot-1794760000-a1b2c3d4.rdb',
+    'Parse a bounded per-account backup receipt.');
+$fleetRestoreRequests = [];
+$fleetRestoreClient = new BrokerClient(static function (string $request) use (&$fleetRestoreRequests): string {
+    $fleetRestoreRequests[] = $request;
+    return "{\"action\":\"backup.restore\",\"audit_logged\":true,\"backup_id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"safety_backup_id\":\"snapshot-1794760001-b2c3d4e5.rdb\",\"state\":\"running\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$fleetRestoreResult = $fleetRestoreClient->backupFleetAccount('demo', 'restore', 'snapshot-1794760000-a1b2c3d4.rdb');
+$assert(str_contains($fleetRestoreRequests[0], '"operation":"fleet.backup.restore"')
+    && ($fleetRestoreResult['success'] ?? false) && $fleetRestoreResult['safety_backup_id'] === 'snapshot-1794760001-b2c3d4e5.rdb',
+    'Send and validate a selected account restore with its safety snapshot result.');
+$assert($fleetBackup->backupFleetAccount('../root', 'create') === null
+    && $fleetBackup->backupFleetAccount('demo', 'restore', '../outside.rdb') === null,
+    'Reject unsafe account and snapshot identifiers before broker I/O.');
 
 fwrite(STDOUT, "cPanel broker client checks passed: {$checks}\n");

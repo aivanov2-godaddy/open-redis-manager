@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention, and a previewable credential-redacted diagnostics report. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Credential management and WHM fleet backups remain unimplemented; disposable-host validation is still required.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention, and a previewable credential-redacted diagnostics report. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Root WHM now offers per-account snapshot listing, creation, and restore; fleet-wide batch actions and credential management remain unimplemented. Disposable-host validation is still required.
 
 ## Overview
 
