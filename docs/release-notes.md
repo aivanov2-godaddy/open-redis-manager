@@ -24,7 +24,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Lifecycle, metrics, backups/restore, migration, WHM diagnostics, provider controls, and recovery behavior on real cPanel systems.
 - Host support across cPanel/WHM versions, supported OS releases, internal PHP versions, EasyApache/Alt-PHP, handlers, CageFS, and PHP Selector.
 
-The only live cPanel evidence recorded so far verifies account identity through one smoke run. It does not validate service lifecycle, ACL behavior across releases, backup/restore, migration, recovery, or uninstall. See the [host validation matrix](validation/compatibility-matrix.md).
+Live cPanel identity evidence consists of two smoke runs during private testing. The latest read-only run passed, but the deployed source revision was not matched to the current checkout and no Redis/Valkey backend was detected at the supported common paths. These runs do not validate service lifecycle, ACL behavior across releases, backup/restore, migration, recovery, or uninstall. See the [host validation matrix](validation/compatibility-matrix.md).
 
 ## Planned
 

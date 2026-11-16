@@ -18,7 +18,7 @@ The check requires an installed ORM cPanel entry point, an active `orm-broker.se
 
 ## Current evidence
 
-A live cPanel test passed: the root-run broker was active, the cPanel account UID could verify through the local socket, and the installed page reported a verified account identity through LiveAPI. No host, account, domain, address, email, credential, or session detail is recorded here.
+A live cPanel identity smoke test has passed twice in private testing. In the latest read-only run, the installed page reported a verified account identity through LiveAPI while the broker was active. The installed files did not match the current repository checkout, so the deployed source revision was not established. No host, account, domain, address, email, credential, or session detail is recorded here.
 
 This evidence does not verify provisioning, lifecycle controls, metrics, configuration, backups, or a supported production matrix. Those remain release gates.
 

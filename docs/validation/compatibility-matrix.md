@@ -56,9 +56,9 @@ Do not advertise any row as supported until a completed, reviewable validation r
 |---|---|---|
 | Fresh install | Linux CI runs the installer in an isolated mock cPanel root and checks deployed files, manifest, AppConfig, service state, instance-root permissions, and rollback after registration failure | Not recorded |
 | Upgrade and uninstall | Linux CI mocks the identity-v1 upgrade, registration failures, rollback, and uninstall paths | Not recorded |
-| Account identity | Live smoke checks LiveAPI identity against the local broker | Passed once on a private test environment; exact host/version details are intentionally not stored |
+| Account identity | Live smoke checks LiveAPI identity against the local broker | Passed in two private test runs; latest run was read-only and the deployed source revision was not established |
 | Account boundary and WHM ACL | Broker and PHP tests cover peer identity and root-only request paths | Not recorded across the matrix |
-| Redis/Valkey lifecycle | Broker tests exercise service and backend operations with fixtures | Not recorded |
+| Redis/Valkey lifecycle | Broker tests exercise service and backend operations with fixtures | Not run; read-only discovery on the latest private test environment did not detect Redis or Valkey at the supported common paths |
 | Backup and restore | Broker tests exercise selected snapshots, validation, service restart, and rollback with fixtures | Not recorded |
 | Redis-to-Valkey migration | Broker tests exercise version gates, validation, success, and rollback with fixtures | Not recorded |
 | WHM recovery | Broker and fleet tests cover read-only scans and the fixed start repair | Not recorded |
