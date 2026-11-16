@@ -261,6 +261,10 @@ sub fleet_summary {
         max_evictions_per_window => 0, max_operations_per_second => 0,
         rate_window_min_seconds => 0, rate_window_max_seconds => 0,
         rate_window_earliest_start_at => 0, rate_window_latest_end_at => 0,
+        auth_rate_accounts => 0, auth_rate_missing_accounts => 0, auth_failure_accounts => 0,
+        max_auth_failures_per_window => 0, auth_rate_window_min_seconds => 0,
+        auth_rate_window_max_seconds => 0, auth_rate_window_earliest_start_at => 0,
+        auth_rate_window_latest_end_at => 0,
     );
     my $stateUnavailable = 0;
     my $now = time;
@@ -295,6 +299,25 @@ sub fleet_summary {
             $metrics{rate_window_latest_end_at} = $securitySample->{sampled_at}
                 if $securitySample->{sampled_at} > $metrics{rate_window_latest_end_at};
         }
+        if (ref($securitySample) eq 'HASH' && $securitySample->{auth_available} == 1
+            && defined($securitySample->{auth_window_seconds})
+            && $securitySample->{sampled_at} <= $now
+            && $securitySample->{sampled_at} >= $now - $MAX_SECURITY_METRICS_AGE_SECONDS) {
+            ++$metrics{auth_rate_accounts};
+            ++$metrics{auth_failure_accounts} if $securitySample->{auth_failures_delta} > 0;
+            $metrics{max_auth_failures_per_window} = $securitySample->{auth_failures_delta}
+                if $securitySample->{auth_failures_delta} > $metrics{max_auth_failures_per_window};
+            $metrics{auth_rate_window_min_seconds} = $securitySample->{auth_window_seconds}
+                if !$metrics{auth_rate_window_min_seconds}
+                    || $securitySample->{auth_window_seconds} < $metrics{auth_rate_window_min_seconds};
+            $metrics{auth_rate_window_max_seconds} = $securitySample->{auth_window_seconds}
+                if $securitySample->{auth_window_seconds} > $metrics{auth_rate_window_max_seconds};
+            $metrics{auth_rate_window_earliest_start_at} = $securitySample->{auth_window_start_at}
+                if !$metrics{auth_rate_window_earliest_start_at}
+                    || $securitySample->{auth_window_start_at} < $metrics{auth_rate_window_earliest_start_at};
+            $metrics{auth_rate_window_latest_end_at} = $securitySample->{sampled_at}
+                if $securitySample->{sampled_at} > $metrics{auth_rate_window_latest_end_at};
+        }
 
         my $sample = $self->_read_metrics_snapshot($account);
         if (ref($sample) ne 'HASH') {
@@ -324,9 +347,10 @@ sub fleet_summary {
 
     }
     $metrics{rate_missing_accounts} = scalar(@managed) - $metrics{rate_accounts};
+    $metrics{auth_rate_missing_accounts} = scalar(@managed) - $metrics{auth_rate_accounts};
     my $partial = $unverified > 0 || $stateUnavailable > 0
         || $metrics{stale_accounts} > 0 || $metrics{missing_accounts} > 0
-        || $metrics{rate_missing_accounts} > 0;
+        || $metrics{rate_missing_accounts} > 0 || $metrics{auth_rate_missing_accounts} > 0;
     return {
         account_count => scalar(@{$accounts}),
         managed_count => scalar(@managed),
@@ -1389,7 +1413,7 @@ sub metrics {
     my $retained = $self->_write_metrics_snapshot($account, $sample);
     $self->_write_metrics_history($account, $sample);
     my %securityCounters = (sampled_at => $sample->{sampled_at}, uptime_seconds => $sample->{uptime_seconds});
-    for my $field (qw(evicted_keys total_commands_processed)) {
+    for my $field (qw(evicted_keys total_commands_processed acl_access_denied_auth)) {
         my ($value) = $info =~ /^\Q$field\E:([0-9]+)\r?$/m;
         $securityCounters{$field} = 0 + $value if defined($value) && length($value) <= 15;
     }
@@ -2014,15 +2038,22 @@ sub _write_security_metrics_snapshot {
 
     my $available = _is_integer($raw->{evicted_keys}) && length($raw->{evicted_keys}) <= 15
         && _is_integer($raw->{total_commands_processed}) && length($raw->{total_commands_processed}) <= 15;
+    my $authAvailable = _is_integer($raw->{acl_access_denied_auth})
+        && length($raw->{acl_access_denied_auth}) <= 15;
     my $snapshot = {
         available => $available ? 1 : 0,
+        acl_access_denied_auth => $authAvailable ? 0 + $raw->{acl_access_denied_auth} : undef,
+        auth_available => $authAvailable ? 1 : 0,
+        auth_failures_delta => undef,
+        auth_window_seconds => undef,
+        auth_window_start_at => undef,
         evicted_keys => $available ? 0 + $raw->{evicted_keys} : undef,
         evicted_keys_delta => undef,
         sampled_at => $sampledAt,
         total_commands_processed => $available ? 0 + $raw->{total_commands_processed} : undef,
         total_commands_processed_delta => undef,
-        uptime_seconds => $available ? 0 + $raw->{uptime_seconds} : undef,
-        version => 1,
+        uptime_seconds => 0 + $raw->{uptime_seconds},
+        version => 2,
         window_seconds => undef,
         window_start_at => undef,
     };
@@ -2040,6 +2071,20 @@ sub _write_security_metrics_snapshot {
                 - $previous->{total_commands_processed};
             $snapshot->{window_seconds} = $window;
             $snapshot->{window_start_at} = $previous->{sampled_at};
+        }
+    }
+    if ($authAvailable && ref($previous) eq 'HASH' && $previous->{auth_available} == 1) {
+        my $window = $sampledAt - $previous->{sampled_at};
+        my $uptimeDelta = $snapshot->{uptime_seconds} - $previous->{uptime_seconds};
+        my $tolerance = int($window / 10);
+        $tolerance = 300 if $tolerance < 300;
+        if ($window >= 1 && $window <= $MAX_SECURITY_METRICS_AGE_SECONDS
+            && $uptimeDelta > 0 && abs($uptimeDelta - $window) <= $tolerance
+            && $snapshot->{acl_access_denied_auth} >= $previous->{acl_access_denied_auth}) {
+            $snapshot->{auth_failures_delta} = $snapshot->{acl_access_denied_auth}
+                - $previous->{acl_access_denied_auth};
+            $snapshot->{auth_window_seconds} = $window;
+            $snapshot->{auth_window_start_at} = $previous->{sampled_at};
         }
     }
 
@@ -2081,22 +2126,25 @@ sub _read_security_metrics_snapshot {
     my $snapshot = eval { JSON::PP->new->decode(substr($json, 0, -1)) };
     return undef if ref($snapshot) ne 'HASH'
         || join(',', sort keys %{$snapshot}) ne join(',', qw(
+            acl_access_denied_auth auth_available auth_failures_delta auth_window_seconds auth_window_start_at
             available evicted_keys evicted_keys_delta sampled_at total_commands_processed
             total_commands_processed_delta uptime_seconds version window_seconds window_start_at
         ))
         || !_is_integer($snapshot->{available}) || $snapshot->{available} > 1
-        || !_is_integer($snapshot->{version}) || $snapshot->{version} != 1
+        || !_is_integer($snapshot->{auth_available}) || $snapshot->{auth_available} > 1
+        || !_is_integer($snapshot->{version}) || $snapshot->{version} != 2
         || !_is_integer($snapshot->{sampled_at}) || $snapshot->{sampled_at} > 9_999_999_999
         || $snapshot->{sampled_at} > time + 300;
+    return undef if !_is_integer($snapshot->{uptime_seconds}) || length($snapshot->{uptime_seconds}) > 15;
     if ($snapshot->{available} == 0) {
         return undef if grep { defined($snapshot->{$_}) } qw(
             evicted_keys evicted_keys_delta total_commands_processed total_commands_processed_delta
-            uptime_seconds window_seconds window_start_at
+            window_seconds window_start_at
         );
-        return $snapshot;
-    }
-    for my $field (qw(evicted_keys total_commands_processed uptime_seconds)) {
-        return undef if !_is_integer($snapshot->{$field}) || length($snapshot->{$field}) > 15;
+    } else {
+        for my $field (qw(evicted_keys total_commands_processed)) {
+            return undef if !_is_integer($snapshot->{$field}) || length($snapshot->{$field}) > 15;
+        }
     }
     my @rateFields = qw(evicted_keys_delta total_commands_processed_delta window_seconds window_start_at);
     my $rateFieldCount = scalar grep { defined($snapshot->{$_}) } @rateFields;
@@ -2111,6 +2159,27 @@ sub _read_security_metrics_snapshot {
             || $snapshot->{sampled_at} - $snapshot->{window_start_at} != $snapshot->{window_seconds}
             || $snapshot->{evicted_keys_delta} > $snapshot->{evicted_keys}
             || $snapshot->{total_commands_processed_delta} > $snapshot->{total_commands_processed};
+    }
+    if ($snapshot->{auth_available} == 0) {
+        return undef if grep { defined($snapshot->{$_}) } qw(
+            acl_access_denied_auth auth_failures_delta auth_window_seconds auth_window_start_at
+        );
+    } else {
+        return undef if !_is_integer($snapshot->{acl_access_denied_auth})
+            || length($snapshot->{acl_access_denied_auth}) > 15;
+        my @authRateFields = qw(auth_failures_delta auth_window_seconds auth_window_start_at);
+        my $authRateFieldCount = scalar grep { defined($snapshot->{$_}) } @authRateFields;
+        return undef if $authRateFieldCount != 0 && $authRateFieldCount != @authRateFields;
+        if ($authRateFieldCount) {
+            for my $field (@authRateFields) {
+                return undef if !_is_integer($snapshot->{$field}) || length($snapshot->{$field}) > 15;
+            }
+            return undef if $snapshot->{auth_window_seconds} < 1
+                || $snapshot->{auth_window_seconds} > $MAX_SECURITY_METRICS_AGE_SECONDS
+                || $snapshot->{auth_window_start_at} > $snapshot->{sampled_at}
+                || $snapshot->{sampled_at} - $snapshot->{auth_window_start_at} != $snapshot->{auth_window_seconds}
+                || $snapshot->{auth_failures_delta} > $snapshot->{acl_access_denied_auth};
+        }
     }
     return $snapshot;
 }

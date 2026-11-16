@@ -33,6 +33,14 @@ $fleet = [
         'rate_window_max_seconds' => 7200,
         'rate_window_earliest_start_at' => $now - 7200,
         'rate_window_latest_end_at' => $now - 60,
+        'auth_rate_accounts' => 5,
+        'auth_rate_missing_accounts' => 0,
+        'auth_failure_accounts' => 2,
+        'max_auth_failures_per_window' => 4,
+        'auth_rate_window_min_seconds' => 3600,
+        'auth_rate_window_max_seconds' => 7200,
+        'auth_rate_window_earliest_start_at' => $now - 7200,
+        'auth_rate_window_latest_end_at' => $now - 60,
     ],
 ];
 $audit = [
@@ -60,6 +68,12 @@ $assert(($byCategory['eviction_rate']['count'] ?? null) === 2
     && str_contains($byCategory['operation_rate']['evidence'], '120 operations per second')
     && str_contains($byCategory['operation_rate']['evidence'], 'not an abuse verdict'),
     'report measured counter rates with their actual window bounds and neutral interpretation');
+$assert(($byCategory['client_authentication_failures']['count'] ?? null) === 2
+    && str_contains($byCategory['client_authentication_failures']['evidence'], 'largest per-account counter delta was 4')
+    && str_contains($byCategory['client_authentication_failures']['evidence'], 'do not identify clients')
+    && str_contains($byCategory['client_authentication_failures']['evidence'], '3600–7200 seconds')
+    && str_contains($byCategory['client_authentication_failures']['recommendation'], 'no abuse threshold'),
+    'report anonymous supported authentication-failure counter evidence without identifying clients or alleging attacks');
 $assert(($byCategory['auth_management_events']['count'] ?? null) === 3
     && str_contains($byCategory['auth_management_events']['evidence'], '1 unsuccessful')
     && str_contains($byCategory['auth_management_events']['evidence'], 'not Redis client login attempts'),
@@ -68,7 +82,7 @@ $encoded = json_encode($report, JSON_THROW_ON_ERROR);
 $assert(!str_contains($encoded, 'testacct') && !str_contains($encoded, 'report-secret-canary'),
     'omit account names and secret-like input from the report');
 $assert(isset($report['unmeasured']['credential_strength'])
-    && isset($report['unmeasured']['client_authentication_failures'])
+    && !isset($report['unmeasured']['client_authentication_failures'])
     && !isset($report['unmeasured']['eviction_rate']) && !isset($report['unmeasured']['operation_rate']),
     'explicitly disclose signal categories that are not measured');
 
@@ -81,7 +95,8 @@ foreach (['rate_accounts', 'rate_missing_accounts', 'eviction_activity_accounts'
 $legacyReport = WhmSecurityReport::build($legacyFleet, $audit, $now);
 $legacyCategories = array_column($legacyReport['findings'], null, 'category');
 $assert($legacyReport['partial'] && $legacyCategories['eviction_rate']['count'] === null
-    && $legacyCategories['operation_rate']['count'] === null,
+    && $legacyCategories['operation_rate']['count'] === null
+    && $legacyCategories['client_authentication_failures']['count'] === null,
     'keep older brokers readable and show new counter signals as unknown until the extended schema is available');
 $staleFleet = $fleet;
 $staleFleet['metrics']['fresh_accounts'] = 0;
@@ -92,8 +107,23 @@ $staleFleet['metrics']['low_hit_ratio_accounts'] = 0;
 $staleReport = WhmSecurityReport::build($staleFleet, $audit, $now);
 $staleCategories = array_column($staleReport['findings'], null, 'category');
 $assert($staleReport['partial'] && $staleCategories['metrics_unavailable']['count'] === null
-    && $staleCategories['operation_rate']['count'] === 5,
-    'preserve valid historical counter-rate evidence when the separate fresh metrics source is unavailable');
+    && $staleCategories['operation_rate']['count'] === 5
+    && $staleCategories['client_authentication_failures']['count'] === 2,
+    'preserve valid historical counter-rate and auth evidence when the separate fresh metrics source is unavailable');
+
+$unsupportedAuthFleet = $fleet;
+$unsupportedAuthFleet['metrics']['auth_rate_accounts'] = 0;
+$unsupportedAuthFleet['metrics']['auth_rate_missing_accounts'] = 5;
+foreach (['auth_failure_accounts', 'max_auth_failures_per_window', 'auth_rate_window_min_seconds',
+    'auth_rate_window_max_seconds', 'auth_rate_window_earliest_start_at', 'auth_rate_window_latest_end_at'] as $field) {
+    $unsupportedAuthFleet['metrics'][$field] = 0;
+}
+$unsupportedAuthFleet['partial'] = true;
+$unsupportedAuthReport = WhmSecurityReport::build($unsupportedAuthFleet, $audit, $now);
+$unsupportedAuthCategories = array_column($unsupportedAuthReport['findings'], null, 'category');
+$assert($unsupportedAuthReport['partial'] && $unsupportedAuthCategories['client_authentication_failures']['count'] === null
+    && str_contains($unsupportedAuthCategories['client_authentication_failures']['evidence'], 'unavailable'),
+    'show missing or version-unsupported authentication counters as unknown instead of zero');
 
 $partialAudit = $audit;
 $partialAudit['partial'] = true;
