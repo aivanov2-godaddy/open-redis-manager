@@ -298,7 +298,7 @@ assert_legacy_restored() {
         [[ "$(stat -c '%u' -- "$target")" == 0 ]] || { printf 'rollback did not restore ownership for %s.\n' "$key" >&2; exit 1; }
     done < <(orm_legacy_identity_v1_file_map)
     expected_files="$(while IFS='|' read -r key target mode; do
-        [[ "$target" == "$ORM_3RDPARTY/"* ]] && printf '%s\n' "$target"
+        if [[ "$target" == "$ORM_3RDPARTY/"* ]]; then printf '%s\n' "$target"; fi
     done < <(orm_legacy_identity_v1_file_map) | sort)"
     actual_files="$(find "$ORM_3RDPARTY" \( -type f -o -type l \) -print | sort)"
     if [[ "$allow_unexpected" != 1 ]]; then
