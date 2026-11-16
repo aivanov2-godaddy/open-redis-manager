@@ -28,6 +28,8 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our @STATUS_CALLS;
     our @CONTROL_CALLS;
     our %CONTROL_STATES;
+    our @BACKUP_CALLS;
+    our %BACKUPS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -42,6 +44,20 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     sub start { return _control($_[0], $_[1], 'start', 'running'); }
     sub stop { return _control($_[0], $_[1], 'stop', 'stopped'); }
     sub restart { return _control($_[0], $_[1], 'restart', 'starting'); }
+    sub backups {
+        my ($self, $account) = @_;
+        return { success => 1, backups => $BACKUPS{$account->{name}} // [] };
+    }
+    sub create_backup {
+        my ($self, $account) = @_;
+        push @BACKUP_CALLS, ['create', $account->{name}];
+        return { success => 1, backup => { id => 'snapshot-1794760000-a1b2c3d4.rdb', created_at => 1794760000, size_bytes => 4096 } };
+    }
+    sub restore_backup {
+        my ($self, $account, $backup_id) = @_;
+        push @BACKUP_CALLS, ['restore', $account->{name}, $backup_id];
+        return { success => 1, backup_id => $backup_id, safety_backup_id => 'snapshot-1794760001-b2c3d4e5.rdb', state => 'running' };
+    }
     sub _control {
         my ($self, $account, $action, $state) = @_;
         push @CONTROL_CALLS, [$action, $account->{name}];
@@ -88,6 +104,8 @@ is($first->{total}, 35, 'skip malformed account directories but include configur
 is(scalar @{$first->{entries}}, 4, 'bound fleet responses to a four-account page');
 is($first->{entries}[0]->{username}, 'acct01', 'sort fleet entries by account name');
 is($first->{entries}[0]->{state}, 'running', 'report normalized running state');
+ok($first->{entries}[0]->{backups_available} && @{$first->{entries}[0]->{backups}} == 0,
+    'report an available empty per-account snapshot list');
 is($first->{entries}[3]->{username}, 'acct04', 'first page ends at the fixed page size');
 is($first->{entries}[4], undef, 'do not include entries beyond the response page');
 
@@ -152,6 +170,42 @@ my $noAuditControl = $noAuditInventory->control('acct01', 'restart');
 ok($noAuditControl->{success} && !$noAuditControl->{audit_logged}
     && $noAuditControl->{state} eq 'starting',
     'report the service outcome separately when audit delivery cannot be confirmed');
+
+my $backup_id = 'snapshot-1794760000-a1b2c3d4.rdb';
+$Local::FleetManager::BACKUPS{acct01} = [{ id => $backup_id, created_at => 1794760000, size_bytes => 4096 }];
+my $backup_page = $inventory->page(0);
+ok($backup_page->{entries}[0]->{backups_available}
+    && $backup_page->{entries}[0]->{backups}[0]->{id} eq $backup_id,
+    'include only bounded validated account snapshot metadata on its fleet row');
+my $create_response = $inventory->backup('acct01', 'backup.create');
+ok($create_response->{success} && $create_response->{backup}->{id} eq $backup_id,
+    'create a snapshot for the resolved account');
+is_deeply($Local::FleetManager::BACKUP_CALLS[-1], ['create', 'acct01'],
+    'never pass a caller-selected account path to backup creation');
+my $restore_response = $inventory->backup('acct01', 'backup.restore', $backup_id);
+ok($restore_response->{success} && $restore_response->{backup_id} eq $backup_id
+    && $restore_response->{safety_backup_id} eq 'snapshot-1794760001-b2c3d4e5.rdb',
+    'return the selected snapshot and generated safety snapshot for restore');
+is_deeply($Local::FleetManager::BACKUP_CALLS[-1], ['restore', 'acct01', $backup_id],
+    'restore only the selected validated snapshot of the resolved account');
+is_deeply($audit[-1], [0, 'acct01', 'backup.restore', 'success', 'running'],
+    'audit root fleet restore outcome without snapshot contents');
+is($inventory->backup('acct99', 'backup.create')->{error}, 'account_unavailable',
+    'reject fleet backup actions for accounts absent from trusted lookup');
+is($inventory->backup('../root', 'backup.create')->{error}, 'invalid_request',
+    'reject malformed account names before backup lookup');
+is($inventory->backup('acct01', 'backup.restore', '../dump.rdb')->{error}, 'invalid_request',
+    'reject caller-supplied backup paths');
+my $fleetBackupRequest = '{"operation":"fleet.backup.create","username":"acct01","version":1}' . "\n";
+is(parse_request($fleetBackupRequest)->{operation}, 'fleet.backup.create', 'accept canonical fleet snapshot creation request');
+ok(!parse_request('{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n"),
+    'reject extra fields in fleet snapshot requests');
+my $nonRootBackup = Orm::Broker::Handler->handle_frame($fleetBackupRequest, 10001, undef, undef, $inventory);
+like($nonRootBackup, qr/"error":"not_authorized"/, 'deny non-root fleet snapshot operations');
+is_deeply($audit[-1], [10001, 'acct01', 'backup.create', 'not_authorized', 'unavailable'],
+    'record denied backup attempts using the kernel peer UID');
+my $rootBackup = Orm::Broker::Handler->handle_frame($fleetBackupRequest, 0, undef, undef, $inventory);
+like($rootBackup, qr/"success":true/, 'allow root to request an account snapshot through the broker');
 
 chmod(0777, $instance_root) or die "weaken instance root: $!";
 ok(!$inventory->page(0)->{success}, 'fail closed when the metadata root is writable by others');

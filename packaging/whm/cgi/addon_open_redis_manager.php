@@ -20,6 +20,7 @@ $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
 $fleetControlMessage = null;
+$fleetBackupMessage = null;
 $controlRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'fleet.control';
 if ($controlRequest) {
@@ -61,6 +62,72 @@ if ($controlRequest) {
         ];
     }
 }
+$fleetBackupRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.backup';
+if ($fleetBackupRequest) {
+    $username = $_POST['username'] ?? null;
+    $action = $_POST['fleet_action'] ?? null;
+    $backupId = $_POST['backup_id'] ?? null;
+    $result = is_string($username) && is_string($action)
+        ? $fleetClient->backupFleetAccount($username, $action, $action === 'restore' && is_string($backupId) ? $backupId : null)
+        : null;
+    if ($result === null) {
+        $fleetBackupMessage = ['type' => 'error', 'text' => 'The account backup action could not be verified. Refresh the page and try again.'];
+    } elseif ($result['success']) {
+        if ($action === 'create' && is_array($result['backup'] ?? null) && is_array($fleetPage)) {
+            foreach ($fleetPage['entries'] as &$entry) {
+                if ($entry['username'] === $result['username']) {
+                    $entry['backups'] = array_values(array_filter(
+                        $entry['backups'],
+                        static fn (array $backup): bool => $backup['id'] !== $result['backup']['id']
+                    ));
+                    array_unshift($entry['backups'], $result['backup']);
+                    $entry['backups'] = array_slice($entry['backups'], 0, 3);
+                    $entry['backups_available'] = true;
+                }
+            }
+            unset($entry);
+        }
+        if ($action === 'create') {
+            $text = 'Backup created for ' . $result['username'] . ': ' . $result['backup']['id'] . '.';
+        } else {
+            $text = 'Restored ' . $result['backup_id'] . ' for ' . $result['username']
+                . '. Safety snapshot ' . $result['safety_backup_id'] . ' was retained; the cache is running.';
+        }
+        $fleetBackupMessage = [
+            'type' => 'success',
+            'text' => $text . ($result['audit_logged']
+                ? ' The result was recorded in the system authentication log.'
+                : ' Warning: the operation completed, but its audit record could not be confirmed.'),
+        ];
+    } else {
+        $backupMessages = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'not_configured' => 'The selected account does not have an ORM instance.',
+            'not_running' => 'Start the selected cache before creating or restoring a snapshot.',
+            'rate_limited' => 'Wait a moment before repeating this account backup action.',
+            'backup_not_found' => 'The selected snapshot is no longer retained for this account.',
+            'backup_failed' => 'The snapshot could not be created.',
+            'backup_invalid' => 'The snapshot did not pass validation and was not applied.',
+            'backup_in_progress' => 'A backup or restore is already running for this account.',
+            'backup_retention_failed' => 'The snapshot operation could not safely finish retention cleanup.',
+            'backup_storage_unavailable' => 'Backup storage is unavailable or failed its security checks.',
+            'restore_validation_unavailable' => 'The installed RDB validator is unavailable; no restore was applied.',
+            'restore_failed' => 'The restore failed; ORM attempted to keep the cache available.',
+            'restore_rollback_failed' => 'ORM could not verify its restore rollback. Check this account before retrying.',
+        ];
+        $operation = $action === 'restore' ? 'Restore' : 'Backup';
+        $text = $operation . ' for ' . $result['username'] . ' was not completed. '
+            . ($backupMessages[$result['error'] ?? ''] ?? 'The account action was rejected.');
+        if (is_string($result['safety_backup_id'] ?? null)) {
+            $text .= ' Safety snapshot ' . $result['safety_backup_id'] . ' was retained.';
+        }
+        if (array_key_exists('audit_logged', $result) && !$result['audit_logged']) {
+            $text .= ' The denial could not be confirmed in the audit log.';
+        }
+        $fleetBackupMessage = ['type' => 'error', 'text' => $text];
+    }
+}
 $policyMessage = null;
 if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'backend.select') {
@@ -87,39 +154,33 @@ WHM::header('Open Redis Manager', 0, 0);
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 128 128" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="13" y1="9" x2="114" y2="119" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orm-red" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F04438"/>
       <stop offset="1" stop-color="#C81E18"/>
     </linearGradient>
-    <linearGradient id="orm-white" x1="34" y1="25" x2="92" y2="105" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orm-white" x1="38" y1="39" x2="88" y2="88" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#F7F9FC"/>
+      <stop offset="1" stop-color="#FFF7F6"/>
     </linearGradient>
-    <filter id="orm-depth" x="20" y="17" width="91" height="99" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2.5"/>
-      <feOffset dy="2"/>
-      <feComponentTransfer><feFuncA slope=".2" type="linear"/></feComponentTransfer>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
 
   <rect x="2" y="2" width="124" height="124" rx="34" fill="url(#orm-red)"/>
-  <path d="M37 15h54c12.2 0 22 9.8 22 22v54c0 12.2-9.8 22-22 22H37c-12.2 0-22-9.8-22-22V37c0-12.2 9.8-22 22-22Z" fill="#fff" fill-opacity=".025" stroke="#fff" stroke-opacity=".2" stroke-width="2"/>
+  <rect x="15" y="15" width="98" height="98" rx="28" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
 
-  <g filter="url(#orm-depth)" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
-    <path d="m64 25 32 18-32 18-32-18 32-18Z" fill="url(#orm-white)" stroke-width="4"/>
-    <path d="m32 49 32 18 32-18v12L64 79 32 61V49Z" fill="#fff" stroke-width="3"/>
-    <path d="m32 66 32 18 32-18v12L64 96 32 78V66Z" fill="#fff" stroke-width="3"/>
-    <path d="m32 83 32 18 32-18v3L64 105 32 86v-3Z" fill="#fff" stroke-width="3"/>
-    <path d="M32 43v43l32 19 32-19V43" fill="none" stroke-width="4"/>
-  </g>
+  <!-- An open cache orbit wraps three managed data layers. -->
+  <path d="M82 27a42 42 0 1 0 17 34" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-width="6"/>
+  <path d="m78 19 15 1-7 13" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/>
 
-  <g fill="none" stroke="#C81E18" stroke-linecap="round" stroke-linejoin="round">
-    <path d="m35 60 29 16 29-16M35 77l29 16 29-16" stroke-width="2.4"/>
-    <path d="M91 43c6-5 9-10 13-16" stroke-width="3"/>
+  <g fill="url(#orm-white)">
+    <rect x="45" y="40" width="39" height="12" rx="6"/>
+    <rect x="37" y="58" width="53" height="12" rx="6"/>
+    <rect x="43" y="76" width="42" height="12" rx="6"/>
   </g>
-  <path d="m100 27 5-2-1 6" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
-  <path d="m64 35 12 7-12 7-12-7 12-7Z" fill="#C81E18" fill-opacity=".92"/>
+  <g fill="#C81E18">
+    <rect x="74" y="44" width="5" height="4" rx="2"/>
+    <rect x="79" y="62" width="6" height="4" rx="2"/>
+    <rect x="74" y="80" width="5" height="4" rx="2"/>
+  </g>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
@@ -132,6 +193,9 @@ WHM::header('Open Redis Manager', 0, 0);
       <h2 id="orm-fleet-title">Managed ORM instances</h2>
       <?php if ($fleetControlMessage !== null): ?>
         <p role="<?= $fleetControlMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetControlMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
+      <?php if ($fleetBackupMessage !== null): ?>
+        <p role="<?= $fleetBackupMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetBackupMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
       <?php if ($fleetPage === null): ?>
         <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
@@ -150,8 +214,9 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="failed">Failed</option>
           <option value="unhealthy">Unhealthy</option>
         </select>
+        <p>Each row shows snapshots retained for that account. Backup and restore requests run per account and return that account's result; restore briefly interrupts service and may lose newer writes.</p>
         <table>
-          <thead><tr><th scope="col">cPanel account</th><th scope="col">Instance state</th><th scope="col">Service actions</th></tr></thead>
+          <thead><tr><th scope="col">cPanel account</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
@@ -165,6 +230,31 @@ WHM::header('Open Redis Manager', 0, 0);
                     <button type="submit" name="fleet_action" value="stop" onclick="return confirm('Stop the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may fail until it is started again.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><rect x="4.5" y="4.5" width="11" height="11" rx="1" fill="currentColor"/></svg> Stop</button>
                     <button type="submit" name="fleet_action" value="restart" onclick="return confirm('Restart the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may briefly lose access.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M15.7 7.5A6 6 0 0 0 5.3 5.7L3.5 7.5M3.5 4v3.5H7M4.3 12.5a6 6 0 0 0 10.4 1.8l1.8-1.8m0 3.5v-3.5H13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Restart</button>
                   </form>
+                </td>
+                <td>
+                  <form method="post" class="orm-fleet-actions">
+                    <input type="hidden" name="orm_action" value="fleet.backup">
+                    <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <button type="submit" name="fleet_action" value="create"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>>Create snapshot</button>
+                  </form>
+                  <?php if (!$entry['backups_available']): ?>
+                    <p>Snapshot list unavailable.</p>
+                  <?php elseif ($entry['backups'] === []): ?>
+                    <p>No retained snapshots for this account.</p>
+                  <?php else: ?>
+                    <form method="post" class="orm-fleet-actions">
+                      <input type="hidden" name="orm_action" value="fleet.backup">
+                      <input type="hidden" name="fleet_action" value="restore">
+                      <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <label for="orm-backup-<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">Snapshot</label>
+                      <select id="orm-backup-<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" name="backup_id" required>
+                        <?php foreach ($entry['backups'] as $backup): ?>
+                          <option value="<?= htmlspecialchars($backup['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(gmdate('Y-m-d H:i:s', $backup['created_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC · <?= number_format($backup['size_bytes']) ?> bytes</option>
+                        <?php endforeach; ?>
+                      </select>
+                      <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?> onclick="return confirm('Restore this snapshot for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? The cache will stop briefly, writes newer than the snapshot may be lost, and ORM will create a safety snapshot first.')">Restore snapshot</button>
+                    </form>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -191,7 +281,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <p>No ORM-managed instances have been initialized.</p>
         <?php endif; ?>
       <?php endif; ?>
-      <p>This root-only view lists account names and normalized states. Start, stop, and restart requests are validated again by the broker and recorded in the system authentication log. It does not show paths, configuration, or credentials.</p>
+      <p>This root-only view lists account names, normalized states, and each account's bounded snapshot metadata. Every service and backup action is validated against the trusted cPanel account by the broker; restore uses that account's safety snapshot and rollback path. Actions are audited and do not expose service paths, configuration, credentials, or Redis data.</p>
     </section>
     <?php endif; ?>
     <section aria-labelledby="orm-backends-title">

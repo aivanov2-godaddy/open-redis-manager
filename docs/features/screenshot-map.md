@@ -18,8 +18,8 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM security | Firewall guidance, local binding and credential rotation. |
 | WHM package policy | Per-package service availability and capacity limits. |
 | WHM branding | Provider identity, colors and a cPanel preview. |
-| [ORM fleet inventory](../../screenshots/whm-fleet.png) | Synthetic example of the original root-only account status table. |
-| [WHM account action preview](../../screenshots/previews/whm-fleet.html) | Synthetic account table with start/stop/restart controls, status, confirmation and audit notes; PNG capture pending. |
+| [ORM fleet inventory](../../screenshots/whm-fleet.png) | Synthetic root-only account table with service controls and per-account snapshot/restore UI. |
+| [WHM account action preview](../../screenshots/previews/whm-fleet.html) | Synthetic account table with service controls, snapshot states, restore confirmation and per-account result messaging. |
 | [ORM stale metrics preview](../../screenshots/previews/cpanel-monitoring-stale.html) | Synthetic stopped-service view with last-known values, stale marker and sample age guidance; image capture is pending. |
 | [ORM diagnostics preview](../../screenshots/orm-diagnostics.png) | Synthetic cPanel support panel with a credential-redacted JSON preview and explicit download action. |
 
