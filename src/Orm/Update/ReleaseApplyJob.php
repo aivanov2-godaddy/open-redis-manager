@@ -33,9 +33,9 @@ final class ReleaseApplyJob
         if (!self::prepareDirectories()) {
             return ['ok' => false, 'message' => 'The protected update job directory is unavailable or unsafe.'];
         }
-        if (!is_file('/usr/bin/timeout') || !is_executable('/usr/bin/timeout')
+        if (($runner === null && (!is_file('/usr/bin/timeout') || !is_executable('/usr/bin/timeout')
             || !is_file('/usr/bin/systemd-run') || !is_executable('/usr/bin/systemd-run')
-            || !is_file('/usr/bin/perl') || !is_executable('/usr/bin/perl')
+            || !is_file('/usr/bin/perl') || !is_executable('/usr/bin/perl')))
             || !self::protectedFile(self::WORKER)) {
             return ['ok' => false, 'message' => 'This host is missing the installed asynchronous update toolchain.'];
         }
