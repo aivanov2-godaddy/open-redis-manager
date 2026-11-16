@@ -1,24 +1,51 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A dimensional white cache core connected by orbital paths on ORM red.</desc>
+  <desc id="orm-desc">A sculpted, layered cache vault inside an orbital network on a vivid red field.</desc>
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#E5392D"/>
+    <linearGradient id="orm-red" x1="26" y1="18" x2="226" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E94337"/>
+      <stop offset=".52" stop-color="#E2362B"/>
+      <stop offset="1" stop-color="#C92319"/>
+    </linearGradient>
+    <linearGradient id="orm-face" x1="76" y1="74" x2="179" y2="203" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#F5F7FB"/>
+    </linearGradient>
+    <linearGradient id="orm-channel" x1="83" y1="120" x2="173" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5A19A"/>
       <stop offset="1" stop-color="#D92D20"/>
     </linearGradient>
+    <filter id="orm-shadow" x="35" y="38" width="186" height="194" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dy="8"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".22"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
+
   <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
+  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
 
-  <!-- Two orbital arcs suggest orchestration while keeping the cache core unmistakable. -->
-  <path d="M79 63a83 83 0 0 1 96 7M177 185a83 83 0 0 1-98 7" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
-  <circle cx="71" cy="69" r="9" fill="#fff"/>
-  <circle cx="185" cy="187" r="9" fill="#fff"/>
+  <!-- The orbit is drawn behind the vault so it reads as a managed system, not a ring around a box. -->
+  <path d="M69 165C47 139 59 103 89 78c28-23 66-32 97-21" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
+  <path d="M187 91c23 27 13 61-17 86-27 22-63 33-94 25" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
+  <circle cx="76" cy="68" r="7" fill="#fff"/>
+  <circle cx="184" cy="191" r="7" fill="#fff"/>
 
-  <!-- A crisp three-plane cache prism, built from distinct top and side faces. -->
-  <path d="m128 59 43 25-43 25-43-25 43-25Z" fill="#fff"/>
-  <path d="m128 71 22 13-22 13-22-13 22-13Z" fill="#D92D20"/>
-  <path d="m85 101 43 25 43-25v22l-43 25-43-25v-22Z" fill="#fff"/>
-  <path d="m98 129 30 18 30-18v8l-30 18-30-18v-8Z" fill="#D92D20"/>
-  <path d="m85 151 43 25 43-25v22l-43 25-43-25v-22Z" fill="#fff"/>
-  <path d="m98 179 30 18 30-18v7l-30 18-30-18v-7Z" fill="#D92D20"/>
+  <g filter="url(#orm-shadow)">
+    <!-- Three beveled cache planes form a single secure, dimensional vault. -->
+    <path d="m128 54 62 36-62 36-62-36 62-36Z" fill="url(#orm-face)"/>
+    <path d="m128 68 38 22-38 22-38-22 38-22Z" fill="url(#orm-red)"/>
+    <path d="m128 79 19 11-19 11-19-11 19-11Z" fill="#fff" fill-opacity=".95"/>
+    <circle cx="128" cy="90" r="4" fill="#D92D20"/>
+
+    <path d="m66 103 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+    <path d="m82 127 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+    <path d="m66 138 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+    <path d="m82 162 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+  </g>
+
+  <!-- A foreground link makes the orbital path feel woven into the cache system. -->
+  <path d="M174 71c9 5 16 10 21 17" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5"/>
+  <circle cx="197" cy="93" r="5" fill="#fff"/>
 </svg>

@@ -1,10 +1,10 @@
 # ORM prototype screenshots
 
-Screenshots below were captured from the local PHP prototype using sample data and the current ORM brand mark. None are screenshots from the commercial reference product.
+Screenshots below are local prototype captures using sample data. The logo, cPanel feature previews, and WHM policy/fleet previews use the current ORM brand mark; the standalone dashboard and WHM summary mockups are earlier static concepts. None are screenshots from the commercial reference product.
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo redesign](orm-logo.png) | Dimensional cache core and orbital management motif in the existing ORM red, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
+| [ORM logo redesign](orm-logo.png) | Dimensional layered cache vault with connected orbital paths in ORM red, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel setup presets](cpanel-presets.png) | Initial cache setup with five account-safe workload profiles | 1440 × 1000 |
 | [cPanel configuration](cpanel-configuration.png) | Bounded memory, eviction, client and timeout controls with a cache eviction warning | 1440 × 1100 |

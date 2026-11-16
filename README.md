@@ -1,6 +1,6 @@
 <h1 align="center">Open Redis Manager (ORM)</h1>
 
-<p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager connected cache core logo"></p>
+<p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager dimensional cache vault logo"></p>
 
 An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, hourly usage history, account-level backups and restore, read-only connection guidance, WHM backend discovery, and root-only per-account service and snapshot controls. Production readiness still requires disposable-host validation.
 
@@ -12,7 +12,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 - cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
-- The ORM red orbital cache mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
+- The ORM red dimensional cache-vault mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
 - Root WHM can manage package-specific provisioning, memory, and snapshot-retention policies in report-only or enforce mode; reseller quotas and exposure levels remain planned.
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
 - An implementation roadmap and GitHub issue drafts in [`project/`](project/).
