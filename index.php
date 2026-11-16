@@ -122,7 +122,81 @@ $activeTitle = $titles[$page] ?? 'Overview';
   <?php elseif($page==='audit'): ?>
   <section class="card"><div class="card-head"><div><div class="card-title">Administrative activity</div><div class="card-kicker">Secrets and credential values are excluded</div></div><button class="btn" onclick="toast('Prototype: export not created')">Export redacted log</button></div><div class="table-wrap"><table class="table"><thead><tr><th>TIME</th><th>ACTOR</th><th>ACTION</th><th>TARGET</th><th>RESULT</th></tr></thead><tbody><tr><td>Today · 14:28</td><td>admin</td><td>Maintenance scan</td><td>Server</td><td><span class="pill">Completed</span></td></tr><tr><td>Today · 12:05</td><td>admin</td><td>Viewed security report</td><td>All accounts</td><td><span class="pill">Completed</span></td></tr><tr><td>Yesterday · 18:02</td><td>jdoe</td><td>Created backup</td><td>jdoe</td><td><span class="pill">Completed</span></td></tr></tbody></table></div></section>
   <?php elseif($page==='diagnostics'): ?>
-  <div class="two-col"><section class="card"><div class="card-head"><div><div class="card-title">Support diagnostics</div><div class="card-kicker">Review included fields before exporting</div></div><span class="pill">Credentials masked</span></div><div class="card-body setup-list"><?php foreach(['Plugin and backend versions','Instance status and health sample','Non-secret configuration summary','Recent redacted service messages','Application environment availability'] as $v): ?><div class="setup-item"><span class="check"><?=icon('activity')?></span><?=e($v)?></div><?php endforeach; ?><button class="btn primary" onclick="toast('Prototype: diagnostic bundle not generated')">Export diagnostic JSON</button></div></section><section class="card"><div class="card-head"><div><div class="card-title">Excluded data</div><div class="card-kicker">Never placed in a support bundle</div></div></div><div class="card-body setup-list"><?php foreach(['Passwords and AUTH secrets','Application session identifiers','Private key material','Unrelated account files'] as $v): ?><div class="setup-item"><span class="check pending">×</span><?=e($v)?></div><?php endforeach; ?></div></section></div>
+  <style>
+    .diagnostics-json { max-height: 520px; overflow: auto; margin: 14px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #f7f9fc; color: #263b57; font: 12px/1.55 Consolas, "Courier New", monospace; white-space: pre-wrap; }
+    .diagnostics-preview { margin: 18px 0; }
+    .diagnostics-preview summary { cursor: pointer; font-weight: 700; }
+  </style>
+  <?php
+  $diagnosticNow = time();
+  $diagnosticJson = json_encode([
+      'generated_at_utc' => gmdate('c', $diagnosticNow),
+      'schema_version' => 1,
+      'instance' => [
+          'state' => 'running',
+          'preset' => 'wordpress',
+          'configuration' => [
+              'memory_mib' => 48,
+              'maxmemory_policy' => 'allkeys-lru',
+              'maxclients' => 80,
+              'timeout' => 30,
+          ],
+      ],
+      'connection' => [
+          'transport' => 'account_private_unix_socket',
+          'tcp_enabled' => false,
+          'redis_auth_configured' => false,
+      ],
+      'metrics' => [
+          'captured_at_utc' => gmdate('c', $diagnosticNow - 60),
+          'stale' => false,
+          'sample_saved' => true,
+          'memory_used_bytes' => 19293798,
+          'memory_peak_bytes' => 23173529,
+          'connected_clients' => 4,
+          'uptime_seconds' => 278400,
+          'commands_per_second' => 126,
+          'keyspace_hits' => 9760,
+          'keyspace_misses' => 240,
+      ],
+      'excluded_data' => [
+          'credentials and tokens',
+          'Redis keys and values',
+          'application payloads and sessions',
+          'raw Redis INFO output and command output',
+          'logs and other account files',
+          'account names and filesystem paths',
+      ],
+  ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+  ?>
+  <section class="card"><div class="card-head"><div><div class="card-title">Support diagnostics</div><div class="card-kicker">Review the exact report before downloading</div></div><span class="pill">Synthetic sample</span></div><div class="card-body">
+    <p class="muted">This standalone prototype uses sample values. The authenticated cPanel page builds its report from the current account's allowlisted status and metric data.</p>
+    <details class="diagnostics-preview" open><summary>Preview diagnostics JSON</summary><pre id="orm-diagnostics-json" class="diagnostics-json"><?=e($diagnosticJson)?></pre></details>
+    <button id="orm-diagnostics-download" class="btn primary" type="button"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v4h14v-4"/></svg> Download diagnostics JSON</button>
+    <p id="orm-diagnostics-status" class="muted" role="status" aria-live="polite"></p>
+    <script>
+      (() => {
+        const button = document.getElementById('orm-diagnostics-download');
+        const preview = document.getElementById('orm-diagnostics-json');
+        const status = document.getElementById('orm-diagnostics-status');
+        button?.addEventListener('click', () => {
+          if (!preview) return;
+          const blob = new Blob([preview.textContent], { type: 'application/json;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'orm-diagnostics-demo.json';
+          link.hidden = true;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+          status.textContent = 'Synthetic diagnostics JSON downloaded.';
+        });
+      })();
+    </script>
+  </div></section>
+  <section class="card"><div class="card-head"><div><div class="card-title">Excluded data</div><div class="card-kicker">Never included in the report</div></div></div><div class="card-body setup-list"><?php foreach(['Account names, hostnames and filesystem paths','Credentials, tokens and private keys','Redis keys and values','Application payloads and sessions','Logs and raw command output'] as $v): ?><div class="setup-item"><span class="check pending">×</span><?=e($v)?></div><?php endforeach; ?></div></section>
   <?php endif; ?>
   <div class="footer">Open Redis Manager (ORM) · Independent open-source project · Prototype screens use sample data</div>
   </div>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — Support diagnostics</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172235; font-family: Arial, sans-serif; }
+    .topbar { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 34px; color: #fff; background: #18283f; }
+    .brand-icon { width: 35px; height: 35px; }
+    .topbar strong { font-size: 17px; }
+    .topbar span { margin-left: auto; color: #d0d9e6; font-size: 13px; }
+    main { max-width: 1050px; margin: 34px auto; padding: 0 24px; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    .subtitle { margin: 0 0 22px; color: #65748a; }
+    .card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+    .instance { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .state { margin: 0; padding: 6px 12px; border-radius: 999px; background: #e9f7ef; color: #176b3a; font-size: 13px; font-weight: 700; }
+    .instance small { color: #65748a; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .metric { min-height: 82px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+    .metric span { display: block; color: #59677c; font-size: 13px; }
+    .metric strong { display: block; margin-top: 8px; font-size: 20px; }
+    .diagnostics { margin-top: 20px; }
+    .diagnostics-head { display: flex; align-items: start; gap: 18px; }
+    h2 { margin: 0; font-size: 19px; }
+    .description { margin: 8px 0 0; color: #65748a; line-height: 1.5; }
+    .privacy { flex: 0 0 255px; padding: 13px 15px; border: 1px solid #f3d0cc; border-radius: 9px; background: #fff9f8; color: #8f251d; font-size: 12px; line-height: 1.5; }
+    .privacy strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    details { margin-top: 17px; }
+    summary { cursor: pointer; font-weight: 700; }
+    pre { max-height: 410px; overflow: auto; margin: 12px 0 0; padding: 15px 17px; border: 1px solid #e1e7ef; border-radius: 8px; background: #f7f9fc; color: #263b57; font: 12px/1.5 Consolas, "Courier New", monospace; white-space: pre-wrap; }
+    .download { display: inline-flex; align-items: center; gap: 9px; margin-top: 15px; padding: 11px 15px; border-radius: 7px; background: #2855d9; color: white; font-size: 14px; font-weight: 700; text-decoration: none; }
+    .download svg { width: 16px; height: 16px; }
+    .footnote { margin: 13px 0 0; color: #65748a; font-size: 12px; }
+    .footer { margin: 18px 0; text-align: center; color: #7b8798; font-size: 12px; }
+    @media (max-width: 760px) { main { margin: 22px auto; padding: 0 14px; } .diagnostics-head { display: block; } .privacy { margin-top: 13px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 480px) { .metrics { grid-template-columns: 1fr; } .card { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <img class="brand-icon" src="../../assets/orm-mark.svg" alt="">
+    <strong>Open Redis Manager</strong>
+    <span>cPanel · demo</span>
+  </header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="subtitle">A private Redis-compatible cache for this cPanel account.</p>
+    <section class="card" aria-label="Synthetic ORM support diagnostics preview">
+      <div class="instance"><p class="state">Running</p><small>WordPress preset · 48 MiB memory limit</small></div>
+      <div class="metrics">
+        <div class="metric"><span>Memory used</span><strong>18.4 MiB</strong></div>
+        <div class="metric"><span>Connected clients</span><strong>4</strong></div>
+        <div class="metric"><span>Cache hit ratio</span><strong>97.6%</strong></div>
+      </div>
+    </section>
+    <section class="card diagnostics" aria-labelledby="diagnostics-title">
+      <div class="diagnostics-head">
+        <div>
+          <h2 id="diagnostics-title">Support diagnostics</h2>
+          <p class="description">Preview or download a small JSON report of this account's ORM instance. It is generated in memory and is not stored by ORM.</p>
+        </div>
+        <aside class="privacy"><strong>Privacy built in</strong>No account names, paths, credentials, keys, values, app content, sessions, logs, or command output.</aside>
+      </div>
+      <details open>
+        <summary>Preview diagnostics JSON</summary>
+        <pre>{
+  "generated_at_utc": "2026-11-16T01:15:00+00:00",
+  "schema_version": 1,
+  "instance": {
+    "state": "running",
+    "preset": "wordpress",
+    "configuration": {
+      "memory_mib": 48,
+      "maxmemory_policy": "allkeys-lru",
+      "maxclients": 80,
+      "timeout": 30
+    }
+  },
+  "connection": {
+    "transport": "account_private_unix_socket",
+    "tcp_enabled": false,
+    "redis_auth_configured": false
+  },
+  "metrics": {
+    "captured_at_utc": "2026-11-16T01:14:00+00:00",
+    "stale": false,
+    "sample_saved": true,
+    "memory_used_bytes": 19293798,
+    "memory_peak_bytes": 23173529,
+    "connected_clients": 4,
+    "uptime_seconds": 278400,
+    "commands_per_second": 126,
+    "keyspace_hits": 9760,
+    "keyspace_misses": 240
+  },
+  "excluded_data": [
+    "credentials and tokens",
+    "Redis keys and values",
+    "application payloads and sessions",
+    "raw Redis INFO output and command output",
+    "logs and other account files",
+    "account names and filesystem paths"
+  ]
+}</pre>
+      </details>
+      <a class="download" href="#download">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Download diagnostics JSON
+      </a>
+      <p class="footnote">Generated on demand · JSON · Private, no-cache response</p>
+    </section>
+    <p class="footer">Synthetic demo preview. No cPanel account or Redis service is connected.</p>
+  </main>
+</body>
+</html>
