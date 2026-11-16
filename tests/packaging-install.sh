@@ -172,6 +172,8 @@ export TEST_FAIL_REGISTER
 write_installer_runner
 bash "$TEST_ROOT/run-installer.sh"
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'fresh install manifest did not validate.\n' >&2; exit 1; }
+[[ "$(orm_install_manifest_version "$ORM_INSTALL_MANIFEST")" == "$(cat "$ORM_VERSION_FILE")" ]] \
+    || { printf 'fresh install manifest did not record the package version.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_PLUGIN_STATE")" == installed && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \
     || { printf 'fresh install did not register cPanel and WHM entries.\n' >&2; exit 1; }
 orm_appconfig_matches_package "$ORM_APPCONFIG" || { printf 'fresh install AppConfig does not match the package.\n' >&2; exit 1; }
