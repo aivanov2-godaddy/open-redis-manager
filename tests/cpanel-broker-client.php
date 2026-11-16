@@ -561,6 +561,25 @@ $assert($summaryRequests[0] === "{\"operation\":\"fleet.summary\",\"version\":1}
 $unsafeSummary = new BrokerClient(static fn (string $request): string =>
     str_replace('"partial":true', '"partial":true,"secret":"x"', $summaryResponse));
 $assert($unsafeSummary->requestFleetSummary() === null, 'Reject extra fields in the fleet summary response.');
+$extendedSummaryPayload = json_decode($summaryResponse, true, 8, JSON_THROW_ON_ERROR);
+$extendedSummaryPayload['metrics'] = array_replace($extendedSummaryPayload['metrics'], [
+    'eviction_activity_accounts' => 1, 'max_evictions_per_window' => 2,
+    'max_operations_per_second' => 5, 'rate_accounts' => 1, 'rate_missing_accounts' => 1,
+    'rate_window_earliest_start_at' => 1794756400, 'rate_window_latest_end_at' => 1794760000,
+    'rate_window_max_seconds' => 3600, 'rate_window_min_seconds' => 3600,
+]);
+$extendedSummaryResponse = json_encode($extendedSummaryPayload, JSON_THROW_ON_ERROR) . "\n";
+$extendedSummaryClient = new BrokerClient(static fn (string $request): string => $extendedSummaryResponse);
+$extendedSummaryResult = $extendedSummaryClient->requestFleetSummary();
+$assert(($extendedSummaryResult['metrics']['rate_accounts'] ?? null) === 1
+    && $extendedSummaryResult['metrics']['max_operations_per_second'] === 5,
+    'Parse optional bounded counter-rate aggregates while accepting legacy summaries too.');
+$invalidRateSummaryPayload = $extendedSummaryPayload;
+$invalidRateSummaryPayload['metrics']['rate_accounts'] = 2;
+$invalidRateSummary = new BrokerClient(static fn (string $request): string =>
+    json_encode($invalidRateSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($invalidRateSummary->requestFleetSummary() === null,
+    'Reject inconsistent measured and missing counter-rate account counts.');
 
 $batchCreateRequests = [];
 $batchCreateResponse = json_encode([

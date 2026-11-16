@@ -13,6 +13,6 @@ Acceptance:
 
 ## Progress (2026-11-16)
 
-- Added a root-WHM report-only review for fresh fleet memory/client/hit-ratio aggregates and normalized AUTH management outcomes in a bounded 24-hour window. Report generation is limited to one per minute and writes a fixed metadata-only audit event.
-- Partial and unavailable sources are shown as unknown. The report omits account names and secret values, does not inspect Redis client login attempts or credential strength/reuse, and clearly lists eviction-rate and operation-rate signals as not yet measured. No enforcement or remediation is wired to this report.
-- Remaining acceptance work: capture eviction and operation-rate metrics with backward-compatible snapshot handling, find a safe verifiable source for client-auth failures if one exists, and validate the rendered WHM flow on a disposable supported host.
+- Added a root-WHM report-only review for fresh fleet memory/client/hit-ratio aggregates, bounded eviction and processed-command counter deltas, and normalized AUTH management outcomes in a bounded 24-hour window. Report generation is limited to one per minute and writes a fixed metadata-only audit event.
+- New root-owned security counter snapshots preserve the existing cPanel metrics and hourly-history schemas. Rates are calculated only from monotonic counters with uptime continuity and an actual one-second-to-26-hour interval; missing baselines, counter resets, missing sources, and longer gaps remain unknown. Evidence includes sample-window bounds. Operation rates are descriptive load evidence; no arbitrary abuse threshold, enforcement, or remediation is wired to this report.
+- The report omits account names and secret values and does not inspect Redis client login attempts or credential strength/reuse. Remaining acceptance work: find a safe verifiable source for client-auth failures if one exists and validate the rendered WHM flow on a disposable supported host.

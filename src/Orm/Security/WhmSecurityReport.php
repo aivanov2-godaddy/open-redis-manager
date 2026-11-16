@@ -8,6 +8,7 @@ final class WhmSecurityReport
 {
     private const REPORT_INTERVAL_SECONDS = 60;
     private const METRIC_WINDOW_SECONDS = 900;
+    private const MAX_RATE_WINDOW_SECONDS = 26 * 60 * 60;
     private const AUTH_EVENT_WINDOW_SECONDS = 86400;
 
     /** @return array{allowed:bool,retry_after:int} */
@@ -85,9 +86,42 @@ final class WhmSecurityReport
             && is_int($metrics['high_client_accounts'] ?? null) && $metrics['high_client_accounts'] >= 0
             && is_int($metrics['low_hit_ratio_accounts'] ?? null) && $metrics['low_hit_ratio_accounts'] >= 0
             && is_int($metrics['latest_sampled_at'] ?? null) && $metrics['latest_sampled_at'] > 0;
+        $ratesValid = ($fleet['success'] ?? null) === true && is_array($metrics)
+            && is_int($fleet['managed_count'] ?? null)
+            && $fleet['managed_count'] >= 0 && $fleet['managed_count'] <= 10000
+            && is_int($metrics['rate_accounts'] ?? null) && $metrics['rate_accounts'] >= 0
+            && is_int($metrics['rate_missing_accounts'] ?? null) && $metrics['rate_missing_accounts'] >= 0
+            && $metrics['rate_accounts'] + $metrics['rate_missing_accounts'] === $fleet['managed_count']
+            && is_int($metrics['eviction_activity_accounts'] ?? null) && $metrics['eviction_activity_accounts'] >= 0
+            && $metrics['eviction_activity_accounts'] <= $metrics['rate_accounts']
+            && is_int($metrics['max_evictions_per_window'] ?? null) && $metrics['max_evictions_per_window'] >= 0
+            && $metrics['max_evictions_per_window'] <= 9_000_000_000_000_000
+            && is_int($metrics['max_operations_per_second'] ?? null) && $metrics['max_operations_per_second'] >= 0
+            && $metrics['max_operations_per_second'] <= 9_000_000_000_000_000
+            && is_int($metrics['rate_window_min_seconds'] ?? null) && $metrics['rate_window_min_seconds'] >= 0
+            && is_int($metrics['rate_window_max_seconds'] ?? null) && $metrics['rate_window_max_seconds'] >= 0
+            && is_int($metrics['rate_window_earliest_start_at'] ?? null) && $metrics['rate_window_earliest_start_at'] >= 0
+            && $metrics['rate_window_earliest_start_at'] <= 9_999_999_999
+            && is_int($metrics['rate_window_latest_end_at'] ?? null) && $metrics['rate_window_latest_end_at'] >= 0
+            && $metrics['rate_window_latest_end_at'] <= 9_999_999_999;
+        if ($ratesValid && $metrics['rate_accounts'] === 0) {
+            $ratesValid = $metrics['max_evictions_per_window'] === 0
+                && $metrics['max_operations_per_second'] === 0
+                && $metrics['rate_window_min_seconds'] === 0 && $metrics['rate_window_max_seconds'] === 0
+                && $metrics['rate_window_earliest_start_at'] === 0 && $metrics['rate_window_latest_end_at'] === 0
+                && $metrics['eviction_activity_accounts'] === 0;
+        } elseif ($ratesValid) {
+            $ratesValid = $metrics['rate_window_min_seconds'] >= 1
+                && $metrics['rate_window_max_seconds'] >= $metrics['rate_window_min_seconds']
+                && $metrics['rate_window_max_seconds'] <= self::MAX_RATE_WINDOW_SECONDS
+                && $metrics['rate_window_earliest_start_at'] <= $metrics['rate_window_latest_end_at']
+                && $metrics['rate_window_latest_end_at'] <= $generatedAt
+                && $metrics['rate_window_latest_end_at'] >= $generatedAt - self::MAX_RATE_WINDOW_SECONDS;
+        }
         $auditValid = ($audit['success'] ?? null) === true && is_array($audit['records'] ?? null)
             && is_bool($audit['partial'] ?? null) && is_array($audit['sources'] ?? null);
-        $partial = !$fleetValid || !$auditValid || ($fleet['partial'] ?? true) !== false || ($audit['partial'] ?? true) !== false;
+        $partial = !$fleetValid || !$ratesValid || !$auditValid || ($fleet['partial'] ?? true) !== false
+            || ($audit['partial'] ?? true) !== false || ($ratesValid && $metrics['rate_missing_accounts'] > 0);
         $findings = [];
 
         if ($fleetValid) {
@@ -104,6 +138,32 @@ final class WhmSecurityReport
         } else {
             $findings[] = self::finding('metrics_unavailable', 'unknown', null,
                 'Fleet metrics could not be verified.', 'No metric thresholds were evaluated.');
+        }
+
+        if ($ratesValid && $metrics['rate_accounts'] > 0) {
+            $windowStart = gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_earliest_start_at']);
+            $windowEnd = gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']);
+            $coverage = $metrics['rate_accounts'] . ' of ' . $fleet['managed_count']
+                . ' managed accounts have valid counter windows; ' . $metrics['rate_missing_accounts'] . ' are unknown.';
+            $window = ' Individual intervals were ' . $metrics['rate_window_min_seconds'] . '–'
+                . $metrics['rate_window_max_seconds'] . ' seconds, spanning ' . $windowStart . ' through ' . $windowEnd . '.';
+            $findings[] = self::finding('eviction_rate', 'info', $metrics['eviction_activity_accounts'],
+                $coverage . ' ' . $metrics['eviction_activity_accounts'] . ' accounts recorded evictions; the largest per-account delta was '
+                . $metrics['max_evictions_per_window'] . '.' . $window,
+                'Review eviction policy and cache capacity when evictions are unexpected.',
+                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
+            $findings[] = self::finding('operation_rate', 'info', $metrics['rate_accounts'],
+                $coverage . ' The maximum observed average was ' . $metrics['max_operations_per_second']
+                . ' operations per second.' . $window . ' This is descriptive load evidence, not an abuse verdict.',
+                'Compare measured rates and timing with the expected application workload; no abuse threshold is configured.',
+                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
+        } else {
+            $findings[] = self::finding('eviction_rate', 'unknown', null,
+                'Eviction counter deltas are unavailable for a bounded sample window.',
+                'Wait for two compatible samples or review whether counters reset or collection gaps exceed 26 hours.');
+            $findings[] = self::finding('operation_rate', 'unknown', null,
+                'Operation counter deltas are unavailable for a bounded sample window.',
+                'Wait for two compatible samples or review whether counters reset or collection gaps exceed 26 hours.');
         }
 
         if ($auditValid && ($audit['partial'] ?? true) === false) {
@@ -136,8 +196,6 @@ final class WhmSecurityReport
         }
 
         $unmeasured = [
-            'eviction_rate' => 'Eviction changes are not available in the scheduled fleet snapshots.',
-            'operation_rate' => 'Per-account operation rates are not available in the scheduled fleet snapshots.',
             'client_authentication_failures' => 'Redis client authentication attempts are not available from a safe verified source.',
             'credential_strength' => 'Weak or reused passwords are not inspected.',
         ];
@@ -145,6 +203,7 @@ final class WhmSecurityReport
             'generated_at_utc' => gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt)),
             'mode' => 'report-only',
             'metric_window_seconds' => self::METRIC_WINDOW_SECONDS,
+            'max_rate_window_seconds' => self::MAX_RATE_WINDOW_SECONDS,
             'auth_event_window_seconds' => self::AUTH_EVENT_WINDOW_SECONDS,
             'partial' => $partial,
             'findings' => $findings,

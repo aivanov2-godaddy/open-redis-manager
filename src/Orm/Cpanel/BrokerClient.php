@@ -624,30 +624,66 @@ final class BrokerClient
         if ($stateTotal !== $decoded['managed_count']) {
             return null;
         }
-        $metricKeys = ['alert_accounts', 'connected_clients', 'fresh_accounts', 'high_client_accounts',
+        $legacyMetricKeys = ['alert_accounts', 'connected_clients', 'fresh_accounts', 'high_client_accounts',
             'high_memory_accounts', 'latest_sampled_at', 'low_hit_ratio_accounts',
             'memory_used_bytes', 'missing_accounts', 'stale_accounts'];
-        sort($metricKeys);
+        $rateMetricKeys = ['eviction_activity_accounts', 'max_evictions_per_window', 'max_operations_per_second',
+            'rate_accounts', 'rate_missing_accounts', 'rate_window_earliest_start_at', 'rate_window_latest_end_at',
+            'rate_window_max_seconds', 'rate_window_min_seconds'];
+        $extendedMetricKeys = [...$legacyMetricKeys, ...$rateMetricKeys];
+        sort($legacyMetricKeys);
+        sort($extendedMetricKeys);
         $actualMetricKeys = is_array($decoded['metrics']) ? array_keys($decoded['metrics']) : [];
         sort($actualMetricKeys);
-        if ($actualMetricKeys !== $metricKeys) {
+        $hasRateMetrics = $actualMetricKeys === $extendedMetricKeys;
+        if (!$hasRateMetrics && $actualMetricKeys !== $legacyMetricKeys) {
             return null;
         }
+        $metricKeys = $hasRateMetrics ? $extendedMetricKeys : $legacyMetricKeys;
         foreach ($metricKeys as $field) {
             $maximum = in_array($field, ['memory_used_bytes', 'connected_clients', 'latest_sampled_at'], true)
                 ? self::MAX_DIAGNOSTIC_INTEGER : 10000;
+            if (in_array($field, ['max_evictions_per_window', 'max_operations_per_second'], true)) {
+                $maximum = self::MAX_DIAGNOSTIC_INTEGER;
+            } elseif (in_array($field, ['rate_window_earliest_start_at', 'rate_window_latest_end_at'], true)) {
+                $maximum = 9_999_999_999;
+            } elseif (in_array($field, ['rate_window_max_seconds', 'rate_window_min_seconds'], true)) {
+                $maximum = 26 * 60 * 60;
+            }
             if (!is_int($decoded['metrics'][$field]) || $decoded['metrics'][$field] < 0
                 || $decoded['metrics'][$field] > $maximum) {
                 return null;
             }
         }
+        $expectedPartial = $decoded['unverified_count'] > 0 || $decoded['state_counts']['unavailable'] > 0
+            || $decoded['metrics']['stale_accounts'] > 0 || $decoded['metrics']['missing_accounts'] > 0;
+        if ($hasRateMetrics) {
+            $expectedPartial = $expectedPartial || $decoded['metrics']['rate_missing_accounts'] > 0;
+        }
         if ($decoded['metrics']['fresh_accounts'] + $decoded['metrics']['stale_accounts']
             + $decoded['metrics']['missing_accounts'] !== $decoded['managed_count']
             || $decoded['metrics']['alert_accounts'] > $decoded['metrics']['fresh_accounts']
-            || $decoded['partial'] !== ($decoded['unverified_count'] > 0
-                || $decoded['state_counts']['unavailable'] > 0
-                || $decoded['metrics']['stale_accounts'] > 0 || $decoded['metrics']['missing_accounts'] > 0)) {
+            || $decoded['partial'] !== $expectedPartial) {
             return null;
+        }
+        if ($hasRateMetrics) {
+            $metrics = $decoded['metrics'];
+            if ($metrics['rate_accounts'] + $metrics['rate_missing_accounts'] !== $decoded['managed_count']
+                || $metrics['eviction_activity_accounts'] > $metrics['rate_accounts']) {
+                return null;
+            }
+            if ($metrics['rate_accounts'] === 0) {
+                if ($metrics['max_evictions_per_window'] !== 0 || $metrics['max_operations_per_second'] !== 0
+                    || $metrics['rate_window_earliest_start_at'] !== 0 || $metrics['rate_window_latest_end_at'] !== 0
+                    || $metrics['rate_window_min_seconds'] !== 0 || $metrics['rate_window_max_seconds'] !== 0
+                    || $metrics['eviction_activity_accounts'] !== 0) {
+                    return null;
+                }
+            } elseif ($metrics['rate_window_min_seconds'] < 1
+                || $metrics['rate_window_max_seconds'] < $metrics['rate_window_min_seconds']
+                || $metrics['rate_window_earliest_start_at'] > $metrics['rate_window_latest_end_at']) {
+                return null;
+            }
         }
         return $decoded;
     }
