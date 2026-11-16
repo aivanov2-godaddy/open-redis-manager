@@ -52,7 +52,7 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     sub backend { return $_[1]->{name} eq 'acct01' ? 'redis' : 'valkey'; }
     sub migrate_to_valkey {
         my ($self, $account) = @_;
-        push @MIGRATION_CALLS, $account->{name};
+        push @MIGRATION_CALLS, [$account->{name}];
         return {
             success => 1, backup_id => 'snapshot-1794760000-a1b2c3d4.rdb',
             source_backend => 'redis', target_backend => 'valkey', state => 'running',

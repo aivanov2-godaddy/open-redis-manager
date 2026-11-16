@@ -530,6 +530,8 @@ is($migration_unit_state, 'active', 'leave the Redis service active after target
 $fail_target_rdb_check = 0;
 $fail_valkey_ping_once = 1;
 my $rolled_back_migration = $migration_manager->migrate_to_valkey($migration_account);
+diag('migration rollback fixture response: ' . JSON::PP->new->canonical(1)->encode($rolled_back_migration))
+    if !$rolled_back_migration->{success};
 ok(!$rolled_back_migration->{success} && $rolled_back_migration->{error} eq 'migration_failed'
     && defined($rolled_back_migration->{safety_backup_id}), 'roll back a target health failure and return its retained snapshot');
 is($migration_manager->backend($migration_account), 'redis', 'restore the Redis backend manifest after a failed Valkey start check');
@@ -537,6 +539,8 @@ is($migration_manager->_read_manifest($migration_account)->{version}, 1,
     'restore the original version-one manifest exactly after migration rollback');
 is($migration_unit_state, 'active', 'restart the Redis service after a failed migration');
 my $successful_migration = $migration_manager->migrate_to_valkey($migration_account);
+diag('migration success fixture response: ' . JSON::PP->new->canonical(1)->encode($successful_migration))
+    if !$successful_migration->{success};
 ok($successful_migration->{success} && $successful_migration->{source_backend} eq 'redis'
     && $successful_migration->{target_backend} eq 'valkey', 'switch a validated Redis instance to Valkey');
 is($migration_manager->backend($migration_account), 'valkey', 'persist the Valkey backend only after verification');
