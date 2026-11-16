@@ -21,7 +21,7 @@ A production installer must be designed and reviewed for a supported cPanel/WHM 
 5. Persist account metadata and migrations with a tested backup and rollback path.
 6. Validate plugin visibility, account isolation, service health and update compatibility before reporting success.
 
-The repo now contains cPanel and WHM entry points, a manual development installer, explicit WHM backend selection, and account-scoped provision/status/start/stop/live metrics through a root broker and systemd template. cPanel provisioning accepts a fixed workload preset, with the memory value selected and capped by the broker. The cPanel page obtains the authenticated identity from LiveAPI, then the broker derives the target only from the Unix peer UID. The lifecycle remains unvalidated on a disposable cPanel host; there is no supported version/OS matrix or upgrade workflow. Use only on a disposable cPanel & WHM server.
+The repo now contains cPanel and WHM entry points, a manual development installer, explicit WHM backend selection, root-only report-only/enforce package policy, and account-scoped provision/status/start/stop/live metrics through a root broker and systemd template. cPanel provisioning accepts a fixed workload preset, with the memory value selected and capped by the broker and optional per-package ceiling. The cPanel page obtains the authenticated identity from LiveAPI, then the broker derives the target and package from trusted account metadata. The lifecycle remains unvalidated on a supported disposable cPanel host matrix. Use only on a disposable cPanel & WHM server.
 
 ## Backend selection plan
 

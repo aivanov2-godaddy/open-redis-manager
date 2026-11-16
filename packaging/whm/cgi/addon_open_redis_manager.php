@@ -5,6 +5,7 @@ require_once '/usr/local/cpanel/php/WHM.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAcl.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 
@@ -15,6 +16,8 @@ $rootAuthorized = $authorized && $authenticatedUser === 'root';
 $report = $authorized ? (new \Orm\Backend\BackendDiscovery())->discover() : null;
 $policyStore = new \Orm\Backend\BackendPolicyStore();
 $policy = $rootAuthorized ? $policyStore->selectedBackend() : null;
+$providerPolicyStore = new \Orm\Backend\ProviderPolicyStore();
+$providerPolicy = $rootAuthorized ? $providerPolicyStore->load() : null;
 $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 10000]]);
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
@@ -143,6 +146,70 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         $policyMessage = 'The backend choice could not be saved. Choose an installed Redis-compatible backend.';
     }
 }
+$providerPolicyMessage = null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'provider.policy.update') {
+    $providerAction = $_POST['provider_rule_action'] ?? null;
+    $submittedMode = $_POST['provider_mode'] ?? null;
+    $readPolicyInteger = static function (string $key, int $minimum, int $maximum): ?int {
+        $raw = $_POST[$key] ?? null;
+        if (!is_string($raw) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', $raw) !== 1) {
+            return null;
+        }
+        $value = filter_var($raw, FILTER_VALIDATE_INT);
+        return is_int($value) && $value >= $minimum && $value <= $maximum ? $value : null;
+    };
+    $packageName = $_POST['package_name'] ?? '';
+    $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
+    $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
+    if ($providerPolicy === null || !in_array($providerAction, ['default', 'save-package', 'remove-package'], true)
+        || !in_array($submittedMode, ['report-only', 'enforce'], true)
+        || $defaultMemory === null || $defaultRetention === null) {
+        $providerPolicyMessage = 'The provider policy is unavailable or contains invalid values. No changes were saved.';
+    } else {
+        $updatedProviderPolicy = $providerPolicy;
+        $updatedProviderPolicy['mode'] = $providerAction === 'default'
+            ? $submittedMode : $providerPolicy['mode'];
+        $updatedProviderPolicy['default'] = [
+            'enabled' => ($_POST['default_enabled'] ?? null) === '1',
+            'max_memory_mib' => $defaultMemory,
+            'backup_retention' => $defaultRetention,
+        ];
+        $validPackageName = is_string($packageName)
+            && preg_match('/\A[a-zA-Z0-9_.-]{1,64}\z/', $packageName) === 1 && $packageName !== 'default';
+        if ($providerAction === 'save-package') {
+            $packageMemory = $readPolicyInteger('package_memory_mib', 8, 64);
+            $packageRetention = $readPolicyInteger('package_backup_retention', 2, 3);
+            if (!$validPackageName || $packageMemory === null || $packageRetention === null) {
+                $providerPolicyMessage = 'Enter a valid package name, memory ceiling, and backup retention. No changes were saved.';
+            } else {
+                $updatedProviderPolicy['packages'][$packageName] = [
+                    'enabled' => ($_POST['package_enabled'] ?? null) === '1',
+                    'max_memory_mib' => $packageMemory,
+                    'backup_retention' => $packageRetention,
+                ];
+            }
+        } elseif ($providerAction === 'remove-package') {
+            if (!$validPackageName || !array_key_exists($packageName, $updatedProviderPolicy['packages'])) {
+                $providerPolicyMessage = 'The requested package rule was not found. No changes were saved.';
+            } else {
+                unset($updatedProviderPolicy['packages'][$packageName]);
+            }
+        }
+
+        if ($providerPolicyMessage === null) {
+            if ($providerPolicyStore->save($updatedProviderPolicy)) {
+                $providerPolicy = $providerPolicyStore->load();
+                $providerPolicyMessage = $providerPolicy === null
+                    ? 'The policy was written, but could not be re-read safely. Check the root-owned policy file.'
+                    : 'Provider policy saved. Enforced changes affect new provisions, later memory changes, and future backup retention; existing instances were not rewritten.';
+                error_log('ORM provider policy changed through root WHM; action=' . $providerAction);
+            } else {
+                $providerPolicyMessage = 'The provider policy could not be saved safely. No changes were applied.';
+            }
+        }
+    }
+}
 
 if (!$authorized) {
     http_response_code(403);
@@ -152,35 +219,13 @@ WHM::header('Open Redis Manager', 0, 0);
 ?>
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
-  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 128 128" aria-hidden="true">
-  <defs>
-    <linearGradient id="orm-red" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F04438"/>
-      <stop offset="1" stop-color="#C81E18"/>
-    </linearGradient>
-    <linearGradient id="orm-white" x1="38" y1="39" x2="88" y2="88" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFF7F6"/>
-    </linearGradient>
-  </defs>
-
-  <rect x="2" y="2" width="124" height="124" rx="34" fill="url(#orm-red)"/>
-  <rect x="15" y="15" width="98" height="98" rx="28" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
-
-  <!-- An open cache orbit wraps three managed data layers. -->
-  <path d="M82 27a42 42 0 1 0 17 34" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-width="6"/>
-  <path d="m78 19 15 1-7 13" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/>
-
-  <g fill="url(#orm-white)">
-    <rect x="45" y="40" width="39" height="12" rx="6"/>
-    <rect x="37" y="58" width="53" height="12" rx="6"/>
-    <rect x="43" y="76" width="42" height="12" rx="6"/>
-  </g>
-  <g fill="#C81E18">
-    <rect x="74" y="44" width="5" height="4" rx="2"/>
-    <rect x="79" y="62" width="6" height="4" rx="2"/>
-    <rect x="74" y="80" width="5" height="4" rx="2"/>
-  </g>
+  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
+  <defs><linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#E5392D"/><stop offset="1" stop-color="#D92D20"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
+  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/><path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
+  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
@@ -326,6 +371,82 @@ WHM::header('Open Redis Manager', 0, 0);
         <button type="submit">Save backend choice</button>
       </form>
       <p>This setting selects the backend for future instances only. It does not install packages or migrate existing data.</p>
+      <?php endif; ?>
+    </section>
+    <section aria-labelledby="orm-provider-policy-title">
+      <h2 id="orm-provider-policy-title">Package resource policy</h2>
+      <?php if (!$rootAuthorized): ?>
+        <p role="status">Only the root WHM administrator can view or change provider package limits.</p>
+      <?php elseif ($providerPolicy === null): ?>
+        <p role="alert">The root-owned provider policy could not be verified. No provider limits are being changed.</p>
+      <?php else: ?>
+        <?php if ($providerPolicyMessage !== null): ?><p role="status"><?= htmlspecialchars($providerPolicyMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+        <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only records violations without blocking; enforce rejects new provisions and memory changes over the selected package cap. Existing instances are not rewritten.</p>
+        <h3>Default package rule</h3>
+        <form method="post">
+          <input type="hidden" name="orm_action" value="provider.policy.update">
+          <input type="hidden" name="provider_rule_action" value="default">
+          <label for="orm-provider-mode">Policy mode</label>
+          <select id="orm-provider-mode" name="provider_mode" required>
+            <option value="report-only"<?= $providerPolicy['mode'] === 'report-only' ? ' selected' : '' ?>>Report-only</option>
+            <option value="enforce"<?= $providerPolicy['mode'] === 'enforce' ? ' selected' : '' ?>>Enforce</option>
+          </select>
+          <label><input type="checkbox" name="default_enabled" value="1"<?= $providerPolicy['default']['enabled'] ? ' checked' : '' ?>> Allow new instances for packages without a specific rule</label>
+          <label for="orm-provider-default-memory">Default memory ceiling (MiB)</label>
+          <input id="orm-provider-default-memory" name="default_memory_mib" type="number" min="8" max="64" step="1" required value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+          <label for="orm-provider-default-retention">Default snapshot retention</label>
+          <input id="orm-provider-default-retention" name="default_backup_retention" type="number" min="2" max="3" step="1" required value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+          <button type="submit">Save default policy</button>
+        </form>
+        <h3>Package-specific rule</h3>
+        <p>Use the exact package name from cPanel. A package-specific rule replaces the default values for that package.</p>
+        <form method="post">
+          <input type="hidden" name="orm_action" value="provider.policy.update">
+          <input type="hidden" name="provider_rule_action" value="save-package">
+          <input type="hidden" name="provider_mode" value="<?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="default_memory_mib" value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+          <input type="hidden" name="default_backup_retention" value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+          <?php if ($providerPolicy['default']['enabled']): ?><input type="hidden" name="default_enabled" value="1"><?php endif; ?>
+          <label for="orm-provider-package">cPanel package</label>
+          <input id="orm-provider-package" name="package_name" type="text" maxlength="64" pattern="[A-Za-z0-9_.-]+" required>
+          <label><input type="checkbox" name="package_enabled" value="1" checked> Allow new instances for this package</label>
+          <label for="orm-provider-package-memory">Memory ceiling (MiB)</label>
+          <input id="orm-provider-package-memory" name="package_memory_mib" type="number" min="8" max="64" step="1" required value="64">
+          <label for="orm-provider-package-retention">Snapshot retention</label>
+          <input id="orm-provider-package-retention" name="package_backup_retention" type="number" min="2" max="3" step="1" required value="3">
+          <button type="submit">Save package rule</button>
+        </form>
+        <?php if ($providerPolicy['packages'] !== []): ?>
+          <h3>Configured package rules</h3>
+          <table>
+            <thead><tr><th scope="col">Package</th><th scope="col">New instances</th><th scope="col">Memory ceiling</th><th scope="col">Snapshot retention</th><th scope="col">Action</th></tr></thead>
+            <tbody>
+              <?php foreach ($providerPolicy['packages'] as $packageName => $limits): ?>
+                <tr>
+                  <th scope="row"><?= htmlspecialchars($packageName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
+                  <td><?= $limits['enabled'] ? 'Allowed' : 'Disabled' ?></td>
+                  <td><?= (int) $limits['max_memory_mib'] ?> MiB</td>
+                  <td><?= (int) $limits['backup_retention'] ?></td>
+                  <td>
+                    <form method="post">
+                      <input type="hidden" name="orm_action" value="provider.policy.update">
+                      <input type="hidden" name="provider_rule_action" value="remove-package">
+                      <input type="hidden" name="provider_mode" value="<?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <input type="hidden" name="package_name" value="<?= htmlspecialchars($packageName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <input type="hidden" name="default_memory_mib" value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+                      <input type="hidden" name="default_backup_retention" value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+                      <?php if ($providerPolicy['default']['enabled']): ?><input type="hidden" name="default_enabled" value="1"><?php endif; ?>
+                      <button type="submit">Remove rule</button>
+                    </form>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php else: ?>
+          <p>No package-specific rules are configured.</p>
+        <?php endif; ?>
+        <p>Provider policy is stored in a private root-owned file. Changes are recorded in the server log. Reseller instance quotas and exposure levels are not implemented yet.</p>
       <?php endif; ?>
     </section>
   <?php endif; ?>

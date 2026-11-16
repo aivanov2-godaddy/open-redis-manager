@@ -36,6 +36,17 @@ $assert($presetRequests[0] === "{\"operation\":\"instance.provision\",\"preset\"
 $assert($presetClient->request('instance.provision', '../root') === null,
     'Reject unsupported preset values before sending a broker request.');
 $assert(count($presetRequests) === 1, 'Do not send an invalid preset to the broker.');
+$reportOnlyProvision = new BrokerClient(static fn (string $request): string =>
+    "{\"config\":{\"maxclients\":100,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":64,\"timeout\":0},\"policy_warnings\":[\"memory_limit_exceeded\"],\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$reportOnlyResult = $reportOnlyProvision->request('instance.provision', 'generic');
+$assert($reportOnlyResult['policy_warnings'] === ['memory_limit_exceeded'],
+    'Expose only allowlisted report-only package policy warnings to the account UI.');
+$unexpectedPolicyWarning = new BrokerClient(static fn (string $request): string =>
+    "{\"config\":{\"maxclients\":100,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":64,\"timeout\":0},\"policy_warnings\":[\"private detail\"],\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($unexpectedPolicyWarning->request('instance.provision', 'generic') === null,
+    'Reject arbitrary provider warning text from the broker.');
 $unexpectedPreset = new BrokerClient(static fn (string $request): string =>
     "{\"preset\":\"../root\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
 );
@@ -51,6 +62,12 @@ $configured = $configClient->request('instance.configure', null, $config);
 $assert($configured['config'] === $expectedConfig, 'Parse a bounded configuration status response.');
 $assert($configRequests[0] === "{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":48,\"operation\":\"instance.configure\",\"timeout\":60,\"version\":1}\n",
     'Serialize configuration fields in the canonical fixed schema.');
+$reportOnlyConfigure = new BrokerClient(static fn (string $request): string =>
+    "{\"config\":{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":48,\"timeout\":60},\"policy_warnings\":[\"memory_limit_exceeded\"],\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$configuredWithWarning = $reportOnlyConfigure->request('instance.configure', null, $config);
+$assert(($configuredWithWarning['policy_warnings'] ?? null) === ['memory_limit_exceeded'],
+    'Expose allowlisted report-only package warnings after a configuration change.');
 $assert($configClient->request('instance.configure', null, [...$config, 'memory_mib' => 65]) === null,
     'Reject an over-cap memory request before broker I/O.');
 $assert(count($configRequests) === 1, 'Do not send invalid configuration values.');
@@ -203,6 +220,14 @@ $assert($failed->request('instance.provision') === [
     'error' => 'backend_policy_required',
     'version' => 1,
 ], 'Parse a known failure response.');
+$providerPolicyDenied = new BrokerClient(static fn (string $request): string =>
+    "{\"error\":\"provider_policy_denied\",\"success\":false,\"version\":1}\n"
+);
+$assert($providerPolicyDenied->request('instance.provision', 'generic') === [
+    'success' => false,
+    'error' => 'provider_policy_denied',
+    'version' => 1,
+], 'Parse a provider policy denial without leaking rule details.');
 
 $configurationUnavailable = new BrokerClient(static fn (string $request): string =>
     "{\"error\":\"configuration_unavailable\",\"success\":false,\"version\":1}\n"

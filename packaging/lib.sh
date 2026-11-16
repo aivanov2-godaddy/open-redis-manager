@@ -100,6 +100,8 @@ orm_package_file_map() {
         instance_unit "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" "$ORM_INSTANCE_UNIT" 644 \
         metrics_service "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" "$ORM_METRICS_SERVICE" 644 \
         metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "$ORM_METRICS_TIMER" 644 \
+        provider_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/ProviderPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/ProviderPolicyStore.php" 644 \\
+        broker_provider_policy "$ORM_REPO_ROOT/src/Orm/Broker/ProviderPolicy.pm" "$ORM_BROKER_LIB/ProviderPolicy.pm" 644 \\
         whm_appconfig "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" 600
 }
 

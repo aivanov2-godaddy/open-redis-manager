@@ -9,6 +9,7 @@ use lib 'src';
 use Orm::Broker::AccountResolver;
 use Orm::Broker::Handler;
 use Orm::Broker::BackendPolicy;
+use Orm::Broker::ProviderPolicy;
 use Orm::Broker::InstanceManager;
 use Orm::Broker::PeerCredentials;
 use Orm::Broker::Server;
@@ -80,7 +81,7 @@ make_path($account_root);
 chmod(0755, $account_root) or die "chmod account root: $!";
 my $account_file = "$account_root/ormtest";
 open(my $file, '>', $account_file) or die "create account fixture: $!";
-print {$file} "SHELL=/bin/bash\n";
+print {$file} "SHELL=/bin/bash\nPLAN=starter\nOWNER=reseller1\n";
 close($file) or die "close account fixture: $!";
 chmod(0644, $account_file) or die "chmod account fixture: $!";
 
@@ -92,8 +93,8 @@ my $resolver = Orm::Broker::AccountResolver->new(
     lookup_name => sub { return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest'; return undef; },
 );
 is($resolver->resolve_uid(43210), 'ormtest', 'resolve a mapped UID through a trusted account record');
-is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $test_gid }, 'resolve trusted UID and primary GID');
-is_deeply($resolver->resolve_name('ormtest'), { name => 'ormtest', uid => 43210, gid => $test_gid },
+is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $test_gid, plan => 'starter', owner => 'reseller1' }, 'resolve trusted UID, primary GID, package and owner');
+is_deeply($resolver->resolve_name('ormtest'), { name => 'ormtest', uid => 43210, gid => $test_gid, plan => 'starter', owner => 'reseller1' },
     'resolve an administrator-selected account name through its trusted account record');
 ok(!defined($resolver->resolve_name('../root')), 'reject unsafe target names before account lookup');
 ok(!defined($resolver->resolve_name('missing')), 'reject names absent from trusted account lookup');
@@ -151,6 +152,56 @@ chmod(0600, $policy_path) or die "chmod backend policy: $!";
 my $policy = Orm::Broker::BackendPolicy->new(path => $policy_path, expected_owner_uid => $<);
 is($policy->selected_backend(), 'redis', 'read a root-owned explicit backend policy');
 
+my $provider_policy_path = "$tmp/etc/provider-policy.json";
+my @policy_audit;
+my $provider_policy = Orm::Broker::ProviderPolicy->new(
+    path => $provider_policy_path,
+    expected_owner_uid => $<,
+    audit => sub { push @policy_audit, $_[0]; return 1; },
+);
+my $policy_account = { name => 'policyacct', uid => 43210, gid => $test_gid, plan => 'starter', owner => 'reseller1' };
+my $default_decision = $provider_policy->provision_decision($policy_account, 64);
+ok($default_decision && $default_decision->{allowed} && $default_decision->{mode} eq 'report-only'
+    && $default_decision->{max_memory_mib} == 64, 'missing provider policy uses the non-blocking report-only default');
+my $enforced_package_policy = {
+    version => 1,
+    mode => 'enforce',
+    default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3 },
+    packages => {
+        starter => { enabled => JSON::PP::true, max_memory_mib => 16, backup_retention => 2 },
+        blocked => { enabled => JSON::PP::false, max_memory_mib => 8, backup_retention => 2 },
+    },
+};
+open(my $provider_policy_file, '>', $provider_policy_path) or die "create provider policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close provider policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod provider policy: $!";
+my $over_limit = $provider_policy->provision_decision($policy_account, 32);
+ok($over_limit && !$over_limit->{allowed} && $over_limit->{violations}->[0] eq 'memory_limit_exceeded'
+    && $over_limit->{max_memory_mib} == 16, 'enforce a package memory ceiling on new provisioning');
+my $within_limit = $provider_policy->provision_decision($policy_account, 16);
+ok($within_limit && $within_limit->{allowed}, 'allow provisioning within the package memory ceiling');
+my $disabled_package = $provider_policy->provision_decision({%{$policy_account}, plan => 'blocked'}, 8);
+ok($disabled_package && !$disabled_package->{allowed}
+    && $disabled_package->{violations}->[0] eq 'package_disabled', 'deny new provisioning for a disabled package');
+my $config_limit = $provider_policy->memory_decision($policy_account, 32);
+ok($config_limit && !$config_limit->{allowed}, 'enforce the package memory ceiling on later configuration requests');
+$enforced_package_policy->{mode} = 'report-only';
+open($provider_policy_file, '>', $provider_policy_path) or die "rewrite provider policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close report-only provider policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod report-only provider policy: $!";
+my $reported_only = $provider_policy->provision_decision({%{$policy_account}, plan => 'blocked'}, 32);
+ok($reported_only && $reported_only->{allowed} && @{$reported_only->{violations}} == 2
+    && @policy_audit == 4, 'report-only violations are logged without blocking package provisioning');
+$enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 65;
+open($provider_policy_file, '>', $provider_policy_path) or die "rewrite invalid provider policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close invalid provider policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod invalid provider policy: $!";
+ok(!defined($provider_policy->effective_for($policy_account)), 'reject malformed provider policy instead of falling back to unlimited defaults');
+unlink($provider_policy_path) or die "remove provider policy fixture: $!";
+
 my $unit_state = 'inactive';
 my $timer_state = 'inactive';
 my $metrics_info = join("\r\n",
@@ -175,6 +226,9 @@ my $manager = Orm::Broker::InstanceManager->new(
     etc_root => $etc_instances,
     data_root => $data_instances,
     policy => $policy,
+    provider_policy => Orm::Broker::ProviderPolicy->new(
+        path => "$tmp/etc/missing-instance-policy.json", expected_owner_uid => $<,
+    ),
     expected_owner_uid => $<,
     binary_paths => { redis => ['/usr/bin/redis-server'], valkey => ['/usr/bin/valkey-server'] },
     binary_probe => sub { return $_[0] eq 'redis' && $_[1] eq '/usr/bin/redis-server'; },
@@ -377,6 +431,23 @@ binmode($rollback_dump);
 is(<$rollback_dump>, 'live before rollback', 'restore the safety snapshot after the selected backup fails to start');
 close($rollback_dump) or die "close rollback dump fixture: $!";
 is($unit_state, 'active', 'restart the service after automatic rollback');
+my $retention_policy_path = "$tmp/etc/missing-instance-policy.json";
+open($provider_policy_file, '>', $retention_policy_path) or die "create retention policy fixture: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode({
+    version => 1, mode => 'enforce',
+    default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 2 },
+    packages => {},
+}) . "\n";
+close($provider_policy_file) or die "close retention policy fixture: $!";
+chmod(0600, $retention_policy_path) or die "chmod retention policy fixture: $!";
+sleep 1;
+ok($manager->dispatch('backup.create', $account)->{success}, 'create a snapshot under an enforced two-snapshot retention policy');
+sleep 1;
+ok($manager->dispatch('backup.create', $account)->{success}, 'create the next snapshot under the enforced retention policy');
+$listed_backups = $manager->dispatch('backup.list', $account);
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 2,
+    'enforce the package snapshot retention limit after each validated backup');
+unlink($retention_policy_path) or die "remove retention policy fixture: $!";
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
 is_deeply([@{$metrics}{qw(memory_used_bytes memory_peak_bytes connected_clients uptime_seconds commands_per_second keyspace_hits keyspace_misses)}],

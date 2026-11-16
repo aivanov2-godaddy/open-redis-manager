@@ -40,6 +40,10 @@ jobs:
         run: php tests/cpanel-connection-details.php
       - name: Check cPanel diagnostic report
         run: php tests/cpanel-diagnostic-report.php
+      - name: Check provider package policy storage
+        run: php tests/provider-policy-store.php
+      - name: Check provider package policy UI guards
+        run: php tests/provider-policy-ui.php
       - name: Check cPanel and WHM session mutation guard
         run: php tests/session-request-guard.php
       - name: Stage instance launcher for systemd unit verification

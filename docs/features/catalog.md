@@ -30,7 +30,7 @@ This catalog records the public product behavior observed on the reference site 
 | Redis command console | Run an allowlisted set of read-only diagnostics against a chosen account, or offer a carefully permissioned admin console with audit. | CLI |
 | Backups | Browse account snapshots and request targeted or fleet backups; report partial failures per account. | WHM lists up to three retained snapshots for each displayed account, creates or restores one account at a time, and reports that account's outcome. A synchronous all-fleet batch and partial-batch reporting remain unimplemented. |
 | Recovery | Scan first, repair only affected accounts, rebuild configuration from trusted metadata, fix ownership, rotate credentials, and audit each action. | Recovery |
-| Provider policy | Choose report-only, warn or enforce; select Simple, Developer or Advanced exposure; keep grandfathering explicit. | Policies |
+| Provider policy | Choose report-only, warn or enforce; select Simple, Developer or Advanced exposure; keep grandfathering explicit. | Root WHM now has report-only/enforce package availability, memory ceilings, and snapshot-retention limits. Reseller quotas, warning mode, and Simple/Developer/Advanced exposure remain unimplemented. |
 | Global defaults | Set memory, eviction, database, backup and history defaults for newly provisioned accounts. | Settings |
 | Package limits | Set eligibility, memory/client/database ceilings, backup retention and optional auto-provision behavior per package. | Packages |
 | Reseller quotas | Summarize accounts and consumption; cap new instances and aggregate memory without mutating existing services. | Resellers |

@@ -13,10 +13,10 @@
 - Enforce cPanel account identity server-side on every read and write; never trust a submitted username.
 - Apply WHM ACL checks and CSRF tokens to all state changes.
 - Invoke fixed executable paths with argument arrays; do not concatenate shell commands from request values.
-- Validate ports, memory limits, database counts, eviction policies, package IDs and backend identifiers against allowlists and provider limits. Current cPanel memory, client and timeout ranges are broker-enforced request bounds, not package/reseller ceilings.
+- Validate ports, memory limits, database counts, eviction policies, package IDs and backend identifiers against allowlists and provider limits. Current cPanel memory, client and timeout ranges are broker-enforced request bounds; root WHM package memory ceilings now add per-package provisioning/configuration enforcement. Reseller quotas remain unimplemented.
 - Store credentials with restrictive permissions and display them masked. Keep secrets out of logs, audit payloads, diagnostics and support exports.
 - Rate-limit authentication-sensitive and expensive operations. Record denial and failure reasons without credential values.
-- Score memory use, client counts, evictions and operation rates as signals; report-only must be the initial mode, with warning or enforcement enabled only by scoped provider policy.
+- Score memory use, client counts, evictions and operation rates as signals; the provider package policy defaults to report-only, with enforcement enabled only by root WHM.
 - Protect AUTH from repeated failures with bounded rate limiting/lockout, detect weak or reused credentials without printing them, and preserve the previous working credential if rotation verification fails.
 - Audit root actions, credential rotation, restore, recovery, backend changes and policy changes.
 - Perform backup, validation and rollback before operations that can interrupt a running service or replace data.
