@@ -310,13 +310,11 @@ try {
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="242" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
-    <linearGradient id="orm-mark" x1="80" y1="49" x2="190" y2="211" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFF3F1"/></linearGradient>
+    <linearGradient id="orm-red" x1="24" y1="16" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
+    <linearGradient id="orm-mark" x1="72" y1="55" x2="185" y2="202" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE8E5"/></linearGradient>
   </defs>
-  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-red)"/>
-  <path d="M66 55h81c47 0 76 25 76 64 0 28-16 49-43 59l45 36h-54l-39-31h-19v31H66V55Zm47 39v53h31c20 0 32-10 32-27s-12-26-32-26h-31Z" fill="url(#orm-mark)" fill-rule="evenodd" clip-rule="evenodd"/>
-  <path d="M67 91h36M67 126h36M67 161h36" fill="none" stroke="#B51F1A" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="158" cy="120" r="7" fill="#fff"/><circle cx="158" cy="120" r="2.5" fill="#D72D24"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
+  <path d="M187 66c-31-28-85-21-112 14-34 44-17 108 30 129 43 19 94-3 108-45 14-42-12-83-52-88-34-5-64 19-66 51-2 27 18 49 44 49 21 0 37-15 38-34 1-16-11-29-26-30-13-1-23 9-23 21 0 9 7 16 16 16" fill="none" stroke="url(#orm-mark)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
