@@ -252,7 +252,7 @@ MOCK
 }
 
 run_upgrade_expect_success() {
-    if ! "$test_root/upgrade-test.sh"; then
+    if ! bash "$test_root/upgrade-test.sh"; then
         printf 'expected the upgrade to succeed in %s.\n' "$test_root" >&2
         exit 1
     fi
@@ -308,7 +308,7 @@ assert_legacy_restored() {
 }
 
 expect_preflight_refusal() {
-    if "$test_root/upgrade-test.sh"; then
+    if bash "$test_root/upgrade-test.sh"; then
         printf 'expected preflight refusal in %s.\n' "$test_root" >&2
         exit 1
     fi
@@ -338,7 +338,7 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'new install m
     || { printf 'successful upgrade left a transaction temporary file behind.\n' >&2; exit 1; }
 
 prepare_empty_instance_roots
-"$test_root/uninstall-test.sh"
+bash "$test_root/uninstall-test.sh"
 [[ ! -e "$ORM_3RDPARTY" && ! -e "$ORM_BROKER_UNIT" && ! -e "$ORM_APPCONFIG" \
     && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" \
     && ! -e "$TEST_CPANEL_MARKER" && "$(cat "$TEST_APPCONFIG_STATE")" == 0 \
@@ -355,7 +355,7 @@ run_upgrade_expect_success
 prepare_empty_instance_roots
 printf '0\n' >"$TEST_APPCONFIG_STATE"
 : >"$TEST_LOG"
-if "$test_root/uninstall-test.sh"; then
+if bash "$test_root/uninstall-test.sh"; then
     printf 'expected uninstall refusal for an unregistered but present AppConfig file.\n' >&2
     exit 1
 fi
@@ -373,7 +373,7 @@ for failure in uninstall-plugin unregister-appconfig; do
         uninstall-plugin) export TEST_FAIL_UNINSTALL_PLUGIN_ONCE=1 ;;
         unregister-appconfig) export TEST_FAIL_UNREGISTER_ONCE=1 ;;
     esac
-    if "$test_root/uninstall-test.sh"; then
+    if bash "$test_root/uninstall-test.sh"; then
         printf 'expected injected uninstall failure at %s.\n' "$failure" >&2
         exit 1
     fi
@@ -398,7 +398,7 @@ trap - EXIT
 
 prepare_case plugin-rollback
 export TEST_FAIL_CURRENT_PLUGIN_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected an injected cPanel registration failure.\n' >&2
     exit 1
 fi
@@ -409,7 +409,7 @@ unset TEST_FAIL_CURRENT_PLUGIN_ONCE
 
 prepare_case start-rollback
 export TEST_FAIL_START_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected an injected broker-start failure.\n' >&2
     exit 1
 fi
@@ -420,7 +420,7 @@ unset TEST_FAIL_START_ONCE
 
 prepare_case reload-rollback
 export TEST_FAIL_RELOAD_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected an injected systemd reload failure.\n' >&2
     exit 1
 fi
@@ -446,7 +446,7 @@ EXPECTED_ENABLED=enabled
 EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 export TEST_FAIL_FILE_INSTALL_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected an injected package-file install failure.\n' >&2
     exit 1
 fi
@@ -460,7 +460,7 @@ EXPECTED_ENABLED=disabled
 EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 export TEST_FAIL_START_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected the disabled-active rollback case to fail at broker start.\n' >&2
     exit 1
 fi
@@ -474,7 +474,7 @@ EXPECTED_ENABLED=enabled
 EXPECTED_ACTIVE=inactive
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 export TEST_FAIL_CURRENT_PLUGIN_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected the enabled-inactive rollback case to fail during cPanel registration.\n' >&2
     exit 1
 fi
@@ -489,7 +489,7 @@ EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 export TEST_FAIL_FILE_INSTALL_ONCE=1
 export TEST_FAIL_RESTORE_ONCE=1
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected the injected rollback-restoration failure.\n' >&2
     exit 1
 fi
@@ -512,7 +512,7 @@ EXPECTED_ENABLED=enabled
 EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 printf 'tampered\n' >>"$ORM_3RDPARTY/bin/orm-broker.pl"
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected a tampered legacy file to be rejected.\n' >&2
     exit 1
 fi
@@ -546,7 +546,7 @@ EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 rm -f -- "$ORM_3RDPARTY/bin/orm-broker.pl"
 ln -s "$fixture_root/broker_bin" "$ORM_3RDPARTY/bin/orm-broker.pl"
-if "$test_root/upgrade-test.sh"; then
+if bash "$test_root/upgrade-test.sh"; then
     printf 'expected a symlinked legacy file to be rejected.\n' >&2
     exit 1
 fi
