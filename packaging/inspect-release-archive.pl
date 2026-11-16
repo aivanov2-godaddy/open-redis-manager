@@ -209,6 +209,15 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /etc/systemd/system/orm-metrics-collect@.timer
     /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderPolicy.pm
+    /usr/local/cpanel/3rdparty/orm/VERSION
+    /usr/local/cpanel/3rdparty/orm/packaging/preview-release.sh
+    /usr/local/cpanel/3rdparty/orm/packaging/lib.sh
+    /usr/local/cpanel/3rdparty/orm/packaging/release-lib.sh
+    /usr/local/cpanel/3rdparty/orm/packaging/inspect-release-archive.pl
+    /usr/local/cpanel/3rdparty/orm/packaging/compare-release-preview.pl
+    /usr/local/cpanel/3rdparty/orm/packaging/release-install-map.txt
+    /usr/local/cpanel/3rdparty/orm/packaging/release-required-files.txt
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php
     /var/cpanel/apps/open_redis_manager.conf
 );
 for my $file (@inventory) {

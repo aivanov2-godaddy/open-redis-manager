@@ -116,6 +116,15 @@ orm_package_file_map() {
         metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "$ORM_METRICS_TIMER" 644 \
         provider_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/ProviderPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/ProviderPolicyStore.php" 644 \
         broker_provider_policy "$ORM_REPO_ROOT/src/Orm/Broker/ProviderPolicy.pm" "$ORM_BROKER_LIB/ProviderPolicy.pm" 644 \
+        release_version "$ORM_REPO_ROOT/VERSION" "$ORM_3RDPARTY/VERSION" 644 \
+        release_preview "$ORM_PACKAGE_ROOT/preview-release.sh" "$ORM_3RDPARTY/packaging/preview-release.sh" 755 \
+        release_package_lib "$ORM_PACKAGE_ROOT/lib.sh" "$ORM_3RDPARTY/packaging/lib.sh" 644 \
+        release_verification_lib "$ORM_PACKAGE_ROOT/release-lib.sh" "$ORM_3RDPARTY/packaging/release-lib.sh" 644 \
+        release_archive_inspector "$ORM_PACKAGE_ROOT/inspect-release-archive.pl" "$ORM_3RDPARTY/packaging/inspect-release-archive.pl" 644 \
+        release_preview_comparator "$ORM_PACKAGE_ROOT/compare-release-preview.pl" "$ORM_3RDPARTY/packaging/compare-release-preview.pl" 644 \
+        release_install_map "$ORM_PACKAGE_ROOT/release-install-map.txt" "$ORM_3RDPARTY/packaging/release-install-map.txt" 644 \
+        release_required_files "$ORM_PACKAGE_ROOT/release-required-files.txt" "$ORM_3RDPARTY/packaging/release-required-files.txt" 644 \
+        release_preview_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleasePreview.php" "$ORM_3RDPARTY/src/Orm/Update/ReleasePreview.php" 644 \
         whm_appconfig "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" 600
 }
 
@@ -430,8 +439,10 @@ orm_remove_empty_owned_directories() {
         "$ORM_3RDPARTY/lib/Orm" \
         "$ORM_3RDPARTY/lib" \
         "$ORM_3RDPARTY/bin" \
+        "$ORM_3RDPARTY/src/Orm/Update" \
         "$ORM_3RDPARTY/src/Orm" \
         "$ORM_3RDPARTY/src" \
+        "$ORM_3RDPARTY/packaging" \
         "$ORM_3RDPARTY" \
         "$ORM_CPanel_LIVE"; do
         rmdir -- "$path" 2>/dev/null || true

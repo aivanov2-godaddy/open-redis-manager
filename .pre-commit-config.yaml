@@ -41,3 +41,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-release-preview
+        name: WHM signed release preview checks
+        entry: php tests/release-preview.php
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -4,6 +4,7 @@ declare(strict_types=1);
 $whmPage = file_get_contents(dirname(__DIR__) . '/packaging/whm/cgi/addon_open_redis_manager.php');
 $cpanelPage = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $packageMap = file_get_contents(dirname(__DIR__) . '/packaging/lib.sh');
+$releasePreview = file_get_contents(dirname(__DIR__) . '/src/Orm/Update/ReleasePreview.php');
 $assertions = [
     is_string($whmPage) && str_contains($whmPage, 'new \\Orm\\Backend\\ProviderPolicyStore()'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
@@ -68,6 +69,17 @@ $assertions = [
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
         && str_contains($packageMap, 'ProviderPolicy.pm')
         && str_contains($packageMap, 'WhmAuditLog.php') && str_contains($packageMap, 'WhmAuditEventWriter.php'),
+    is_string($whmPage) && str_contains($whmPage, "'update.preview'") && str_contains($whmPage, 'Verify staged release')
+        && str_contains($whmPage, 'This preview does not apply the update.')
+        && str_contains($whmPage, 'aria-labelledby="orm-update-preview-title"'),
+    is_string($releasePreview) && str_contains($releasePreview, "private const STAGED_ROOT = '/var/cpanel/orm/updates/staged'")
+        && str_contains($releasePreview, "private const TRUSTED_KEY_ROOT = '/etc/orm/release-keys'")
+        && str_contains($releasePreview, "'/usr/bin/timeout', '--signal=KILL', '30s', '/usr/bin/bash'")
+        && str_contains($releasePreview, 'proc_open($argv')
+        && str_contains($releasePreview, "'PATH' => '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'"),
+    is_string($packageMap) && str_contains($packageMap, 'release_preview "$ORM_PACKAGE_ROOT/preview-release.sh"')
+        && str_contains($packageMap, 'release_version "$ORM_REPO_ROOT/VERSION"')
+        && str_contains($packageMap, 'release_preview_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleasePreview.php"'),
 ];
 foreach ($assertions as $index => $passed) {
     if (!$passed) {

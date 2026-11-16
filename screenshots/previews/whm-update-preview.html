@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WHM signed update preview · Open Redis Manager</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "Segoe UI", Arial, sans-serif; color: #182230; background: #f3f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    .topbar { height: 58px; padding: 0 34px; display: flex; align-items: center; gap: 12px; color: white; background: #253b50; }
+    .topbar strong { font-size: 15px; letter-spacing: .02em; }
+    .topbar span { margin-left: auto; color: #d5e2ec; font-size: 13px; }
+    .layout { max-width: 1240px; margin: 30px auto; padding: 0 28px; }
+    .crumb { color: #687789; font-size: 13px; margin-bottom: 16px; }
+    h1 { margin: 0; display: flex; align-items: center; gap: 12px; font-size: 26px; letter-spacing: -.02em; }
+    h1 img { width: 34px; height: 34px; }
+    .intro { margin: 12px 0 22px 46px; color: #536273; }
+    .card { border: 1px solid #d7dfe7; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px #1822300b; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid #e4e9ee; }
+    .card-head h2 { margin: 0; font-size: 19px; }
+    .tag { border-radius: 20px; padding: 5px 10px; color: #47576a; background: #edf1f5; font-size: 12px; font-weight: 650; }
+    .content { padding: 20px 22px 22px; }
+    .lead { max-width: 900px; margin: 0 0 16px; color: #4f5e6f; line-height: 1.5; }
+    .notice { display: flex; align-items: flex-start; gap: 11px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid #b7e1ca; border-radius: 7px; background: #f1fbf5; color: #1e663e; font-size: 14px; }
+    .check { width: 21px; height: 21px; flex: 0 0 21px; border-radius: 50%; color: white; background: #28864d; text-align: center; line-height: 21px; font-weight: 800; }
+    .notice strong { display: block; margin-bottom: 2px; }
+    .release { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 0 0 18px; border: 1px solid #e0e6ec; border-radius: 7px; }
+    .release div { padding: 14px 16px; min-width: 0; }
+    .release div + div { border-left: 1px solid #e0e6ec; }
+    dt { color: #69798a; font-size: 12px; margin-bottom: 7px; }
+    dd { margin: 0; font-size: 15px; font-weight: 650; }
+    code { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .digest { grid-column: 1 / -1; border-top: 1px solid #e0e6ec; }
+    h3 { margin: 20px 0 10px; font-size: 15px; }
+    .counts { display: flex; gap: 9px; flex-wrap: wrap; }
+    .counts span { padding: 8px 11px; border: 1px solid #e0e6ec; border-radius: 6px; color: #526173; font-size: 13px; }
+    .counts b { color: #172333; }
+    details { margin-top: 18px; border: 1px solid #e0e6ec; border-radius: 7px; }
+    summary { cursor: pointer; padding: 12px 14px; color: #245d84; font-weight: 650; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+    th, td { padding: 10px 14px; border-top: 1px solid #e7ebef; }
+    th { color: #536273; font-weight: 650; }
+    td code { color: #3c4e60; }
+    .buttonrow { margin-top: 18px; display: flex; align-items: center; gap: 13px; }
+    button { padding: 10px 15px; border: 0; border-radius: 6px; color: white; background: #236b9a; font: inherit; font-weight: 650; }
+    .quiet { color: #617184; font-size: 12px; }
+    .footnote { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #e5eaf0; color: #657588; font-size: 12px; line-height: 1.5; }
+    @media (max-width: 760px) { .layout { padding: 0 15px; margin: 18px auto; } .release { grid-template-columns: 1fr 1fr; } .digest { grid-column: 1 / -1; } .topbar { padding: 0 18px; } }
+  </style>
+</head>
+<body>
+  <header class="topbar"><strong>WHM</strong><span>Static preview · synthetic release data</span></header>
+  <main class="layout">
+    <div class="crumb">Plugins&nbsp; / &nbsp;Open Redis Manager</div>
+    <h1><img src="../../assets/orm-mark.svg" alt="">Open Redis Manager</h1>
+    <p class="intro">Signed release preview</p>
+    <section class="card" aria-labelledby="preview-title">
+      <div class="card-head"><h2 id="preview-title">Signed update preview</h2><span class="tag">Root only</span></div>
+      <div class="content">
+        <p class="lead">Review the verified release identity and exact ORM-managed files before deciding how to proceed. This preview does not apply the update.</p>
+        <div class="notice"><span class="check" aria-hidden="true">✓</span><div><strong>Signature and compatibility verified</strong>No files were changed. This is example data for the interface preview.</div></div>
+        <dl class="release">
+          <div><dt>Installed version</dt><dd>0.1.0-dev</dd></div>
+          <div><dt>Candidate version</dt><dd>0.2.0</dd></div>
+          <div><dt>Release channel</dt><dd>Stable</dd></div>
+          <div><dt>Trusted key ID</dt><dd>orm-release-2026</dd></div>
+          <div class="digest"><dt>Artifact SHA-256</dt><dd><code>9cb4b68c1024e2212e3730ea3c39d03b5b815a46fe74032433de025a6418e420</code></dd></div>
+        </dl>
+        <h3>Managed file changes</h3>
+        <div class="counts"><span>Add <b>2</b></span><span>Replace <b>3</b></span><span>Unchanged <b>36</b></span><span>Move <b>0</b></span><span>Conflict <b>0</b></span><span>Retire <b>0</b></span></div>
+        <details open>
+          <summary>Review managed file actions</summary>
+          <div class="table-scroll"><table>
+            <thead><tr><th>File key</th><th>Action</th><th>Target</th><th>Review</th></tr></thead>
+            <tbody>
+              <tr><th>whm_cgi</th><td>Replace</td><td><code>/usr/local/cpanel/whostmgr/docroot/cgi/addon_open_redis_manager.php</code></td><td>No</td></tr>
+              <tr><th>release_preview_ui</th><td>Replace</td><td><code>/usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php</code></td><td>No</td></tr>
+              <tr><th>release_install_map</th><td>Unchanged</td><td><code>/usr/local/cpanel/3rdparty/orm/packaging/release-install-map.txt</code></td><td>No</td></tr>
+              <tr><th>metrics_timer</th><td>Unchanged</td><td><code>/etc/systemd/system/orm-metrics-collect@.timer</code></td><td>No</td></tr>
+            </tbody>
+          </table></div>
+        </details>
+        <div class="buttonrow"><button type="button">Verify staged release</button><span class="quiet">Verification only · no automatic download or installation</span></div>
+        <p class="footnote">The live preview reads fixed root-owned paths under <code>/var/cpanel/orm/updates/staged/</code> and <code>/etc/orm/release-keys/</code>. Browser form fields cannot choose paths or commands.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

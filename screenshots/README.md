@@ -28,6 +28,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [WHM package and reseller policy](whm-package-policy.png) | Root-only mode and exposure defaults, package ceilings, reseller usage, and quotas | Static preview; [HTML source](previews/whm-package-policy.html) |
 | [WHM provider branding](whm-provider-branding.png) | Provider identity controls and a synthetic live cPanel preview | Static preview; [HTML source](previews/whm-provider-branding.html) |
 | [WHM audit log](whm-audit-log.png) | Root-only UTC filters, source coverage status, normalized events, and JSON export | Synthetic sample data; [HTML source](previews/whm-audit-log.html) |
+| [WHM signed update preview](whm-update-preview.png) | Root-only read-only signed release preview with signature status, digest, and managed file actions | Synthetic release values; [HTML source](previews/whm-update-preview.html) |
 
 The dashboard and WHM overview/accounts/security images are nonfunctional prototype screens. The cPanel setup image is a static preview rendered from [its HTML fixture](previews/cpanel-presets.html), with synthetic data. The cPanel configuration image is a static preview rendered from [its HTML fixture](previews/cpanel-configuration.html), with synthetic settings. The cPanel monitoring and hourly history images are static previews rendered from [their HTML fixture](previews/cpanel-monitoring.html); the stale-state design is in a [synthetic HTML preview](previews/cpanel-monitoring-stale.html), with image capture pending. The cPanel backup and restore screenshot is rendered from its [synthetic HTML preview](previews/cpanel-backups-restore.html). The connection-details image is a static preview rendered from [its HTML fixture](previews/connection-details.html). The WHM account-action and snapshot design is rendered from its [synthetic HTML preview](previews/whm-fleet.html). These previews are not connected to cPanel or Redis/Valkey.
 
@@ -38,3 +39,5 @@ The provider package and reseller policy image is a static UI preview rendered f
 The WHM diagnostics image is a static synthetic UI composition. It illustrates the guarded per-account action and allowlisted result; it is not a live capture and contains no cPanel account or service data.
 
 The WHM security report image is rendered from a static [synthetic preview](previews/whm-security-report.html). Its rates, counts, and timestamps are invented sample values; the image is not connected to WHM or Redis/Valkey.
+
+The WHM signed update preview image is rendered from a [static HTML fixture](previews/whm-update-preview.html). Its versions, signature result, digest, and file actions are synthetic; it is not connected to a signed release, a public update feed, or a cPanel server.
