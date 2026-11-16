@@ -470,7 +470,7 @@ sub _migrate_to_valkey_locked {
         return $finish->(_failure($unpaused ? 'migration_timeout' : 'migration_recovery_required'));
     }
 
-    my $stopped = $self->_systemctl('stop', '--no-block', $unit);
+    my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
     if (!$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout})) {
         my $recovered = $self->_ensure_unit_running($unit);
         my $unpaused = $recovered && $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
