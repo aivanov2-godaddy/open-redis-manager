@@ -200,6 +200,7 @@ ok($reported_only && $reported_only->{allowed} && @{$reported_only->{violations}
     && $reported_only->{mode} eq 'warn' && @policy_audit == 4,
     'migrate version-one report-only policy to compatible warnings without blocking package provisioning');
 $enforced_package_policy->{version} = 2;
+$enforced_package_policy->{mode} = 'enforce';
 $enforced_package_policy->{exposure} = 'developer';
 $enforced_package_policy->{resellers} = {
     reseller1 => { max_instances => 2, max_memory_mib => 64 },
