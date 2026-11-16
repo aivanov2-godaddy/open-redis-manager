@@ -163,6 +163,29 @@ grep -q '"outcome":"rolled_back"' "$target_root/var/cpanel/orm/updates/update-au
     exit 1
 }
 
+# A known allowlisted target absent from an older v3 manifest is added by a signed update.
+prepare_installation "$target_root" "$manifest"
+add_key='whm_icon'
+add_target="$(awk -F'|' -v key="$add_key" '$1 == key { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+add_file="$target_root$add_target"
+[[ -n "$add_target" && -f "$add_file" ]] || {
+    printf 'additive-update fixture target is missing.\n' >&2
+    exit 1
+}
+rm -- "$add_file"
+grep -v "^$add_key|" "$manifest" >"$manifest.next"
+mv -- "$manifest.next" "$manifest"
+chmod 0600 "$manifest"
+bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/additive-apply.out"
+grep -q "^$add_key|" "$manifest" && [[ -f "$add_file" ]] || {
+    printf 'signed apply did not add the allowlisted file missing from the v3 manifest.\n' >&2
+    exit 1
+}
+[[ "$(stat -c '%a' "$add_file")" == 644 ]] || {
+    printf 'signed apply added a file with the wrong mode.\n' >&2
+    exit 1
+}
+
 # A clean fixture applies and advances the v3 manifest without touching service data.
 prepare_installation "$target_root" "$manifest"
 bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/apply.out"

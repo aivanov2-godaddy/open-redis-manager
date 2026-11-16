@@ -15,12 +15,17 @@ fi
 
 ORM_VERSION_FILE="$test_root/VERSION"
 ORM_INSTALL_MANIFEST="$test_root/install-manifest"
+TEST_ADDITIVE_TARGET=0
 printf '0.1.0-rc.2+test.1\n' >"$ORM_VERSION_FILE"
 printf 'package payload\n' >"$test_root/source"
 install -m 0644 "$test_root/source" "$test_root/target"
+printf 'new package payload\n' >"$test_root/source-extra"
 
 orm_package_file_map() {
     printf 'test_payload|%s|%s|644\n' "$test_root/source" "$test_root/target"
+    if [[ "$TEST_ADDITIVE_TARGET" == 1 ]]; then
+        printf 'test_addition|%s|%s|644\n' "$test_root/source-extra" "$test_root/target-extra"
+    fi
 }
 
 orm_write_install_manifest "$ORM_INSTALL_MANIFEST"
@@ -30,6 +35,29 @@ orm_write_install_manifest "$ORM_INSTALL_MANIFEST"
     || { printf 'v3 manifest version was not readable.\n' >&2; exit 1; }
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
     || { printf 'valid v3 manifest did not validate.\n' >&2; exit 1; }
+
+TEST_ADDITIVE_TARGET=1
+if orm_validate_install_manifest "$ORM_INSTALL_MANIFEST"; then
+    printf 'strict validation accepted a v3 manifest missing a package file.\n' >&2
+    exit 1
+fi
+orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" allow-known-subset \
+    || { printf 'known v3 manifest subset was rejected for an additive update.\n' >&2; exit 1; }
+printf 'untracked target\n' >"$test_root/target-extra"
+chmod 0644 "$test_root/target-extra"
+orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" allow-known-subset \
+    || { printf 'untracked target prevented safe subset integrity validation.\n' >&2; exit 1; }
+rm -- "$test_root/target-extra"
+TEST_ADDITIVE_TARGET=0
+
+cp -- "$ORM_INSTALL_MANIFEST" "$test_root/unknown-key-manifest"
+chmod 0600 "$test_root/unknown-key-manifest"
+chown root:root "$test_root/unknown-key-manifest"
+sed -i 's/^test_payload|/unknown_payload|/' "$test_root/unknown-key-manifest"
+if orm_validate_install_manifest "$test_root/unknown-key-manifest" allow-known-subset; then
+    printf 'a v3 manifest with an unknown file key passed subset validation.\n' >&2
+    exit 1
+fi
 
 { printf 'orm-install-manifest-v2\nversion|0.1.0-rc.2+test.1\n'; tail -n +3 "$ORM_INSTALL_MANIFEST" | cut -d '|' -f 1-3; } >"$test_root/v2-manifest"
 chmod 0600 "$test_root/v2-manifest"
@@ -43,6 +71,10 @@ chown root:root "$test_root/legacy.tmp"
 mv -- "$test_root/legacy.tmp" "$test_root/legacy-manifest"
 orm_validate_install_manifest "$test_root/legacy-manifest" \
     || { printf 'compatible v1 manifest was rejected.\n' >&2; exit 1; }
+if orm_validate_install_manifest "$test_root/legacy-manifest" allow-known-subset; then
+    printf 'legacy v1 manifest was accepted by the v3-only subset mode.\n' >&2
+    exit 1
+fi
 [[ -z "$(orm_install_manifest_version "$test_root/legacy-manifest")" ]] \
     || { printf 'v1 manifest unexpectedly claimed a version.\n' >&2; exit 1; }
 
