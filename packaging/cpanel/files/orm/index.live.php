@@ -256,7 +256,42 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } }
       </style>
-      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="ormBrandRed" x1="12" y1="10" x2="112" y2="118"><stop stop-color="#EF382B"/><stop offset="1" stop-color="#C91E16"/></linearGradient></defs><rect x="2" y="2" width="124" height="124" rx="34" fill="url(#ormBrandRed)"/><path d="M17 36c0-10.5 8.5-19 19-19h56c10.5 0 19 8.5 19 19v56c0 10.5-8.5 19-19 19H36c-10.5 0-19-8.5-19-19V36Z" fill="#FFF" fill-opacity=".035" stroke="#FFF" stroke-opacity=".16" stroke-width="2"/><g stroke="#FFF" stroke-linecap="round" stroke-linejoin="round"><path d="m64 27 34 19-34 19-34-19 34-19Z" fill="#FFF" stroke-width="4"/><path d="m30 46 34 19 34-19v13L64 79 30 59V46Zm0 17 34 19 34-19v13L64 96 30 76V63Zm0 17 34 19 34-19v4L64 104 30 84v-4Z" fill="#FFF" stroke-width="3"/><path d="M30 46v38l34 20 34-20V46" fill="none" stroke-width="4"/></g><g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".62" stroke-width="2.5"><path d="m31 59 33 19 33-19"/><path d="m31 76 33 19 33-19"/></g><g fill="#D92D20"><circle cx="40" cy="53" r="3.2"/><circle cx="40" cy="70" r="3.2"/><circle cx="40" cy="86" r="3.2"/></g><g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-width="2.5"><path d="M47 53h10M47 70h10M47 86h10"/></g></svg>Open Redis Manager</h1>
+      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 128 128" aria-hidden="true">
+  <defs>
+    <linearGradient id="orm-red" x1="13" y1="9" x2="114" y2="119" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F04438"/>
+      <stop offset="1" stop-color="#C81E18"/>
+    </linearGradient>
+    <linearGradient id="orm-white" x1="34" y1="25" x2="92" y2="105" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F7F9FC"/>
+    </linearGradient>
+    <filter id="orm-depth" x="20" y="17" width="91" height="99" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.5"/>
+      <feOffset dy="2"/>
+      <feComponentTransfer><feFuncA slope=".2" type="linear"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="2" y="2" width="124" height="124" rx="34" fill="url(#orm-red)"/>
+  <path d="M37 15h54c12.2 0 22 9.8 22 22v54c0 12.2-9.8 22-22 22H37c-12.2 0-22-9.8-22-22V37c0-12.2 9.8-22 22-22Z" fill="#fff" fill-opacity=".025" stroke="#fff" stroke-opacity=".2" stroke-width="2"/>
+
+  <g filter="url(#orm-depth)" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m64 25 32 18-32 18-32-18 32-18Z" fill="url(#orm-white)" stroke-width="4"/>
+    <path d="m32 49 32 18 32-18v12L64 79 32 61V49Z" fill="#fff" stroke-width="3"/>
+    <path d="m32 66 32 18 32-18v12L64 96 32 78V66Z" fill="#fff" stroke-width="3"/>
+    <path d="m32 83 32 18 32-18v3L64 105 32 86v-3Z" fill="#fff" stroke-width="3"/>
+    <path d="M32 43v43l32 19 32-19V43" fill="none" stroke-width="4"/>
+  </g>
+
+  <g fill="none" stroke="#C81E18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m35 60 29 16 29-16M35 77l29 16 29-16" stroke-width="2.4"/>
+    <path d="M91 43c6-5 9-10 13-16" stroke-width="3"/>
+  </g>
+  <path d="m100 27 5-2-1 6" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+  <path d="m64 35 12 7-12 7-12-7 12-7Z" fill="#C81E18" fill-opacity=".92"/>
+</svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
