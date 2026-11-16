@@ -6,7 +6,7 @@ This page summarizes the public documentation and update pages for the commercia
 
 The reference documentation and update page displayed **v2.6.11** when reviewed on 2026-11-16. The documentation describes v2.6.8–v2.6.11 as a stability series covering configuration ownership and live memory changes, preserving useful metrics under load, avoiding latency spikes from automatic RDB snapshots, and expanding redacted diagnostics. It also describes report-only abuse findings, stronger AUTH protections, WHMCS licensing automation, and a faster WHM dashboard as v2.6.x capabilities. These are vendor claims, not ORM behavior.
 
-The vendor's [update page](https://cpanelredismanager.com/upgrade.php) describes release visibility and an in-WHM update workflow. ORM does not have that workflow: its only upgrade path is the narrowly scoped identity-v1 compatibility bridge. See [ORM's update lifecycle](guides/update-lifecycle.md) for its exact limits and required design work.
+The vendor's [update page](https://cpanelredismanager.com/upgrade.php) describes release visibility and an in-WHM update workflow. ORM now has a root-only WHM workflow for manually staged, locally signed releases, with explicit preview and confirmation, asynchronous apply, and bounded recovery status. It does not fetch updates automatically, and release signing plus live cPanel validation remain open. See [ORM's update lifecycle](guides/update-lifecycle.md) for its exact limits.
 
 ## Reference release phases
 

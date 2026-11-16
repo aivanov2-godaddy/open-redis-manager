@@ -16,7 +16,7 @@ The repository contains cPanel and WHM entry points, a manual development instal
 
 ## Backend selection and migration
 
-The broker has a Redis-compatible backend interface for discovery, lifecycle, configuration, metrics, snapshots and migration. New installation defaults may use host capabilities and administrator policy. The current upgrade bridge only supports the exact identity-v1 installation manifest; it is not a general updater. Redis-to-Valkey migration is per account, snapshot-backed and explicitly initiated, and remains experimental until live validation passes.
+The broker has a Redis-compatible backend interface for discovery, lifecycle, configuration, metrics, snapshots and migration. New installation defaults may use host capabilities and administrator policy. WHM supports signed releases for an exact v3 install manifest; v1/v2 manifests must first be adopted only when their complete installed files exactly match the current checkout. The separate identity-v1 compatibility bridge is restricted to its committed baseline. Redis-to-Valkey migration is per account, snapshot-backed and explicitly initiated, and remains experimental until live validation passes. See the [update lifecycle guide](guides/update-lifecycle.md) before applying a release.
 
 ## Runtime compatibility checklist
 
