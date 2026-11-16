@@ -8,6 +8,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
+orm_acquire_lifecycle_lock
 if orm_instances_exist; then
     orm_die 'managed instance files exist; refusing uninstall to preserve their services, configuration, and data.'
 else
@@ -32,7 +33,18 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 orm_make_cpanel_archive "$archive"
+if [[ -e "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]]; then
+    orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
+        || orm_die 'the install manifest or an ORM-owned installed file failed integrity validation.'
+fi
 orm_verify_installed_files
+whm_registered=0
+if orm_registration_state; then
+    whm_registered=1
+else
+    registration_status=$?
+    [[ "$registration_status" -eq 1 ]] || orm_die 'could not safely verify WHM AppConfig registration.'
+fi
 
 broker_stopped=0
 if [[ -f "$ORM_BROKER_UNIT" ]]; then
@@ -62,6 +74,7 @@ else
     fi
 fi
 "$ORM_UNINSTALL_PLUGIN" "$archive" --theme="$ORM_CPanel_THEME"
+rm -f -- "$ORM_INSTALL_MANIFEST"
 rm -f -- "$ORM_CPanel_LIVE/index.live.php"
 rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png" \
     "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" \
@@ -84,5 +97,5 @@ rm -f -- "$ORM_WHM_CGI/addon_open_redis_manager.php" "$ORM_WHM_ICONS/orm-whm.png
 restore_broker_on_exit=0
 orm_remove_empty_owned_directories
 
-if orm_registration_state; then "$ORM_UNREGISTER_APPCONFIG" open_redis_manager; fi
+if [[ "$whm_registered" -eq 1 ]]; then "$ORM_UNREGISTER_APPCONFIG" open_redis_manager; fi
 printf 'Open Redis Manager panel files and registrations removed. Redis/Valkey services, data, and configuration were left untouched.\n'

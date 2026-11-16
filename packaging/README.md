@@ -13,7 +13,8 @@ This folder contains the cPanel and WHM registration files, authenticated UI ent
 - `whm/cgi/addon_open_redis_manager.php` renders the WHM interface and repeats an ACL check before showing it.
 - `cpanel/icons/` and `whm/icons/` hold original ORM registration artwork.
 - `install.sh` installs the cPanel link and WHM discovery page from this checkout.
-- `uninstall.sh` unregisters the cPanel link and WHM AppConfig entry, then removes only exact files whose contents match this checkout.
+- `upgrade.sh` is a guarded compatibility bridge for the exact identity-only install manifest in `legacy/identity-v1/`. It refuses unknown or modified files and any existing instance roots, drains active broker requests, rolls back package files and cPanel registration on failure, and preserves the broker's enabled/active state. This is not a general updater for later releases.
+- `uninstall.sh` unregisters the cPanel link and WHM AppConfig entry, then removes only exact files whose contents match this checkout. A root-owned install manifest verifies deployed file hashes and modes first.
 - `lib.sh` contains shared fixed paths, platform checks, and cPanel package assembly.
 
 ## Install and uninstall
@@ -29,6 +30,8 @@ To remove it using the same repository revision:
 ```sh
 bash packaging/uninstall.sh
 ```
+
+The one-time upgrade bridge applies only to the committed identity-only v1 baseline and requires both ORM instance roots to be absent. It never installs, migrates, stops, or deletes Redis/Valkey data. Review [`../docs/guides/update-lifecycle.md`](../docs/guides/update-lifecycle.md) before using it.
 
 These scripts target cPanel's Jupiter theme. The installer checks for Linux, root, Perl, systemd, the cPanel interface files, and the documented cPanel and WHM registration utilities. It refuses file collisions and an existing WHM AppConfig registration. It installs the broker and a per-account systemd template; the broker maps the connecting Linux UID to a safe, root-owned cPanel account record and never accepts account names from the request. It does not install Redis or Valkey packages. A root WHM administrator selects an already-installed backend, and cPanel users can initialize, inspect, start, or stop their own ORM instance. Uninstall compares installed files with this checkout and refuses to continue while any instance entry remains. Keep the matching source revision available for uninstall.
 
