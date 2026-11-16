@@ -178,7 +178,7 @@ orm_write_install_manifest() {
     local destination="$1" key source target mode digest owner temporary version
     version="$(orm_read_package_version)" || orm_die 'the package version file is missing or invalid.'
     temporary="${destination}.tmp.$$"
-    (umask 077; printf 'orm-install-manifest-v2\nversion|%s\n' "$version" >"$temporary") \
+    (umask 077; printf 'orm-install-manifest-v3\nversion|%s\n' "$version" >"$temporary") \
         || orm_die 'could not create the ORM install manifest.'
     while IFS='|' read -r key source target mode; do
         [[ -f "$target" && ! -L "$target" ]] || orm_die "cannot manifest an unsafe installed file: $target"
@@ -186,7 +186,7 @@ orm_write_install_manifest() {
         [[ "$owner" == 0 ]] || orm_die "installed file is not root-owned: $target"
         [[ "$(stat -c '%a' -- "$target")" == "$mode" ]] || orm_die "installed file mode does not match the package: $target"
         digest="$(sha256sum -- "$target" | awk '{print $1}')" || orm_die "could not hash installed file: $target"
-        printf '%s|%s|%s\n' "$key" "$mode" "$digest" >>"$temporary"
+        printf '%s|%s|%s|%s\n' "$key" "$mode" "$digest" "$target" >>"$temporary"
     done < <(orm_package_file_map)
     chmod 0600 -- "$temporary"
     chown root:root -- "$temporary"
@@ -194,7 +194,7 @@ orm_write_install_manifest() {
 }
 
 orm_validate_install_manifest() {
-    local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner header version records_start
+    local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner header version records_start recorded_target extra
     local -A recorded=() expected=()
     [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
     owner="$(stat -c '%u' -- "$manifest")" || return 1
@@ -203,23 +203,31 @@ orm_validate_install_manifest() {
     header="$(head -n 1 -- "$manifest")"
     case "$header" in
         orm-install-manifest-v1) records_start=2 ;;
-        orm-install-manifest-v2)
+        orm-install-manifest-v2|orm-install-manifest-v3)
             IFS='|' read -r key version < <(sed -n '2p' -- "$manifest")
             [[ "$key" == version ]] && orm_valid_version "$version" || return 1
             records_start=3
             ;;
         *) return 1 ;;
     esac
-    while IFS='|' read -r key mode expected_digest; do
-        [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+    while IFS='|' read -r key mode expected_digest recorded_target extra; do
+        [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ && -z "${extra:-}" ]] || return 1
+        if [[ "$header" == orm-install-manifest-v3 ]]; then
+            [[ "$recorded_target" == /* && "$recorded_target" != *'|'* ]] || return 1
+        else
+            [[ -z "${recorded_target:-}" ]] || return 1
+        fi
         [[ -z "${recorded[$key]+present}" ]] || return 1
-        recorded[$key]="$mode|$expected_digest"
+        recorded[$key]="$mode|$expected_digest|${recorded_target:-}"
     done < <(tail -n +"$records_start" -- "$manifest")
     while IFS='|' read -r key source target mode; do
         expected[$key]=1
         orm_safe_target_parent_chain "$target" || return 1
         [[ -n "${recorded[$key]+present}" ]] || return 1
-        IFS='|' read -r expected_mode expected_digest <<<"${recorded[$key]}"
+        IFS='|' read -r expected_mode expected_digest recorded_target <<<"${recorded[$key]}"
+        if [[ "$header" == orm-install-manifest-v3 ]]; then
+            [[ "$recorded_target" == "$target" ]] || return 1
+        fi
         [[ "$expected_mode" == "$mode" && -f "$target" && ! -L "$target" ]] || return 1
         file_owner="$(stat -c '%u' -- "$target")" || return 1
         [[ "$file_owner" == 0 ]] || return 1
@@ -255,7 +263,7 @@ orm_install_manifest_version() {
     header="$(head -n 1 -- "$manifest")"
     case "$header" in
         orm-install-manifest-v1) return 0 ;;
-        orm-install-manifest-v2)
+        orm-install-manifest-v2|orm-install-manifest-v3)
             IFS='|' read -r key version < <(sed -n '2p' -- "$manifest")
             [[ "$key" == version ]] && orm_valid_version "$version" || return 1
             printf '%s\n' "$version"
