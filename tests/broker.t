@@ -474,6 +474,7 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
             $fail_valkey_ping_once = 0;
             return "NOAUTH\n";
         }
+        return "PONG\n" if $arguments[0] eq 'PING';
         return "OK\n" if $arguments[0] eq 'CLIENT';
         return undef;
     },
