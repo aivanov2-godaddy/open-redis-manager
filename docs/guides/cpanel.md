@@ -15,7 +15,7 @@ The account page shows service state, current or retained memory, connection cou
 
 ## Configuration and apps
 
-Use the [configuration and presets guide](configuration-presets.md). The page offers initial workload presets, controls for memory, eviction policy, clients and timeout, and PhpRedis, node-redis and redis-py examples. The application helper still needs WordPress, LiteSpeed Cache, Laravel and Magento specific snippets.
+Use the [configuration and presets guide](configuration-presets.md). The page offers initial workload presets, controls for memory, eviction policy, clients and timeout, and copyable account-socket settings for PhpRedis, WordPress/WooCommerce, LiteSpeed Cache, Laravel, Magento/Adobe Commerce, node-redis and redis-py. Helpers copy settings only; they do not edit application files or enable application features. Version-specific Commerce instructions remain a guided step.
 
 ## Backups and diagnostics
 

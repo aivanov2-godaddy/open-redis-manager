@@ -4,21 +4,16 @@ Laravel can use Redis for cache entries, sessions, queues, rate limiting, and ot
 
 ## Environment values
 
-Add the instance values to the application's protected environment configuration:
+Add the account-private socket values to the application's protected environment configuration. Laravel documents Unix socket connections with the socket path in `REDIS_HOST` and port `0`:
 
 ```dotenv
-CACHE_STORE=redis
-SESSION_DRIVER=redis
-QUEUE_CONNECTION=redis
-
 REDIS_CLIENT=phpredis
-REDIS_HOST=127.0.0.1
-REDIS_PASSWORD=replace-with-the-account-secret
-REDIS_PORT=12345
+REDIS_HOST=/var/lib/orm-instances/<your-cpanel-account>/redis.sock
+REDIS_PORT=0
 REDIS_DB=0
 ```
 
-The phpredis extension or a compatible PHP client must be enabled in the runtime used by the application. Laravel versions may use different configuration defaults; compare this example with the app's `config/database.php` and the [Laravel Redis guide](https://laravel.com/docs/redis). That guide documents `REDIS_CLIENT`, host, username, password, port, database, and per-connection cache database configuration.
+The phpredis extension or a compatible PHP client must be enabled in the runtime used by the application. ORM does not configure Redis AUTH for account instances, so no password is needed. Laravel versions may use different configuration defaults; compare this example with the app's `config/database.php` and the [Laravel Redis guide](https://laravel.com/docs/redis). Configure cache, sessions, queues and rate limiting only if the application needs them.
 
 After changing configuration, use the application's normal deployment process to clear and rebuild cached configuration. Test cache reads/writes, session continuity, and queue workers separately. Restart long-running workers only through the application's deployment procedure.
 

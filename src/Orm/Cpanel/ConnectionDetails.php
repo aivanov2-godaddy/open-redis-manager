@@ -10,7 +10,7 @@ final class ConnectionDetails
 
     /**
      * @param null|array{success?:bool,state?:string} $instanceStatus
-     * @return null|array{socket_path:string,database:int,authentication:string,php_example:string,node_example:string,python_example:string}
+     * @return null|array{socket_path:string,database:int,authentication:string,php_example:string,node_example:string,python_example:string,wordpress_example:string,litespeed_example:string,laravel_example:string,magento_values:string}
      */
     public static function forAccount(string $username, ?array $instanceStatus): ?array
     {
@@ -32,6 +32,24 @@ final class ConnectionDetails
         $pythonExample = "import redis\n\n"
             . 'client = redis.Redis(unix_socket_path=' . var_export($socketPath, true) . ", db=0)\n"
             . "client.ping()\n";
+        $wordpressExample = "define( 'WP_REDIS_SCHEME', 'unix' );\n"
+            . "define( 'WP_REDIS_PATH', " . var_export($socketPath, true) . " );\n"
+            . "define( 'WP_REDIS_DATABASE', 0 );\n"
+            . "define( 'WP_REDIS_PREFIX', 'replace_with_site_prefix:' );\n";
+        $litespeedExample = "Method: Redis\n"
+            . 'Host: ' . $socketPath . "\n"
+            . "Port: 0\n"
+            . "Redis Database ID: 0\n"
+            . "Password: leave blank (ORM uses socket permissions)\n";
+        $laravelExample = "REDIS_CLIENT=phpredis\n"
+            . 'REDIS_HOST=' . $socketPath . "\n"
+            . "REDIS_PORT=0\n"
+            . "REDIS_DB=0\n";
+        $magentoValues = 'server=' . $socketPath . "\n"
+            . "port=0\n"
+            . "default_cache_database=0\n"
+            . "page_cache_database=1 (if enabled)\n"
+            . "session_database=2 (if enabled)\n";
 
         return [
             'socket_path' => $socketPath,
@@ -40,6 +58,10 @@ final class ConnectionDetails
             'php_example' => $phpExample,
             'node_example' => $nodeExample,
             'python_example' => $pythonExample,
+            'wordpress_example' => $wordpressExample,
+            'litespeed_example' => $litespeedExample,
+            'laravel_example' => $laravelExample,
+            'magento_values' => $magentoValues,
         ];
     }
 }

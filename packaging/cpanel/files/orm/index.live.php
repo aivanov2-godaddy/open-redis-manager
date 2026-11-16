@@ -484,10 +484,35 @@ try {
                     <dt>Authentication</dt><dd>Socket permissions; no Redis AUTH password is configured.</dd>
                   </dl>
                   <p class="orm-note">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm that the PHP runtime used by your site can see this path, especially if CageFS is enabled.</p>
+                  <p class="orm-note">These helpers copy connection settings only. They do not edit application files or enable caching, sessions, or queues.</p>
                   <details open>
                     <summary>PHP with PhpRedis</summary>
                     <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy PHP with PhpRedis example" data-copy-target="orm-example-php" data-copy-label="PHP with PhpRedis">Copy example</button></div>
                     <pre><code id="orm-example-php"><?= htmlspecialchars($connectionDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                  </details>
+                  <details>
+                    <summary>WordPress and WooCommerce · Redis Object Cache</summary>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy WordPress and WooCommerce example" data-copy-target="orm-example-wordpress" data-copy-label="WordPress and WooCommerce">Copy settings</button></div>
+                    <pre><code id="orm-example-wordpress"><?= htmlspecialchars($connectionDetails['wordpress_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <p class="orm-note">Requires a compatible object-cache plugin. WooCommerce uses the same WordPress object cache; test checkout and cart invalidation before enabling broadly.</p>
+                  </details>
+                  <details>
+                    <summary>LiteSpeed Cache for WordPress</summary>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy LiteSpeed Cache settings" data-copy-target="orm-example-litespeed" data-copy-label="LiteSpeed Cache">Copy settings</button></div>
+                    <pre><code id="orm-example-litespeed"><?= htmlspecialchars($connectionDetails['litespeed_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <p class="orm-note">In LiteSpeed Cache, choose Cache → Object. Confirm your installed version supports Redis over a Unix socket and that the selected PHP runtime can access it.</p>
+                  </details>
+                  <details>
+                    <summary>Laravel</summary>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy Laravel environment settings" data-copy-target="orm-example-laravel" data-copy-label="Laravel">Copy settings</button></div>
+                    <pre><code id="orm-example-laravel"><?= htmlspecialchars($connectionDetails['laravel_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <p class="orm-note">Configure cache, session, queue, and rate-limit features independently in your app; these environment values only identify the connection.</p>
+                  </details>
+                  <details>
+                    <summary>Magento / Adobe Commerce</summary>
+                    <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy Magento connection values" data-copy-target="orm-example-magento" data-copy-label="Magento / Adobe Commerce">Copy values</button></div>
+                    <pre><code id="orm-example-magento"><?= htmlspecialchars($connectionDetails['magento_values'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                    <p class="orm-note">Use the official configuration command for your exact Commerce release and deployment type. Redis/Valkey backend names change by version; use distinct databases for cache, page cache, and sessions where enabled.</p>
                   </details>
                   <details>
                     <summary>Node.js with node-redis</summary>
