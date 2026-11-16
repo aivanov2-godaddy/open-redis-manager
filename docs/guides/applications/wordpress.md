@@ -19,7 +19,7 @@ define( 'WP_REDIS_DATABASE', 0 );
 define( 'WP_REDIS_PREFIX', 'replace_with_site_prefix:' );
 ```
 
-These names are supported by the [Redis Object Cache plugin](https://github.com/rhubarbgroup/redis-cache). Put them before WordPress loads `wp-settings.php`. ORM uses socket permissions and does not configure Redis AUTH, so do not add a password for this instance. Use the path shown by your cPanel account rather than copying the placeholder. Keep `wp-config.php` readable only by the site owner and trusted administrators. WooCommerce uses the same WordPress object-cache integration; verify cart, checkout, inventory, and invalidation behavior before enabling it broadly.
+These names are supported by the [Redis Object Cache plugin](https://github.com/rhubarbgroup/redis-cache). Put them before WordPress loads `wp-settings.php`. AUTH is off by default; if enabled in ORM, configure `WP_REDIS_PASSWORD` from the protected `ORM_REDIS_PASSWORD` environment variable supported by your deployment. Use the path shown by your cPanel account rather than copying the placeholder. Keep `wp-config.php` readable only by the site owner and trusted administrators. WooCommerce uses the same WordPress object-cache integration; verify cart, checkout, inventory, and invalidation behavior before enabling it broadly.
 
 ## Verification
 

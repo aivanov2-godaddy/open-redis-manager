@@ -2,7 +2,7 @@
 
 These guides show how an application can use an ORM-managed Redis-compatible instance after its cPanel owner has configured the connection. ORM provides service controls and connection values; the application still needs a compatible client and its own Redis integration.
 
-Use the host, port, database, and credential from the account's ORM screen. Examples use placeholders only. Keep credentials in the application's protected configuration, never in source control, URLs, browser storage, or support logs. Confirm the exact keys supported by the application's installed version before deploying.
+Use the Unix socket path (and port `0` where the client requires one), database, and AUTH state shown in the account's ORM screen. AUTH is optional and off by default; when enabled, use the generated password from the successful cPanel rotation response through the application's protected configuration. Examples use placeholders only. Keep credentials out of source control, URLs, browser storage, and support logs. Confirm the exact keys supported by the application's installed version before deploying.
 
 ## Guides
 

@@ -4,7 +4,7 @@ Magento and Adobe Commerce backend support changes by release. The currently pub
 
 Adobe Commerce's on-premises `setup:config:set` tooling accepts an absolute Unix socket path and port `0`. The supported backend name and command-line flags depend on the exact release: Redis tooling applies only to supported older releases, while Valkey is the supported backend for Commerce 2.4.9 and listed later patch releases. Cloud deployments must use their deployment configuration system instead of editing `env.php`.
 
-For an on-premises installation, use the ORM socket path as the server and port `0`. Assign distinct database numbers for default cache, page cache and sessions when those layers share an instance; ORM's shown database value `0` applies to a single cache. ORM does not configure Redis AUTH, so leave the password unset. Do not paste a copied shell command until you confirm the exact version and selected backend.
+For an on-premises installation, use the ORM socket path as the server and port `0`. Assign distinct database numbers for default cache, page cache and sessions when those layers share an instance; ORM's shown database value `0` applies to a single cache. AUTH is off by default; if enabled in ORM, set the generated password using the release-specific supported configuration path. Do not paste a copied shell command until you confirm the exact version and selected backend.
 
 Before connecting an installation:
 

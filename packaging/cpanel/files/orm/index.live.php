@@ -38,7 +38,7 @@ $advancedExposure = $exposureLevel === 'advanced';
 $actionResult = null;
 $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
-    $allowedActions = ['provision', 'configure', 'start', 'stop', 'backup.create', 'backup.restore'];
+    $allowedActions = ['provision', 'configure', 'start', 'stop', 'auth.rotate', 'auth.disable', 'backup.create', 'backup.restore'];
     if (is_string($action) && in_array($action, $allowedActions, true)) {
         if ($action === 'provision') {
             $preset = $_POST['orm_preset'] ?? 'generic';
@@ -71,20 +71,36 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         } elseif ($action === 'backup.restore') {
             $backupId = $_POST['orm_backup_id'] ?? null;
             $actionResult = is_string($backupId) ? $instanceClient->restoreBackup($backupId) : null;
+        } elseif ($action === 'auth.rotate') {
+            $actionResult = $instanceClient->rotateAuth();
+        } elseif ($action === 'auth.disable') {
+            $actionResult = $instanceClient->disableAuth();
         } else {
             $actionResult = $instanceClient->request('instance.' . $action);
         }
     }
 }
+if (in_array($action, ['auth.rotate', 'auth.disable'], true)) {
+    header('Cache-Control: no-store, private');
+    header('Pragma: no-cache');
+    header('X-Content-Type-Options: nosniff');
+}
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
 $canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceStatus['success'] ?? false) === true
     && ($instanceStatus['state'] ?? null) !== 'not_configured';
+$authStatus = $canRequestMetrics ? $instanceClient->authStatus() : null;
+$authConfigured = is_array($authStatus) && ($authStatus['success'] ?? false) === true
+    && is_bool($authStatus['auth_configured'] ?? null)
+    ? $authStatus['auth_configured'] : null;
+$rotatedSecret = $action === 'auth.rotate' && is_array($actionResult) && ($actionResult['success'] ?? false) === true
+    && is_string($actionResult['secret'] ?? null)
+    ? $actionResult['secret'] : null;
 $liveMetrics = $canRequestMetrics
     ? $instanceClient->request('instance.metrics')
     : null;
 $diagnosticGeneratedAt = time();
 $diagnosticReport = $brokerVerified
-    ? \Orm\Cpanel\DiagnosticReport::build($instanceStatus, $liveMetrics, $diagnosticGeneratedAt)
+    ? \Orm\Cpanel\DiagnosticReport::build($instanceStatus, $liveMetrics, $diagnosticGeneratedAt, $authConfigured)
     : null;
 $diagnosticJson = $diagnosticReport !== null
     ? json_encode($diagnosticReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
@@ -158,7 +174,8 @@ if ($requestedBackup !== null) {
     $downloadFailure = true;
 }
 $connectionDetails = $brokerVerified
-    ? \Orm\Cpanel\ConnectionDetails::forAccount($account->username(), $instanceStatus)
+    && $authConfigured !== null
+    ? \Orm\Cpanel\ConnectionDetails::forAccount($account->username(), $instanceStatus, $authConfigured)
     : null;
 $formatBytes = static function (int $bytes): string {
     $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
@@ -229,6 +246,11 @@ $errorMessages = [
     'configuration_failed' => 'The update failed and ORM attempted to restore the previous live settings. Refresh this page to check them.',
     'configuration_storage_unavailable' => 'The settings were not saved. Refresh this page before trying again.',
     'configuration_uncertain' => 'The settings could not be fully verified. Refresh this page and contact your hosting provider if the problem continues.',
+    'auth_generation_failed' => 'ORM could not securely generate a new password. No new credential was returned.',
+    'auth_rotation_failed' => 'The AUTH change failed. ORM restored and verified the previous authentication state; no new password was returned. Wait briefly before trying again.',
+    'auth_disable_failed' => 'AUTH could not be disabled. ORM restored and verified the previous authenticated state; wait briefly before retrying.',
+    'auth_recovery_required' => 'ORM could not verify the previous or new password after a service restart. Stop application writes and contact your hosting provider before retrying.',
+    'operation_in_progress' => 'Another cache operation is running. Wait for it to finish before trying again.',
     'service_failed' => 'The cache service could not complete that action. Refresh the page and check its status.',
     'storage_unavailable' => 'The cache could not be initialized because its private storage is unavailable.',
     'backup_failed' => 'The snapshot transfer did not complete. No new backup was kept.',
@@ -314,15 +336,17 @@ try {
         .orm-connection pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: #f2f5f9; }
         .orm-copy-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
         .orm-connection .orm-copy-button { padding: 7px 11px; border: 1px solid #cbd5e1; background: #fff; color: #263b57; font-size: 13px; }
+        .orm-auth { margin: 20px 0; padding: 16px; border: 1px solid #d9e0e8; border-radius: 9px; background: #fbfcfe; }
+        .orm-auth-secret { margin-top: 14px; padding: 14px; border: 1px solid #e0a39d; border-radius: 8px; background: #fff8f7; }
+        .orm-auth-secret pre { overflow-wrap: anywhere; user-select: all; }
+        .orm-auth-secret code { font-size: 15px; }
         .orm-copy-status:empty { display: none; }
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
-      <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true"><title>Cache orbit</title>
-  <defs><linearGradient id="ormTile" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#ormTile)"/><path d="M178 56 A82 82 0 1 0 205 120" fill="none" stroke="#FFF" stroke-linecap="round" stroke-width="12"/><path d="m207 103 11 25-25-1 14-24Z" fill="#FFF"/>
-  <rect x="83" y="91" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="119.5" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="148" width="90" height="17" rx="8.5" fill="#FFF"/>
-  <circle cx="102" cy="99.5" r="3.5" fill="#D92D20"/><circle cx="102" cy="128" r="3.5" fill="#D92D20"/><circle cx="102" cy="156.5" r="3.5" fill="#D92D20"/>
+      <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true"><title>Open Redis Manager cache cube</title>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/><rect x="5" y="5" width="246" height="246" rx="57" fill="none" stroke="#FFF" stroke-opacity=".18" stroke-width="2"/>
+  <path d="m128 47 67 37-67 37-67-37 67-37Z" fill="#FFF"/><path d="m61 84 67 37v67l-67-37V84Z" fill="#FFE5E1"/><path d="m128 121 67-37v67l-67 37v-67Z" fill="#FFF"/><path d="m128 63 39 21-39 22-39-22 39-21Z" fill="#D92D20"/><path d="m128 72 23 12-23 13-23-13 23-12Z" fill="#F9BDB6"/><path d="m68 128 60 32 60-32M68 140l60 32 60-32" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
@@ -335,7 +359,7 @@ try {
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
             <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?php if (is_string($actionResult['safety_backup_id'] ?? null)): ?> Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was retained and is available in the backup list.<?php endif; ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?><?php if (in_array($action, ['provision', 'configure'], true) && is_array($actionResult['policy_warnings'] ?? null) && $actionResult['policy_warnings'] !== []): ?> Provider policy warning: <?php $warningText = ['package_disabled' => 'this package is marked unavailable', 'memory_limit_exceeded' => 'the requested memory exceeds a package ceiling', 'reseller_instance_quota_exceeded' => 'the reseller instance limit has been reached', 'reseller_memory_quota_exceeded' => 'the reseller memory limit has been reached', 'reseller_usage_unavailable' => 'the current reseller usage could not be verified']; ?><?= htmlspecialchars(implode('; ', array_map(static fn (string $warning): string => $warningText[$warning] ?? 'a provider policy condition', $actionResult['policy_warnings'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
+        <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'auth.rotate'): ?>A new AUTH password is ready below. Set it in your applications now. If you rotated, the previous password is revoked.<?php elseif ($action === 'auth.disable'): ?>AUTH is disabled. Remove the password from your applications before reconnecting.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?><?php if (in_array($action, ['provision', 'configure'], true) && is_array($actionResult['policy_warnings'] ?? null) && $actionResult['policy_warnings'] !== []): ?> Provider policy warning: <?php $warningText = ['package_disabled' => 'this package is marked unavailable', 'memory_limit_exceeded' => 'the requested memory exceeds a package ceiling', 'reseller_instance_quota_exceeded' => 'the reseller instance limit has been reached', 'reseller_memory_quota_exceeded' => 'the reseller memory limit has been reached', 'reseller_usage_unavailable' => 'the current reseller usage could not be verified']; ?><?= htmlspecialchars(implode('; ', array_map(static fn (string $warning): string => $warningText[$warning] ?? 'a provider policy condition', $actionResult['policy_warnings'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
           <?php endif; ?>
           <?php if ($downloadFailure): ?>
             <p role="alert">The requested backup is unavailable or failed file validation.</p>
@@ -345,6 +369,9 @@ try {
           <?php else: ?>
             <div class="orm-card">
             <p class="orm-state <?= htmlspecialchars($stateClass, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $instanceStatus['state'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+            <?php if ($instanceStatus['state'] !== 'not_configured' && $authConfigured === null): ?>
+              <p role="alert">ORM could not verify this instance's AUTH state. Connection helpers and password controls are hidden until the broker is available.</p>
+            <?php endif; ?>
             <?php if (!empty($instanceStatus['preset'])): ?>
               <p class="orm-note">Setup preset: <strong><?= htmlspecialchars(ucfirst($instanceStatus['preset']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></p>
             <?php endif; ?>
@@ -535,9 +562,31 @@ try {
                     <dt>Endpoint</dt><dd>Private Unix socket</dd>
                     <dt>Socket path</dt><dd><code><?= htmlspecialchars($connectionDetails['socket_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></dd>
                     <dt>Default database</dt><dd><?= htmlspecialchars((string) $connectionDetails['database'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
-                    <dt>Authentication</dt><dd>Socket permissions; no Redis AUTH password is configured.</dd>
+                    <dt>Authentication</dt><dd><?= $authConfigured ? 'Redis AUTH password and account-private socket permissions.' : 'Account-private socket permissions; Redis AUTH is off.' ?></dd>
                   </dl>
                   <p class="orm-note">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm that the PHP runtime used by your site can see this path, especially if CageFS is enabled.</p>
+                  <section class="orm-auth" aria-labelledby="orm-auth-title">
+                    <h4 id="orm-auth-title">Redis AUTH password</h4>
+                    <p><strong>Status:</strong> <?= $authConfigured ? 'Enabled' : 'Disabled' ?></p>
+                    <p class="orm-note">Enabling or rotating the password restarts the cache and disconnects clients briefly. The password is generated by ORM and shown only in the response to this action. If you lose it, rotate it again. Code running as your cPanel account can access its own cache and credential.</p>
+                    <form method="post" class="orm-preset-form">
+                      <input type="hidden" name="orm_action" value="auth.rotate">
+                      <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>><?= $authConfigured ? 'Rotate AUTH password' : 'Enable AUTH and generate password' ?></button>
+                    </form>
+                    <?php if ($authConfigured): ?>
+                      <form method="post" class="orm-preset-form" onsubmit="return confirm('Disable Redis AUTH? Applications with a configured password must remove it before reconnecting. The cache will restart briefly.');">
+                        <input type="hidden" name="orm_action" value="auth.disable">
+                        <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>>Disable AUTH</button>
+                      </form>
+                    <?php endif; ?>
+                    <?php if ($rotatedSecret !== null): ?>
+                      <div class="orm-auth-secret" aria-labelledby="orm-auth-secret-label">
+                        <p id="orm-auth-secret-label"><strong>New password · shown once</strong></p>
+                        <pre><code id="orm-rotated-secret"><?= htmlspecialchars($rotatedSecret, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                        <button class="orm-copy-button" type="button" aria-label="Copy the new Redis AUTH password" data-copy-target="orm-rotated-secret" data-copy-label="Redis AUTH password">Copy password</button>
+                      </div>
+                    <?php endif; ?>
+                  </section>
                   <p class="orm-note">These helpers copy connection settings only. They do not edit application files or enable caching, sessions, or queues.</p>
                   <details open>
                     <summary>PHP with PhpRedis</summary>
@@ -584,6 +633,8 @@ try {
                   <script>
                     (() => {
                       const status = document.getElementById('orm-copy-status');
+                      const oneTimeSecret = document.getElementById('orm-rotated-secret');
+                      if (oneTimeSecret) window.addEventListener('pagehide', () => { oneTimeSecret.textContent = ''; });
                       document.querySelectorAll('.orm-copy-button').forEach(button => {
                         button.addEventListener('click', async () => {
                           const example = document.getElementById(button.dataset.copyTarget);

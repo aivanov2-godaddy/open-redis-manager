@@ -1,6 +1,6 @@
 # Plain PHP with phpredis
 
-The phpredis extension exposes a `Redis` client class. First enable the extension in the PHP version used by the website, then connect using the account-specific ORM Unix socket. ORM-managed instances use socket permissions and do not configure Redis AUTH.
+The phpredis extension exposes a `Redis` client class. First enable the extension in the PHP version used by the website, then connect using the account-specific ORM Unix socket. AUTH is off by default; if enabled in cPanel, authenticate with the generated password from a protected application environment variable.
 
 ```php
 <?php

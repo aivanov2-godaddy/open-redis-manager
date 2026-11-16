@@ -4,7 +4,7 @@ Custom PHP applications, APIs, dashboards, forums, membership sites, and interna
 
 ## Connection checklist
 
-1. Retrieve the account's host, port, database, and password from ORM.
+1. Retrieve the account's Unix socket path, port (normally `0` for socket clients), database, and AUTH status from ORM. Use a password only when AUTH is enabled.
 2. Use a maintained client library for the application's language and version.
 3. Load credentials from an environment or secret store with access limited to the application owner.
 4. Use a key prefix that identifies the application and environment.

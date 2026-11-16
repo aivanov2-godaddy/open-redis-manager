@@ -19,7 +19,7 @@ use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
 
 my $request = '{"operation":"identity","version":1}' . "\n";
 is(parse_request($request)->{operation}, 'identity', 'accept the one canonical identity request');
-for my $operation (qw(instance.status instance.provision instance.start instance.stop provider.exposure provider.branding provider.resellers)) {
+for my $operation (qw(instance.status instance.auth.status instance.auth.rotate instance.auth.disable instance.provision instance.start instance.stop provider.exposure provider.branding provider.resellers)) {
     my $frame = '{"operation":"' . $operation . '","version":1}' . "\n";
 is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
 }
@@ -63,6 +63,7 @@ for my $invalid (
     '{"operation":"identity","version":2}' . "\n", ('x' x (max_frame_bytes() + 1)),
     '{"operation":"instance.provision","preset":"../../root","version":1}' . "\n",
     '{"operation":"instance.start","preset":"generic","version":1}' . "\n",
+    '{"operation":"instance.auth.rotate","secret":"client-chosen","version":1}' . "\n",
     '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":65,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
     '{"maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":"48","operation":"instance.configure","timeout":0,"version":1}' . "\n",
     '{"maxclients":101,"maxmemory_policy":"allkeys-lru","memory_mib":48,"operation":"instance.configure","timeout":0,"version":1}' . "\n",
@@ -316,8 +317,11 @@ my $fail_metrics_commit_once;
 my $fail_backup_once;
 my $fail_rdb_check;
 my $fail_restore_start_once;
+my $fail_auth_probe_once = 0;
+my @auth_probe_calls;
 my $current_snapshot = 'synthetic RDB snapshot';
 my @restore_audit;
+my @auth_audit;
 my @rdb_check_calls;
 my $fail_config_get;
 my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
@@ -360,6 +364,7 @@ my $manager = Orm::Broker::InstanceManager->new(
         return defined($content) && $content =~ /\A(?:synthetic RDB snapshot|live pre-restore state|live before rollback)\z/;
     },
     restore_audit => sub { push @restore_audit, [@_]; return 1; },
+    auth_audit => sub { push @auth_audit, [@_]; return 1; },
     config_set => sub {
         my ($backend, $socket, $parameter, $value) = @_;
         push @config_calls, [$backend, $socket, $parameter, $value];
@@ -375,6 +380,15 @@ my $manager = Orm::Broker::InstanceManager->new(
         return 1;
     },
     config_get => sub { return undef if $fail_config_get; return { %runtime_settings }; },
+    auth_probe => sub {
+        my ($backend, $socket) = @_;
+        push @auth_probe_calls, [$backend, $socket];
+        if ($fail_auth_probe_once) {
+            --$fail_auth_probe_once;
+            return 0;
+        }
+        return 1;
+    },
     atomic_commit => sub {
         my ($temporary, $path) = @_;
         if ($fail_metrics_commit_once && $path =~ /metrics[.]json\z/) {
@@ -991,6 +1005,76 @@ ok($failed_service_result->{success} && $failed_service_result->{state} eq 'fail
 is(scalar @config_calls, $calls_before_stopped_config, 'do not issue runtime commands for a failed service');
 $unit_state = 'inactive';
 is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
+my $auth_status = $manager->dispatch('instance.auth.status', $account);
+ok($auth_status->{success} && JSON::PP::is_bool($auth_status->{auth_configured})
+    && !$auth_status->{auth_configured}, 'report passwordless AUTH state as a boolean only');
+my $auth_config_path = "$etc_instances/ormtest/redis.conf";
+$fail_auth_probe_once = 1;
+is($manager->dispatch('instance.auth.rotate', $account)->{error}, 'auth_rotation_failed',
+    'restore the previous passwordless configuration when the new AUTH probe fails');
+is_deeply($auth_audit[-1], [$account->{uid}, 'ormtest', 'auth.rotate', 'auth_rotation_failed', 'running'],
+    'audit a verified AUTH rollback using fixed metadata only');
+is($manager->dispatch('instance.auth.status', $account)->{auth_configured}, JSON::PP::false,
+    'retain the previous disabled AUTH state after a verified rollback');
+$fail_config_commit_once = 1;
+is($manager->dispatch('instance.auth.rotate', $account)->{error}, 'configuration_storage_unavailable',
+    'do not restart the service when the atomic AUTH config commit fails');
+is($manager->dispatch('instance.auth.status', $account)->{auth_configured}, JSON::PP::false,
+    'leave AUTH disabled after an atomic credential write failure');
+my $auth_rotation = $manager->dispatch('instance.auth.rotate', $account);
+ok($auth_rotation->{success} && $auth_rotation->{auth_configured}
+    && $auth_rotation->{secret} =~ /\A[A-Za-z0-9_-]{43}\z/,
+    'generate and return a one-time URL-safe per-account AUTH credential after restart verification');
+my $rotated_secret = $auth_rotation->{secret};
+is_deeply($auth_audit[-1], [$account->{uid}, 'ormtest', 'auth.rotate', 'success', 'running'],
+    'audit successful AUTH rotation without adding the password to the audit event');
+open(my $auth_config_file, '<', $auth_config_path) or die "read rotated AUTH config: $!";
+my $auth_config_text = do { local $/; <$auth_config_file> };
+close($auth_config_file) or die "close rotated AUTH config: $!";
+like($auth_config_text, qr/^requirepass \Q$rotated_secret\E$/m,
+    'persist the generated AUTH secret only in the private instance config');
+my $auth_configured_status = $manager->dispatch('instance.auth.status', $account);
+ok($auth_configured_status->{success} && $auth_configured_status->{auth_configured} == JSON::PP::true,
+    'report AUTH as configured after a verified rotation');
+my @auth_config_stat = stat($auth_config_path);
+ok(@auth_config_stat && $auth_config_stat[4] == $< && $auth_config_stat[5] == $test_gid
+    && ($auth_config_stat[2] & 0777) == 0640,
+    'keep the generated password in the manager-owned account-group-readable config mode');
+my $auth_status_json = JSON::PP->new->canonical(1)->encode($manager->dispatch('instance.auth.status', $account));
+unlike($auth_status_json, qr/\Q$rotated_secret\E/, 'never return the credential from the masked AUTH status operation');
+my $status_json = JSON::PP->new->canonical(1)->encode($manager->dispatch('instance.status', $account));
+unlike($status_json, qr/\Q$rotated_secret\E/, 'never return the credential in ordinary instance status');
+my $metrics_after_auth = $manager->dispatch('instance.metrics', $account);
+unlike(JSON::PP->new->canonical(1)->encode($metrics_after_auth), qr/\Q$rotated_secret\E/,
+    'never include AUTH material in metrics');
+my $config_after_auth = $manager->dispatch('instance.configure', $account, undef, $failed_service_config);
+ok($config_after_auth->{success}, 'continue bounded configuration updates after enabling AUTH');
+open(my $preserved_auth_file, '<', $auth_config_path) or die "read AUTH config after configure: $!";
+my $preserved_auth_config = do { local $/; <$preserved_auth_file> };
+close($preserved_auth_file) or die "close AUTH config after configure: $!";
+like($preserved_auth_config, qr/^requirepass \Q$rotated_secret\E$/m,
+    'preserve the credential when ordinary configuration is updated');
+unlike(JSON::PP->new->canonical(1)->encode(\@auth_probe_calls), qr/\Q$rotated_secret\E/,
+    'keep credentials out of AUTH verification callback arguments');
+unlike(JSON::PP->new->canonical(1)->encode(\@auth_audit), qr/\Q$rotated_secret\E/,
+    'keep credentials out of AUTH audit metadata');
+$fail_auth_probe_once = 1;
+is($manager->dispatch('instance.auth.disable', $account)->{error}, 'auth_disable_failed',
+    'restore the authenticated configuration when disabling AUTH fails its PING check');
+is_deeply($auth_audit[-1], [$account->{uid}, 'ormtest', 'auth.disable', 'auth_disable_failed', 'running'],
+    'audit a verified AUTH-disable rollback using fixed metadata only');
+is($manager->dispatch('instance.auth.status', $account)->{auth_configured}, JSON::PP::true,
+    'retain AUTH after a verified disable rollback');
+my $auth_disabled = $manager->dispatch('instance.auth.disable', $account);
+ok($auth_disabled->{success} && JSON::PP::is_bool($auth_disabled->{auth_configured})
+    && !$auth_disabled->{auth_configured}, 'disable AUTH only after passwordless PING verification');
+open(my $disabled_auth_file, '<', $auth_config_path) or die "read disabled AUTH config: $!";
+my $disabled_auth_config = do { local $/; <$disabled_auth_file> };
+close($disabled_auth_file) or die "close disabled AUTH config: $!";
+unlike($disabled_auth_config, qr/^requirepass /m, 'remove the password directive after verified AUTH disable');
+is($auth_audit[-1]->[2], 'auth.disable', 'audit AUTH disable with a fixed action name');
+unlike(JSON::PP->new->canonical(1)->encode(\@auth_audit), qr/\Q$rotated_secret\E/,
+    'never include the disabled password in the audit record');
 $metrics_info = "used_memory:not-a-number\n";
 my $malformed_stale_metrics = $manager->dispatch('instance.metrics', $account);
 ok($malformed_stale_metrics->{success} && $malformed_stale_metrics->{stale} && $malformed_stale_metrics->{retained},

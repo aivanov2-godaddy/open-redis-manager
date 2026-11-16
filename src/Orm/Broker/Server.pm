@@ -137,14 +137,16 @@ sub run {
                         || $request->{operation} eq 'fleet.recovery.scan'
                         || $request->{operation} eq 'provider.resellers' ? 1
                     : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
-                    : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
+                    : ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable'
+                        || $request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                         || $request->{operation} eq 'fleet.control'
                         || $request->{operation} eq 'fleet.backup.create'
                         || $request->{operation} eq 'fleet.backup.restore'
                         || $request->{operation} eq 'fleet.migrate'
                         || $request->{operation} eq 'fleet.recovery.repair') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
-                my $rate_window = $request->{operation} eq 'fleet.diagnostics' ? 5
+                my $rate_window = ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable') ? 60
+                    : $request->{operation} eq 'fleet.diagnostics' ? 5
                     : $request->{operation} eq 'fleet.recovery.scan' ? 15
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                     || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore'
@@ -156,6 +158,7 @@ sub run {
                     : $request->{operation} eq 'provider.resellers' ? 'provider.resellers'
                     : $request->{operation} eq 'provider.exposure' ? 'provider.exposure'
                     : $request->{operation} eq 'provider.branding' ? 'provider.branding'
+                    : ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable') ? 'instance.auth.change'
                     : $request->{operation} eq 'fleet.diagnostics'
                         ? 'fleet.diagnostics:' . $request->{username}
                     : $request->{operation} eq 'fleet.recovery.scan'

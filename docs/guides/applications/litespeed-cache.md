@@ -6,7 +6,7 @@ LiteSpeed Cache can use a Redis-compatible object cache when the required WordPr
 
 1. Enable the Redis extension for the PHP version selected by the site. On CloudLinux, use PHP Selector; on EasyApache, install the matching PHP extension package through the server administrator.
 2. Confirm that the LiteSpeed Cache plugin version exposes Redis object-cache settings.
-3. In LiteSpeed Cache → Cache → Object, choose Redis and enter the socket path shown by ORM as Host, `0` as Port, and the selected database ID (normally `0`). Leave Password blank; ORM uses filesystem socket permissions rather than Redis AUTH.
+3. In LiteSpeed Cache → Cache → Object, choose Redis and enter the socket path shown by ORM as Host, `0` as Port, and the selected database ID (normally `0`). Leave Password blank when AUTH is disabled. If you enable AUTH in ORM, enter the generated password through the plugin's protected setting.
 4. Save the settings, enable object caching, and confirm the plugin reports a connected backend.
 5. Test cache invalidation for content updates and WooCommerce checkout/cart flows before enabling the configuration broadly.
 
@@ -17,6 +17,6 @@ See LiteSpeed's current [object-cache guide](https://docs.litespeedtech.com/lsca
 ## Troubleshooting
 
 - Check that the selected PHP runtime has the Redis extension, not only the server-level Redis process.
-- Recheck the socket path and port `0`; ORM does not configure an account Redis AUTH password.
+- Recheck the socket path and port `0`. If ORM AUTH is enabled, verify that the plugin's password setting matches the current generated password.
 - If the client is available but connections fail, ask the host administrator to review the account instance and local network namespace.
 - Treat a successful object-cache connection as separate from page-cache status.
