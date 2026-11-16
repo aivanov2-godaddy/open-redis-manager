@@ -1,16 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A single flowing white ribbon spiral representing data in motion, on a vivid Redis-red field.</desc>
+  <desc id="orm-desc">A bold open white ring with three data streams flowing through its opening, on a deep Redis-red field.</desc>
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="16" x2="228" y2="240" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F04438"/>
+    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EF392D"/>
       <stop offset="1" stop-color="#C81E1E"/>
     </linearGradient>
-    <linearGradient id="orm-mark" x1="72" y1="55" x2="185" y2="202" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orm-white" x1="58" y1="55" x2="205" y2="202" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFE8E5"/>
+      <stop offset="1" stop-color="#FFE7E2"/>
     </linearGradient>
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
-  <path d="M187 66c-31-28-85-21-112 14-34 44-17 108 30 129 43 19 94-3 108-45 14-42-12-83-52-88-34-5-64 19-66 51-2 27 18 49 44 49 21 0 37-15 38-34 1-16-11-29-26-30-13-1-23 9-23 21 0 9 7 16 16 16" fill="none" stroke="url(#orm-mark)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-white)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-white)" stroke-width="11" stroke-linecap="round"/>
 </svg>

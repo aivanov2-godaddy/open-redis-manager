@@ -310,11 +310,12 @@ try {
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="16" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
-    <linearGradient id="orm-mark" x1="72" y1="55" x2="185" y2="202" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE8E5"/></linearGradient>
+    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#EF392D"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
+    <linearGradient id="orm-mark" x1="75" y1="45" x2="180" y2="220" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE7E2"/></linearGradient>
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
-  <path d="M187 66c-31-28-85-21-112 14-34 44-17 108 30 129 43 19 94-3 108-45 14-42-12-83-52-88-34-5-64 19-66 51-2 27 18 49 44 49 21 0 37-15 38-34 1-16-11-29-26-30-13-1-23 9-23 21 0 9 7 16 16 16" fill="none" stroke="url(#orm-mark)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-mark)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-mark)" stroke-width="11" stroke-linecap="round"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>

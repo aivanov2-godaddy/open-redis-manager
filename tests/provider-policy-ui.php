@@ -33,10 +33,10 @@ $assertions = [
         && str_contains($cpanelPage, 'data:image/png;base64,') && str_contains($cpanelPage, '$providerBranding[\'support_url\']')
         && str_contains($cpanelPage, 'footer_visible') && str_contains($cpanelPage, '--orm-primary')
         && str_contains($cpanelPage, '--orm-surface') && str_contains($cpanelPage, '--orm-text')
-        && str_contains($cpanelPage, 'M187 66c-31-28-85-21-112 14')
+        && str_contains($cpanelPage, 'M162 82a68 68 0 1 0 0 92')
         && !str_contains($cpanelPage, 'M66 55h81c47 0 76 25 76 64')
         && !str_contains($cpanelPage, 'M128 55 187 86v73')
-        && str_contains($whmPage, 'M187 66c-31-28-85-21-112 14')
+        && str_contains($whmPage, 'M162 82a68 68 0 1 0 0 92')
         && !str_contains($whmPage, 'M66 55h81c47 0 76 25 76 64'),
     is_string($whmPage) && str_contains($whmPage, "'fleet.migrate'")
         && str_contains($whmPage, 'migrateFleetAccount($username, $targetBackend, $writesQuiesced)')
