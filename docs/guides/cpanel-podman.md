@@ -16,3 +16,7 @@ After cPanel has installed and started a container for the account, open **Open 
 If ORM cannot verify the current cPanel account identity, directory ownership, socket type, or container name, it hides that candidate. If PhpRedis is unavailable, ORM can still show a verified socket and connection examples but labels its health state **not checked**. If a PING fails, ORM reports the probe unavailable; it does not start or repair the cPanel container.
 
 Use cPanel's own `ea-podman` commands to install, start, stop, restart, upgrade, back up, or remove these containers. ORM's create/restore snapshots and lifecycle actions apply only to ORM-managed direct instances and do not operate on cPanel Podman data.
+
+## Verified test-host evidence
+
+On 2026-11-16, a disposable cPanel test account used the EasyApache PHP 8.5 CLI and PhpRedis to connect to its EA Podman Redis 6.2.24 Unix socket; `PING` returned success. This confirms the tested account's PHP extension and socket access work together. It does not validate every PHP handler, CageFS/PHP Selector configuration, Valkey, or the full ORM installation lifecycle. Host, account, and socket identifiers are intentionally omitted.

@@ -9,6 +9,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 
 $authenticatedUser = $_ENV['REMOTE_USER'] ?? getenv('REMOTE_USER');
@@ -32,6 +33,33 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     $fleetSummaryMessage = $fleetSummary === null
         ? ['type' => 'error', 'text' => 'The fleet summary could not be verified. Refresh the page and try again.']
         : ['type' => 'success', 'text' => 'Fleet summary loaded from verified account records and recent scheduled metric snapshots.'];
+}
+$securityReport = null;
+$securityReportMessage = null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'security.report') {
+    $generatedAt = time();
+    $rate = \Orm\Security\WhmSecurityReport::consumeRateLimit($generatedAt);
+    if (!$rate['allowed']) {
+        $securityReportMessage = ['type' => 'error', 'text' => 'Security reports are limited to one request per minute. Retry in ' . $rate['retry_after'] . ' seconds.'];
+    } else {
+        $securityFleet = $fleetClient->requestFleetSummary();
+        $securityAudit = (new \Orm\Security\WhmAuditLog())->read(
+            max(0, $generatedAt - 86400), $generatedAt
+        );
+        $securityReport = \Orm\Security\WhmSecurityReport::build($securityFleet, $securityAudit, $generatedAt);
+        $auditLogged = \Orm\Security\WhmAuditEventWriter::securityReportGenerated();
+        $securityReportMessage = [
+            'type' => $securityFleet === null ? 'error' : 'success',
+            'text' => $securityFleet === null
+                ? 'The report is partial because verified fleet metrics were unavailable.'
+                : 'A bounded report-only review was generated. No enforcement or automatic remediation was applied.',
+        ];
+        if (!$auditLogged) {
+            $securityReport['partial'] = true;
+            $securityReportMessage['text'] .= ' The report event could not be confirmed in the audit log.';
+        }
+    }
 }
 $resellerSummary = null;
 $fleetDiagnosticsMessage = null;
@@ -646,6 +674,27 @@ WHM::header('Open Redis Manager', 0, 0);
             <p>Fresh metrics for <?= (int) $fleetMetrics['fresh_accounts'] ?> accounts: <?= number_format($fleetMetrics['memory_used_bytes']) ?> bytes used across <?= number_format($fleetMetrics['connected_clients']) ?> connected clients. Alerts: <?= (int) $fleetMetrics['alert_accounts'] ?> accounts (<?= (int) $fleetMetrics['high_memory_accounts'] ?> memory, <?= (int) $fleetMetrics['high_client_accounts'] ?> clients, <?= (int) $fleetMetrics['low_hit_ratio_accounts'] ?> hit ratio). Stale <?= (int) $fleetMetrics['stale_accounts'] ?>; missing <?= (int) $fleetMetrics['missing_accounts'] ?>. Missing and stale values are excluded from totals, never treated as zero.</p>
           </section>
         <?php endif; ?>
+        <section aria-labelledby="orm-security-report-title">
+          <h3 id="orm-security-report-title">Security and abuse review</h3>
+          <p>This report is read-only and report-only. It uses fresh fleet snapshots and normalized ORM AUTH management events; it does not inspect passwords, Redis keys, or client authentication attempts, and it does not enforce or remediate.</p>
+          <?php if ($securityReportMessage !== null): ?><p role="<?= $securityReportMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+          <form method="post">
+            <input type="hidden" name="orm_action" value="security.report">
+            <button type="submit"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M10 2.5 17 5v4.5c0 4-2.7 6.8-7 8-4.3-1.2-7-4-7-8V5zM7 10l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Generate report-only review</button>
+          </form>
+          <?php if (is_array($securityReport)): ?>
+            <p role="status">Generated <?= htmlspecialchars($securityReport['generated_at_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $securityReport['partial'] ? ' · partial evidence' : '' ?>. Metric freshness window: 15 minutes. AUTH management event window: 24 hours.</p>
+            <?php if ($securityReport['findings'] === []): ?><p>No current reportable findings were observed in the available inputs.</p><?php endif; ?>
+            <?php if ($securityReport['findings'] !== []): ?>
+              <ul>
+                <?php foreach ($securityReport['findings'] as $finding): ?>
+                  <li><strong><?= htmlspecialchars(ucwords(str_replace('_', ' ', $finding['category'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> (<?= htmlspecialchars($finding['severity'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>): <?= $finding['count'] === null ? 'unknown count' : (int) $finding['count'] . ' account/event(s)' ?>. <?= htmlspecialchars($finding['evidence'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> <?= htmlspecialchars($finding['recommendation'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= is_string($finding['sampled_at_utc']) ? ' Sampled at ' . htmlspecialchars($finding['sampled_at_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '.' : '' ?></li>
+                <?php endforeach; ?>
+              </ul>
+            <?php endif; ?>
+            <details><summary>Signals not evaluated</summary><ul><?php foreach ($securityReport['unmeasured'] as $signal => $reason): ?><li><?= htmlspecialchars(ucwords(str_replace('_', ' ', $signal)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>: <?= htmlspecialchars($reason, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li><?php endforeach; ?></ul></details>
+          <?php endif; ?>
+        </section>
         <?php if ($fleetPage['total'] > 0): ?>
         <label for="orm-fleet-search">Search this page</label>
         <input id="orm-fleet-search" type="search" autocomplete="off">
@@ -1111,7 +1160,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation'] as $action): ?>
+          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>

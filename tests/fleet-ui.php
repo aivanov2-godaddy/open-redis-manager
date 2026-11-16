@@ -24,6 +24,11 @@ $assert(str_contains($whm, 'Newer writes may be lost') && str_contains($whm, 'sa
     'warn about data loss and per-account restore recovery before a batch restore');
 $assert(str_contains($whm, 'Missing and stale values are excluded from totals'),
     'explain partial metric totals in the fleet summary');
+$assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecurityReport::consumeRateLimit'),
+    'guard report generation behind the root WHM POST path and persistent throttle');
+$assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
+    && str_contains($whm, 'does not inspect passwords'),
+    'show report-only findings, unsupported evidence gaps, and privacy limits');
 $assert(str_contains($cpanel, 'PodmanCacheDiscovery::forCurrentAccount')
     && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches'),
     'show only verified current-account Podman cache sockets and their read-only probe status');
