@@ -140,7 +140,7 @@ before_rollback="$(tree_snapshot "$target_root")"
 export TEST_INSTALL_COUNT="$test_root/install-count"
 export TEST_REAL_INSTALL="$real_install"
 export PATH="$test_root/fail-bin:$PATH"
-if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >/dev/null 2>&1; then
+if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/rollback.out" 2>&1; then
     printf 'release apply ignored the injected replacement failure.\n' >&2
     exit 1
 fi
@@ -158,6 +158,8 @@ unset TEST_INSTALL_COUNT TEST_REAL_INSTALL
 grep -q '"outcome":"rolled_back"' "$target_root/var/cpanel/orm/updates/update-audit.jsonl" || {
     printf 'rollback outcome was not recorded in the updater audit log; current contents follow:\n' >&2
     cat "$target_root/var/cpanel/orm/updates/update-audit.jsonl" >&2
+    printf 'updater output follows:\n' >&2
+    cat "$test_root/rollback.out" >&2
     exit 1
 }
 
