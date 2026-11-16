@@ -8,7 +8,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
-orm_acquire_lifecycle_lock
+orm_acquire_lifecycle_lock "$0" "$@"
 if orm_instances_exist; then
     orm_die 'managed instance files exist; refusing uninstall to preserve their services, configuration, and data.'
 else

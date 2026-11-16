@@ -8,7 +8,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
-orm_acquire_lifecycle_lock
+orm_acquire_lifecycle_lock "$0" "$@"
 orm_install_paths_are_clear
 
 archive="$(mktemp "${TMPDIR:-/tmp}/orm-cpanel-plugin.XXXXXXXX.tar.gz")"

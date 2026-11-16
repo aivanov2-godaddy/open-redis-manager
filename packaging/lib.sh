@@ -34,23 +34,32 @@ ORM_METRICS_TIMER=/etc/systemd/system/orm-metrics-collect@.timer
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
 orm_acquire_lifecycle_lock() {
+    local script_path="${1:-}" status lock_mode
+    shift || true
     command -v flock >/dev/null 2>&1 || orm_die 'flock is required to serialize ORM package operations.'
     [[ ! -L "$ORM_LIFECYCLE_LOCK" && ! -d "$ORM_LIFECYCLE_LOCK" ]] \
         || orm_die 'the ORM lifecycle lock path is unsafe.'
     install -d -o root -g root -m 0755 "$(dirname -- "$ORM_LIFECYCLE_LOCK")"
-    local previous_umask
-    previous_umask="$(umask)"
+    if [[ "${ORM_LIFECYCLE_LOCK_HELD:-0}" == 1 ]]; then
+        [[ -f "$ORM_LIFECYCLE_LOCK" && ! -L "$ORM_LIFECYCLE_LOCK" ]] \
+            || orm_die 'the ORM lifecycle lock file is unsafe.'
+        [[ "$(stat -c '%u' -- "$ORM_LIFECYCLE_LOCK")" == 0 ]] \
+            || orm_die 'the ORM lifecycle lock file is not root-owned.'
+        lock_mode="$(stat -c '%a' -- "$ORM_LIFECYCLE_LOCK")"
+        (( (8#$lock_mode & 0022) == 0 )) || orm_die 'the ORM lifecycle lock file is writable by another user.'
+        return 0
+    fi
+    [[ -n "$script_path" && -f "$script_path" ]] || orm_die 'could not identify the lifecycle script to lock.'
     umask 077
-    exec 9>>"$ORM_LIFECYCLE_LOCK"
-    umask "$previous_umask"
-    [[ -f "$ORM_LIFECYCLE_LOCK" && ! -L "$ORM_LIFECYCLE_LOCK" ]] \
-        || orm_die 'the ORM lifecycle lock file is unsafe.'
-    [[ "$(stat -c '%u' -- "$ORM_LIFECYCLE_LOCK")" == 0 ]] \
-        || orm_die 'the ORM lifecycle lock file is not root-owned.'
-    local lock_mode
-    lock_mode="$(stat -c '%a' -- "$ORM_LIFECYCLE_LOCK")"
-    (( (8#$lock_mode & 0022) == 0 )) || orm_die 'the ORM lifecycle lock file is writable by another user.'
-    flock -n 9 || orm_die 'another ORM install, upgrade, or uninstall is already running.'
+    ORM_LIFECYCLE_LOCK_HELD=1
+    export ORM_LIFECYCLE_LOCK_HELD
+    if flock -n -E 75 --close "$ORM_LIFECYCLE_LOCK" "$script_path" "$@"; then
+        status=0
+    else
+        status=$?
+    fi
+    [[ "$status" -ne 75 ]] || orm_die 'another ORM install, upgrade, or uninstall is already running.'
+    exit "$status"
 }
 
 orm_safe_target_parent_chain() {

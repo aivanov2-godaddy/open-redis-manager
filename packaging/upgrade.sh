@@ -8,7 +8,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
-orm_acquire_lifecycle_lock
+orm_acquire_lifecycle_lock "$0" "$@"
 
 [[ ! -e "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" ]] \
     || orm_die 'this install already has a managed manifest; this bridge only upgrades the verified identity-only v1 install.'
