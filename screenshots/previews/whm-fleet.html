@@ -9,7 +9,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; }
     .topbar { height: 68px; display: flex; align-items: center; gap: 13px; padding: 0 36px; background: #fff; border-bottom: 1px solid #dce3ec; }
-    .mark { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 11px; color: white; background: #087d73; font-weight: 800; }
+    .mark { display: block; width: 37px; height: 37px; border-radius: 10px; }
     .product { font-weight: 750; font-size: 17px; }
     .crumb { color: #65758a; }
     main { max-width: 1160px; margin: 40px auto 70px; padding: 0 25px; }
@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><div class="mark">O</div><span class="product">Open Redis Manager</span><span class="crumb">›</span><span class="crumb">WHM · Fleet</span></header>
+  <header class="topbar"><img class="mark" src="../../assets/orm-mark.svg" alt=""><span class="product">Open Redis Manager</span><span class="crumb">›</span><span class="crumb">WHM · Fleet</span></header>
   <main>
     <p class="eyebrow">WHM / Open Redis Manager</p>
     <h1>Managed instances</h1>
