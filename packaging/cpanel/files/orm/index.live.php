@@ -319,13 +319,10 @@ try {
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
-  <defs>
-    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#EF392D"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
-    <linearGradient id="orm-mark" x1="75" y1="45" x2="180" y2="220" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE7E2"/></linearGradient>
-  </defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
-  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-mark)" stroke-width="18" stroke-linecap="round"/>
-  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-mark)" stroke-width="11" stroke-linecap="round"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
+  <path d="M75 205V53h66c35 0 55 18 55 48s-20 48-55 48H75m62 0 60 56" fill="none" stroke="#FFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M116 87h24c10 0 16 5 16 14s-6 14-16 14h-24" fill="none" stroke="#FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="116" cy="87" r="6" fill="#FFF"/><circle cx="140" cy="101" r="6" fill="#FFF"/><circle cx="116" cy="115" r="6" fill="#FFF"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
