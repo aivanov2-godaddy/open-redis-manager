@@ -1,21 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">An open white ring around three cache rails, finished with a connected status point, on a Redis-red tile.</desc>
-  <defs>
-    <linearGradient id="tile" x1="32" y1="18" x2="224" y2="242" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F04438"/>
-      <stop offset="1" stop-color="#B42318"/>
-    </linearGradient>
-    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="matrix(152 0 0 152 78 50)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF" stop-opacity=".2"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#tile)"/>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#light)"/>
-  <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
-  <path d="M91 105h60M98 128h46M105 151h32" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
-  <path d="M163 128h24" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="193" cy="128" r="12" fill="#FFFFFF"/>
-  <circle cx="193" cy="128" r="4" fill="#D92D20"/>
+  <desc id="orm-desc">A custom white OR ligature monogram on a Redis-red tile, with an open circular O flowing into the R.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
+  <path d="M151 78a57 57 0 1 0 0 100" fill="none" stroke="#FFF" stroke-width="22" stroke-linecap="round"/>
+  <path d="M117 72h58c27 0 43 14 43 37 0 20-12 33-34 38l38 39h-34l-31-35h-40v-26h48c14 0 21-5 21-16 0-10-7-15-21-15h-48V72Z" fill="#FFF"/>
 </svg>
