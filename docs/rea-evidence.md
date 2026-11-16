@@ -17,6 +17,10 @@ REA used provider-owned Chromium 157.0.8103.51 processes for controlled replays 
 
 A direct read of the current public documentation on 2026-11-16 also confirmed the v2.6.7 branding claims: four labelled theme colors, live preview, and UnderHost/Redis/Valkey color presets with contrast warnings. The reference does not specify the color roles or exact preset values; ORM's four roles and color values are original design choices recorded in [source notes](source-notes.md).
 
+### Read-only recheck on 2026-11-17
+
+REA reopened the public home, documentation, and upgrade pages in provider-owned Chromium 157.0.8103.51 and captured their DOM/accessibility state after a short settle. The pages still identify the reference product as v2.6.11. The homepage replay also retained selected response bodies; no write flow or authenticated product surface was exercised in this recheck. The new records confirm the page inventory and feature claims below; earlier records above remain the screenshot captures used by the gallery review.
+
 The gallery's screenshot images and vendor brand assets are referenced only as evidence; they are not redistributed in this repository. ORM uses its own interface and icon assets. The reference site's icon presentation is chiefly a repeated Redis icon in feature badges plus Redis/Valkey logos; it is not treated as a reusable icon library.
 
 ## Evidence records
@@ -29,6 +33,9 @@ The complete REA records are retained in the active REA evidence session. Identi
 | `https://cpanelredismanager.com/documentation.php` | `ev_5e75e710d1a3a5c9087ee772a0a5c8635e2501aa334a7cc210113b16d295b5c5` | Controlled replay | Derived from captured DOM/accessibility | Complete; documentation accessibility text 62,216 bytes; DOM, accessibility, and screenshot captured. |
 | `https://cpanelredismanager.com/upgrade.php` | `ev_bc5794ef2fed1fc3190a0f6afdc5899aca22f5f7d3a770ed4f3a41797b5d078a` | Controlled replay | Derived from captured DOM/accessibility | Complete; update-page accessibility text 8,904 bytes; DOM, accessibility, and screenshot captured. |
 | Homepage gallery interaction (`cPanel dashboard` → `Instance monitoring` → close) | `ev_1b6b2847f2916fed2041cf98a54ba7ec6e52cd6b2f775e9355531dea699ef6e9` | Controlled replay | Derived from captured DOM/accessibility | Complete; all three UI actions succeeded; each step retained DOM, accessibility, and screenshot. |
+| `https://cpanelredismanager.com/index.php` recheck | `ev_f4a3084c92dba10fd90f09992df550cc7ae6c091597d4a0734453f4b3300a576` | Controlled replay | Derived from captured DOM/accessibility and selected response bodies | Initial page load completed; DOM/accessibility captured; homepage accessibility text 29,291 characters. No screenshot or interaction was part of this recheck. |
+| `https://cpanelredismanager.com/documentation.php` recheck | `ev_1500bf08ac1424161faba2c3777a06f188ecd7f1d7db2ab3176889b5873a4a8c` | Controlled replay | Derived from captured DOM/accessibility | Initial page load completed; documentation accessibility text 62,216 bytes. No screenshot or interaction was part of this recheck. |
+| `https://cpanelredismanager.com/upgrade.php` recheck | `ev_83aaedeccbd07420cf73c66616c1d0dbda456366dfc7f9a68d601825b37de125` | Controlled replay | Derived from captured DOM/accessibility | Initial page load completed; update-page accessibility text 8,901 characters. No screenshot or interaction was part of this recheck. |
 
 ## What this does not establish
 

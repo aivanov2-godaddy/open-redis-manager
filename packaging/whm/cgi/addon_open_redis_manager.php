@@ -12,6 +12,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWrite
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleaseApplyJob.php';
 
 $authenticatedUser = $_ENV['REMOTE_USER'] ?? getenv('REMOTE_USER');
 $authenticatedUser = is_string($authenticatedUser) ? $authenticatedUser : null;
@@ -36,9 +37,26 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         : ['type' => 'success', 'text' => 'Fleet summary loaded from verified account records and recent scheduled metric snapshots.'];
 }
 $updatePreview = null;
-if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
-    && ($_POST['orm_action'] ?? null) === 'update.preview') {
-    $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser, $_SERVER);
+$updateApplyMessage = null;
+$updateJobStatus = null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
+    $updateAction = $_POST['orm_action'] ?? null;
+    if (in_array($updateAction, ['update.preview', 'update.apply', 'update.status'], true)) {
+        header('Cache-Control: private, no-store, max-age=0');
+        header('X-Content-Type-Options: nosniff');
+    }
+    if ($updateAction === 'update.preview') {
+        $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser ?? '', $_SERVER);
+    } elseif ($updateAction === 'update.apply') {
+        $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser ?? '', $_SERVER);
+        $updateApplyMessage = \Orm\Update\ReleaseApplyJob::submit(
+            $authenticatedUser ?? '', $_SERVER, $_POST, $updatePreview
+        );
+    } elseif ($updateAction === 'update.status') {
+        $updateJobStatus = \Orm\Update\ReleaseApplyJob::status(
+            $authenticatedUser ?? '', $_SERVER, $_POST
+        );
+    }
 }
 $securityReport = null;
 $securityReportMessage = null;
@@ -626,7 +644,25 @@ WHM::header('Open Redis Manager', 0, 0);
     <?php if ($rootAuthorized): ?>
     <section aria-labelledby="orm-update-preview-title">
       <h2 id="orm-update-preview-title">Signed update preview</h2>
-      <p>Verify a root-staged ORM release and review its signed version, trusted key, artifact digest, and managed file changes. This preview does not apply the update.</p>
+      <p>Verify a root-staged ORM release and review its signed version, trusted key, artifact digest, and managed file changes. Applying a reviewed release runs asynchronously and uses the transactional updater.</p>
+      <?php if (is_array($updateApplyMessage)): ?>
+        <p role="<?= ($updateApplyMessage['ok'] ?? false) === true ? 'status' : 'alert' ?>"><?= htmlspecialchars((string) ($updateApplyMessage['message'] ?? 'The update request could not be confirmed.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+        <?php if (is_string($updateApplyMessage['jobId'] ?? null)): ?>
+          <p>Job <code><?= htmlspecialchars($updateApplyMessage['jobId'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code><?php if (is_string($updateApplyMessage['candidateVersion'] ?? null)): ?> for version <strong><?= htmlspecialchars($updateApplyMessage['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong><?php endif; ?>.</p>
+        <?php endif; ?>
+      <?php endif; ?>
+      <?php if (is_array($updateJobStatus)): ?>
+        <?php if (($updateJobStatus['ok'] ?? false) === true): ?>
+          <p role="status">Update job <code><?= htmlspecialchars($updateJobStatus['jobId'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code>: <strong><?= htmlspecialchars(str_replace('_', ' ', ucfirst($updateJobStatus['state'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> for version <?= htmlspecialchars($updateJobStatus['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
+          <?php if (($updateJobStatus['state'] ?? null) === 'recovery_required'): ?>
+            <p role="alert">The updater retained recovery material. Review the <a href="https://github.com/aivanov2-godaddy/open-redis-manager/blob/main/docs/guides/update-recovery.md">recovery guide</a> before attempting another update.</p>
+          <?php elseif (($updateJobStatus['state'] ?? null) === 'interrupted'): ?>
+            <p role="alert">The worker stopped before recording a result. Inspect updater state and the audit journal before retrying.</p>
+          <?php endif; ?>
+        <?php else: ?>
+          <p role="alert"><?= htmlspecialchars((string) ($updateJobStatus['message'] ?? 'The update job status is unavailable.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+        <?php endif; ?>
+      <?php endif; ?>
       <?php if ($updatePreview !== null): ?>
         <?php if (($updatePreview['ok'] ?? false) !== true): ?>
           <p role="alert"><?= htmlspecialchars((string) ($updatePreview['message'] ?? 'The update preview could not be verified.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
@@ -660,13 +696,30 @@ WHM::header('Open Redis Manager', 0, 0);
               </tbody>
             </table>
           </details>
+          <?php if (\Orm\Update\ReleaseApplyJob::previewIsConflictFree($updatePreview)): ?>
+            <form method="post">
+              <input type="hidden" name="orm_action" value="update.apply">
+              <input type="hidden" name="candidate_version" value="<?= htmlspecialchars($updatePreview['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <input type="hidden" name="artifact_sha256" value="<?= htmlspecialchars($updatePreview['release']['artifactSha256'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <label><input type="checkbox" name="confirm_update" value="1" required> I reviewed this signed release and confirm the update.</label>
+              <button type="submit">Queue signed update</button>
+            </form>
+          <?php else: ?>
+            <p role="alert">This preview contains conflicts, file moves, retirements, or unsupported actions. Resolve them before applying this release.</p>
+          <?php endif; ?>
         <?php endif; ?>
       <?php endif; ?>
       <form method="post">
         <input type="hidden" name="orm_action" value="update.preview">
         <button type="submit">Verify staged release</button>
       </form>
-      <p>The preview reads fixed root-owned paths: <code>/var/cpanel/orm/updates/staged/</code> and <code>/etc/orm/release-keys/</code>. Releases are not downloaded automatically, and this control cannot install one.</p>
+      <form method="post">
+        <input type="hidden" name="orm_action" value="update.status">
+        <label for="orm-update-job-id">Update job ID</label>
+        <input id="orm-update-job-id" name="job_id" inputmode="text" pattern="[a-f0-9]{32}" maxlength="32" value="<?= htmlspecialchars((string) ($updateJobStatus['jobId'] ?? $updateApplyMessage['jobId'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" required>
+        <button type="submit">Check update status</button>
+      </form>
+      <p>The preview reads fixed root-owned paths: <code>/var/cpanel/orm/updates/staged/</code> and <code>/etc/orm/release-keys/</code>. Releases are not downloaded automatically. The worker records bounded status separately from its protected transaction and recovery journal.</p>
     </section>
     <section aria-labelledby="orm-fleet-title">
       <h2 id="orm-fleet-title">Managed ORM instances</h2>

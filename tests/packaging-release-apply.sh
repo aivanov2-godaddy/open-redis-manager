@@ -88,6 +88,22 @@ first_target="$(awk -F'|' '$1 == "cpanel_entry" { print $3 }' "$repo_root/packag
 second_target="$(awk -F'|' '$1 == "whm_cgi" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 broker_target="$(awk -F'|' '$1 == "broker_handler" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 
+# The WHM job must bind its accepted candidate and digest to the locked apply transaction.
+prepare_installation "$target_root" "$manifest"
+before_identity_refusal="$(tree_snapshot "$target_root")"
+if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" "$release_version" "$(printf '%064d' 0)" >/dev/null 2>&1; then
+    printf 'release apply accepted an artifact digest different from the confirmed preview.\n' >&2
+    exit 1
+fi
+if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" '0.9.9' "$artifact_digest" >/dev/null 2>&1; then
+    printf 'release apply accepted a candidate version different from the confirmed preview.\n' >&2
+    exit 1
+fi
+[[ "$before_identity_refusal" == "$(tree_snapshot "$target_root")" ]] || {
+    printf 'release identity mismatch mutated the installation fixture.\n' >&2
+    exit 1
+}
+
 # A local edit is a conflict and must be rejected before any mutation.
 prepare_installation "$target_root" "$manifest"
 printf 'locally modified by operator\n' >"$target_root$second_target"

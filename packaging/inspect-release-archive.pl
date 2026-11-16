@@ -62,7 +62,7 @@ close $required_handle
     or die "ORM release archive: could not finish reading required-file manifest.\n";
 scalar(keys %required) >= 40
     or die "ORM release archive: required-file manifest is incomplete.\n";
-for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/apply-release.sh packaging/adopt-install-manifest.sh packaging/release-install-map.txt packaging/compare-release-preview.pl packaging/release-required-files.txt)) {
+for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/apply-release.sh packaging/adopt-install-manifest.sh packaging/release-install-map.txt packaging/compare-release-preview.pl packaging/release-required-files.txt bin/orm-update-worker.pl src/Orm/Update/ReleaseApplyJob.php)) {
     exists($required{$core_file})
         or die "ORM release archive: required-file manifest omits a core package file.\n";
 }
@@ -211,6 +211,8 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderPolicy.pm
     /usr/local/cpanel/3rdparty/orm/VERSION
     /usr/local/cpanel/3rdparty/orm/packaging/preview-release.sh
+    /usr/local/cpanel/3rdparty/orm/packaging/apply-release.sh
+    /usr/local/cpanel/3rdparty/orm/bin/orm-update-worker.pl
     /usr/local/cpanel/3rdparty/orm/packaging/lib.sh
     /usr/local/cpanel/3rdparty/orm/packaging/release-lib.sh
     /usr/local/cpanel/3rdparty/orm/packaging/inspect-release-archive.pl
@@ -218,6 +220,7 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /usr/local/cpanel/3rdparty/orm/packaging/release-install-map.txt
     /usr/local/cpanel/3rdparty/orm/packaging/release-required-files.txt
     /usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleaseApplyJob.php
     /var/cpanel/apps/open_redis_manager.conf
 );
 for my $file (@inventory) {

@@ -5,6 +5,7 @@ $whmPage = file_get_contents(dirname(__DIR__) . '/packaging/whm/cgi/addon_open_r
 $cpanelPage = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $packageMap = file_get_contents(dirname(__DIR__) . '/packaging/lib.sh');
 $releasePreview = file_get_contents(dirname(__DIR__) . '/src/Orm/Update/ReleasePreview.php');
+$releaseApplyJob = file_get_contents(dirname(__DIR__) . '/src/Orm/Update/ReleaseApplyJob.php');
 $assertions = [
     is_string($whmPage) && str_contains($whmPage, 'new \\Orm\\Backend\\ProviderPolicyStore()'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
@@ -70,8 +71,17 @@ $assertions = [
         && str_contains($packageMap, 'ProviderPolicy.pm')
         && str_contains($packageMap, 'WhmAuditLog.php') && str_contains($packageMap, 'WhmAuditEventWriter.php'),
     is_string($whmPage) && str_contains($whmPage, "'update.preview'") && str_contains($whmPage, 'Verify staged release')
-        && str_contains($whmPage, 'This preview does not apply the update.')
+        && str_contains($whmPage, 'runs asynchronously and uses the transactional updater')
         && str_contains($whmPage, 'aria-labelledby="orm-update-preview-title"'),
+    is_string($whmPage) && str_contains($whmPage, "'update.apply'") && str_contains($whmPage, "'update.status'")
+        && str_contains($whmPage, 'name="confirm_update"') && str_contains($whmPage, 'Queue signed update')
+        && str_contains($whmPage, 'Check update status'),
+    is_string($releaseApplyJob) && str_contains($releaseApplyJob, "'--no-block'")
+        && str_contains($releaseApplyJob, "'--collect'") && str_contains($releaseApplyJob, 'submissionMatchesPreview')
+        && str_contains($releaseApplyJob, "'recovery_required'") && str_contains($releaseApplyJob, 'proc_open($argv'),
+    is_string($packageMap) && str_contains($packageMap, 'release_apply "$ORM_PACKAGE_ROOT/apply-release.sh"')
+        && str_contains($packageMap, 'release_worker "$ORM_REPO_ROOT/bin/orm-update-worker.pl"')
+        && str_contains($packageMap, 'release_apply_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleaseApplyJob.php"'),
     is_string($releasePreview) && str_contains($releasePreview, "private const STAGED_ROOT = '/var/cpanel/orm/updates/staged'")
         && str_contains($releasePreview, "private const TRUSTED_KEY_ROOT = '/etc/orm/release-keys'")
         && str_contains($releasePreview, "'/usr/bin/timeout', '--signal=KILL', '30s', '/usr/bin/bash'")

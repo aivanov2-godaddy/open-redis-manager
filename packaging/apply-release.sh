@@ -4,11 +4,11 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/lib.sh"
 source "$ORM_PACKAGE_ROOT/release-lib.sh"
 
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: sudo bash packaging/apply-release.sh METADATA SIGNATURE ARCHIVE TRUSTED_KEY_DIR INSTALLED_VERSION [INSTALL_MANIFEST [TEST_TARGET_ROOT]]\n'
+    printf 'Usage: sudo bash packaging/apply-release.sh METADATA SIGNATURE ARCHIVE TRUSTED_KEY_DIR INSTALLED_VERSION [INSTALL_MANIFEST [TEST_TARGET_ROOT [EXPECTED_CANDIDATE_VERSION EXPECTED_ARTIFACT_SHA256]]]\n'
     printf 'Applies a verified release to an exact, conflict-free v3 installation. Test root remaps fixed targets for Linux fixtures.\n'
     exit 0
 fi
-[[ $# -ge 5 && $# -le 7 ]] || orm_die 'expected metadata, signature, archive, trusted key directory, installed version, and optional manifest/test target root.'
+[[ $# -ge 5 && $# -le 9 ]] || orm_die 'expected metadata, signature, archive, trusted key directory, installed version, and optional manifest/test root/release identity.'
 [[ "$(id -u)" -eq 0 ]] || orm_die 'run release apply as root.'
 
 metadata="$1"
@@ -18,6 +18,17 @@ trusted_key_dir="$4"
 installed_version="$5"
 install_manifest="${6:-$ORM_INSTALL_MANIFEST}"
 test_target_root="${7:-}"
+expected_candidate_version="${8:-}"
+expected_artifact_sha256="${9:-}"
+[[ ( -z "$expected_candidate_version" && -z "$expected_artifact_sha256" ) \
+    || ( -n "$expected_candidate_version" && -n "$expected_artifact_sha256" ) ]] \
+    || orm_die 'expected candidate version and artifact digest must be supplied together.'
+if [[ -n "$expected_candidate_version" ]]; then
+    [[ "$expected_candidate_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] \
+        || orm_die 'expected candidate version is invalid.'
+    [[ "$expected_artifact_sha256" =~ ^[a-f0-9]{64}$ ]] \
+        || orm_die 'expected artifact digest is invalid.'
+fi
 if [[ -n "$test_target_root" ]]; then
     [[ "$test_target_root" == /* && -d "$test_target_root" && ! -L "$test_target_root" ]] \
         || orm_die 'test target root must be an existing absolute directory.'
@@ -42,6 +53,14 @@ fi
 candidate_version="$(orm_release_metadata_verify \
     "$metadata" "$signature" "$archive" "$trusted_key_dir" "$installed_version")" \
     || orm_die 'signed release bundle verification failed; no files were changed.'
+if [[ -n "$expected_candidate_version" ]]; then
+    [[ "$candidate_version" == "$expected_candidate_version" ]] \
+        || orm_die 'the signed candidate version no longer matches the confirmed preview; no files were changed.'
+    current_artifact_sha256="$(awk -F'|' '$1 == "artifact_sha256" { print $2 }' "$metadata")" \
+        || orm_die 'could not read the verified artifact identity; no files were changed.'
+    [[ "$current_artifact_sha256" == "$expected_artifact_sha256" ]] \
+        || orm_die 'the signed artifact no longer matches the confirmed preview; no files were changed.'
+fi
 
 if [[ -n "$test_target_root" ]]; then
     state_root="${test_target_root%/}/var/cpanel/orm/updates"

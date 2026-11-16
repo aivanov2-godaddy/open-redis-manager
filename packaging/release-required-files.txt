@@ -7,6 +7,7 @@ packaging/release-lib.sh
 packaging/inspect-release-archive.pl
 packaging/preview-release.sh
 packaging/apply-release.sh
+bin/orm-update-worker.pl
 packaging/adopt-install-manifest.sh
 packaging/release-install-map.txt
 packaging/compare-release-preview.pl
@@ -46,4 +47,5 @@ packaging/systemd/orm-metrics-collect@.timer
 src/Orm/Backend/ProviderPolicyStore.php
 src/Orm/Broker/ProviderPolicy.pm
 src/Orm/Update/ReleasePreview.php
+src/Orm/Update/ReleaseApplyJob.php
 packaging/whm/open_redis_manager.conf
