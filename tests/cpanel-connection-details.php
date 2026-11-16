@@ -37,11 +37,34 @@ $assert(str_contains($details['python_example'], "unix_socket_path='/var/lib/orm
     'redis-py snippet uses a Unix socket');
 $assert(!str_contains($details['node_example'], 'password') && !str_contains($details['python_example'], 'password'),
     'Node and Python snippets contain no password');
+$assert(str_contains($details['wordpress_example'], "WP_REDIS_SCHEME', 'unix'")
+    && str_contains($details['wordpress_example'], "WP_REDIS_PATH', '/var/lib/orm-instances/demo/redis.sock'")
+    && str_contains($details['wordpress_example'], "WP_REDIS_DATABASE', 0"),
+    'WordPress helper selects the account socket and database zero');
+$assert(str_contains($details['wordpress_example'], 'WP_REDIS_PREFIX')
+    && !str_contains($details['wordpress_example'], 'WP_REDIS_PASSWORD'),
+    'WordPress helper scopes keys without inventing an authentication secret');
+$assert(str_contains($details['litespeed_example'], 'Host: /var/lib/orm-instances/demo/redis.sock')
+    && str_contains($details['litespeed_example'], 'Port: 0')
+    && str_contains($details['litespeed_example'], 'Password: leave blank'),
+    'LiteSpeed helper uses its documented Unix socket settings without a password');
+$assert(str_contains($details['laravel_example'], 'REDIS_HOST=/var/lib/orm-instances/demo/redis.sock')
+    && str_contains($details['laravel_example'], 'REDIS_PORT=0')
+    && !str_contains($details['laravel_example'], 'REDIS_PASSWORD'),
+    'Laravel helper uses the socket host and port zero without a password');
+$assert(str_contains($details['magento_values'], 'server=/var/lib/orm-instances/demo/redis.sock')
+    && str_contains($details['magento_values'], 'port=0')
+    && str_contains($details['magento_values'], 'page_cache_database=1'),
+    'Magento helper shows version-neutral socket values and separate cache databases');
 
 $page = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $assert(is_string($page), 'read the installed cPanel page template');
 foreach ([
     'orm-example-php' => 'Copy PHP with PhpRedis example',
+    'orm-example-wordpress' => 'Copy WordPress and WooCommerce example',
+    'orm-example-litespeed' => 'Copy LiteSpeed Cache settings',
+    'orm-example-laravel' => 'Copy Laravel environment settings',
+    'orm-example-magento' => 'Copy Magento connection values',
     'orm-example-node' => 'Copy Node.js with node-redis example',
     'orm-example-python' => 'Copy Python with redis-py example',
 ] as $target => $label) {

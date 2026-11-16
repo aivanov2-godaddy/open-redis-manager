@@ -4,22 +4,22 @@ WordPress object-cache integrations use Redis to reuse values that would otherwi
 
 ## Setup
 
-1. Initialize the account's ORM instance and copy its endpoint and credential from cPanel.
+1. Initialize the account's ORM instance and copy its private socket path from cPanel.
 2. Install a maintained WordPress Redis object-cache plugin that supports your PHP/runtime stack.
 3. Add the connection values using the plugin's documented settings. Some plugins read constants from `wp-config.php`; supported names differ by plugin.
 4. Enable the plugin's object cache, then verify its status page and test both logged-in and logged-out requests.
 5. Confirm that cache invalidation works when posts, products, inventory, or settings change.
 
-Example placeholders for plugins that recognize the common `WP_REDIS_*` constants:
+For the Redis Object Cache plugin, use the account-private Unix socket settings below:
 
 ```php
-define('WP_REDIS_HOST', '127.0.0.1');
-define('WP_REDIS_PORT', 12345);
-define('WP_REDIS_PASSWORD', 'replace-with-the-account-secret');
-define('WP_REDIS_DATABASE', 0);
+define( 'WP_REDIS_SCHEME', 'unix' );
+define( 'WP_REDIS_PATH', '/var/lib/orm-instances/<your-cpanel-account>/redis.sock' );
+define( 'WP_REDIS_DATABASE', 0 );
+define( 'WP_REDIS_PREFIX', 'replace_with_site_prefix:' );
 ```
 
-These names are supported by the [Redis Object Cache plugin](https://github.com/rhubarbgroup/redis-cache). Put them before WordPress loads `wp-settings.php`. Use the actual port and supported settings for the selected plugin. Keep `wp-config.php` readable only by the site owner and trusted administrators, and do not commit the real password.
+These names are supported by the [Redis Object Cache plugin](https://github.com/rhubarbgroup/redis-cache). Put them before WordPress loads `wp-settings.php`. ORM uses socket permissions and does not configure Redis AUTH, so do not add a password for this instance. Use the path shown by your cPanel account rather than copying the placeholder. Keep `wp-config.php` readable only by the site owner and trusted administrators. WooCommerce uses the same WordPress object-cache integration; verify cart, checkout, inventory, and invalidation behavior before enabling it broadly.
 
 ## Verification
 

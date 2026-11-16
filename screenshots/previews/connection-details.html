@@ -9,7 +9,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; }
     .topbar { height: 66px; padding: 0 32px; display: flex; align-items: center; gap: 14px; background: #fff; border-bottom: 1px solid #dce3ec; }
-    .cpanel { color: #d9534f; font-size: 24px; font-weight: 700; }
+    .brand-icon { width: 36px; height: 36px; }
     .topbar small { color: #59677c; }
     main { width: min(980px, calc(100% - 40px)); margin: 40px auto; }
     .crumb { color: #59677c; font-size: 13px; margin-bottom: 22px; }
@@ -38,11 +38,11 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><span class="cpanel">cP</span><strong>cPanel</strong><span>›</span><small>Open Redis Manager</small></header>
+  <header class="topbar"><img class="brand-icon" src="../../assets/orm-mark.svg" alt=""><strong>Open Redis Manager</strong><span>cPanel · demo</span></header>
   <main>
     <div class="crumb">Software › Open Redis Manager › Overview</div>
     <h1>Your cache instance</h1>
-    <p class="intro">Status and connection information for your account-scoped cache.</p>
+    <p class="intro">Account-scoped connection settings for the applications you run.</p>
     <p class="verified">Verified demo account: <code>demo</code></p>
     <section class="card">
       <div class="row"><h2>Instance status</h2><span class="state"><span class="dot"></span>Running</span></div>
@@ -63,6 +63,44 @@ $redis-&gt;connect('/var/lib/orm-instances/demo/redis.sock');
 $redis-&gt;select(0);</code></pre>
         </details>
         <details>
+          <summary>WordPress and WooCommerce · Redis Object Cache</summary>
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy WordPress and WooCommerce example" data-target="wordpress-example" data-label="WordPress and WooCommerce">Copy settings</button></div>
+          <pre class="codebox"><code id="wordpress-example">define( 'WP_REDIS_SCHEME', 'unix' );
+define( 'WP_REDIS_PATH', '/var/lib/orm-instances/demo/redis.sock' );
+define( 'WP_REDIS_DATABASE', 0 );
+define( 'WP_REDIS_PREFIX', 'replace_with_site_prefix:' );</code></pre>
+          <p class="sub">WooCommerce uses the WordPress object cache. Verify checkout, cart, and invalidation behavior before enabling broadly.</p>
+        </details>
+        <details>
+          <summary>LiteSpeed Cache for WordPress</summary>
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy LiteSpeed Cache settings" data-target="litespeed-example" data-label="LiteSpeed Cache">Copy settings</button></div>
+          <pre class="codebox"><code id="litespeed-example">Method: Redis
+Host: /var/lib/orm-instances/demo/redis.sock
+Port: 0
+Redis Database ID: 0
+Password: leave blank (ORM uses socket permissions)</code></pre>
+          <p class="sub">Confirm the selected LiteSpeed Cache and PHP versions support Redis over a Unix socket.</p>
+        </details>
+        <details>
+          <summary>Laravel</summary>
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy Laravel environment settings" data-target="laravel-example" data-label="Laravel">Copy settings</button></div>
+          <pre class="codebox"><code id="laravel-example">REDIS_CLIENT=phpredis
+REDIS_HOST=/var/lib/orm-instances/demo/redis.sock
+REDIS_PORT=0
+REDIS_DB=0</code></pre>
+          <p class="sub">Enable cache, session, queue, or rate-limit use separately in your application.</p>
+        </details>
+        <details>
+          <summary>Magento / Adobe Commerce</summary>
+          <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy Magento connection values" data-target="magento-example" data-label="Magento / Adobe Commerce">Copy values</button></div>
+          <pre class="codebox"><code id="magento-example">server=/var/lib/orm-instances/demo/redis.sock
+port=0
+default_cache_database=0
+page_cache_database=1 (if enabled)
+session_database=2 (if enabled)</code></pre>
+          <p class="sub">Select the release-specific Redis or Valkey command family. Cloud deployments require their deployment configuration workflow.</p>
+        </details>
+        <details>
           <summary>Node.js with node-redis</summary>
           <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy Node.js with node-redis example" data-target="node-example" data-label="Node.js with node-redis">Copy example</button></div>
           <pre class="codebox"><code id="node-example">import { createClient } from 'redis';
@@ -78,7 +116,7 @@ client = redis.Redis(unix_socket_path='/var/lib/orm-instances/demo/redis.sock', 
 client.ping()</code></pre>
         </details>
         <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
-        <p class="notice">Only processes running as this cPanel account can access the socket. TCP is disabled. Confirm your website's PHP runtime can see the socket path if CageFS is enabled.</p>
+        <p class="notice">Only processes running as this cPanel account can access the socket. TCP and Redis AUTH are disabled. These helpers only copy settings; they never edit application files. Confirm PHP socket visibility if CageFS or containers are enabled.</p>
       </section>
     </section>
     <p class="footer">Preview screenshot uses synthetic demo data; no cPanel or Redis service is connected.</p>

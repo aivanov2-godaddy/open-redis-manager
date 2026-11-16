@@ -1,10 +1,10 @@
 # Integration matrix
 
-The reference product documents a broad range of application clients. Open Redis Manager will expose connection details and samples while leaving application-specific cache behavior to each application.
+The reference product documents a broad range of application clients. The authenticated cPanel connection panel now exposes account-specific Unix-socket values and copyable helpers for the application integrations listed below. Helpers do not install clients, edit application files, enable application features, or manage application secrets; owners make those changes through each application's supported configuration path.
 
 Step-by-step connection examples are collected in the [application guides](guides/applications/README.md). They use placeholders and describe integration steps; they do not configure customer applications.
 
-| Integration | Use case | Planned helper |
+| Integration | Use case | Guide and helper |
 |---|---|---|
 | WordPress | Persistent object cache | [Object-cache setup](guides/applications/wordpress.md) |
 | LiteSpeed Cache | WordPress object cache | [LiteSpeed setup and runtime checklist](guides/applications/litespeed-cache.md) |
@@ -17,7 +17,7 @@ Step-by-step connection examples are collected in the [application guides](guide
 | Custom APIs and dashboards | Hot data and repeated computation | [Generic integration checklist](guides/applications/generic-apps.md) |
 | Forums and membership sites | Sessions and repeated lookups | [Generic integration checklist](guides/applications/generic-apps.md) |
 | CRMs and admin applications | Dashboard and record cache | [Generic integration checklist](guides/applications/generic-apps.md) |
-| CloudLinux PHP Selector | Extension visibility per PHP version | Admin checklist for enabling the PHP Redis extension |
+| CloudLinux PHP Selector | Extension visibility per PHP version | [LiteSpeed setup checklist](guides/applications/litespeed-cache.md); administrator must enable the PHP Redis extension for the site's selected runtime |
 | CageFS | User runtime visibility | Admin checklist for refreshing the environment after extension changes |
 | EasyApache | PHP extension packages | Match extension packages to enabled PHP versions |
 | cPanel UAPI | Account-safe user operations | Planned account-scoped API adapter |

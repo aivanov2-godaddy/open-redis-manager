@@ -4,7 +4,7 @@ Screenshots below were captured from the local PHP prototype using sample data a
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo refresh](orm-logo.png) | Red open-orbit cache mark, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
+| [ORM logo redesign](orm-logo.png) | Red isometric cache-stack and control-dial mark, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel setup presets](cpanel-presets.png) | Initial cache setup with five account-safe workload profiles | 1440 × 1000 |
 | [cPanel configuration](cpanel-configuration.png) | Bounded memory, eviction, client and timeout controls with a cache eviction warning | 1440 × 1100 |
@@ -13,7 +13,7 @@ Screenshots below were captured from the local PHP prototype using sample data a
 | [cPanel hourly metrics history](cpanel-metrics-history.png) | Responsive 24-hour hourly memory, client and hit-ratio trends with range selection | 1440 × 1100 |
 | [cPanel diagnostics](orm-diagnostics.png) | Allowlisted support JSON preview, explicit download, and privacy exclusions | 1440 × 1100; [HTML preview](previews/cpanel-diagnostics.html) |
 | [cPanel stale monitoring preview](previews/cpanel-monitoring-stale.html) | Stopped service with last-known metrics, stale marker and 30-day retention explanation | HTML preview; image capture pending |
-| [cPanel connection details](cpanel-connection-details.png) | Private socket path, default database, authentication mode, client examples and copy actions | 1440 × 1200 |
+| [cPanel connection details](cpanel-connection-details.png) | Private socket path, authentication mode, and seven account-specific copyable client/application helpers | 1440 × 2650; [HTML preview](previews/connection-details.html) |
 | [WHM fleet](whm-fleet.png) | Root-only account inventory with service and per-account snapshot controls | 1440 × 1100 |
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
