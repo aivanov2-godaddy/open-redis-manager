@@ -70,6 +70,7 @@ prepare_installation() {
         printf '%s|%s|%s|%s\n' "$key" "$mode" "$digest" "$target" >>"$target_manifest"
     done <"$repo_root/packaging/release-install-map.txt"
     chmod 0600 "$target_manifest"
+    mkdir -p "$root/etc/orm-instances" "$root/var/lib/orm-instances/send" "$root/var/cpanel/orm"
     printf 'account-state-fixture\n' >"$root/etc/orm-instances/send.json"
     printf 'redis-rdb-fixture\n' >"$root/var/lib/orm-instances/send/dump.rdb"
     printf 'podman\n' >"$root/var/cpanel/orm/provider-backend-policy"
