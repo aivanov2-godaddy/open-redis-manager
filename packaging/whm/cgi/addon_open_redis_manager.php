@@ -291,23 +291,11 @@ WHM::header('Open Redis Manager', 0, 0);
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
-  <defs>
-    <linearGradient id="orm-red" x1="26" y1="18" x2="226" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#E94337"/><stop offset=".52" stop-color="#E2362B"/><stop offset="1" stop-color="#C92319"/></linearGradient>
-    <linearGradient id="orm-face" x1="76" y1="74" x2="179" y2="203" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F5F7FB"/></linearGradient>
-    <linearGradient id="orm-channel" x1="83" y1="120" x2="173" y2="184" gradientUnits="userSpaceOnUse"><stop stop-color="#F5A19A"/><stop offset="1" stop-color="#D92D20"/></linearGradient>
-  </defs>
-  <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
-  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
-  <path d="M69 165C47 139 59 103 89 78c28-23 66-32 97-21M187 91c23 27 13 61-17 86-27 22-63 33-94 25" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
-  <circle cx="76" cy="68" r="7" fill="#fff"/><circle cx="184" cy="191" r="7" fill="#fff"/>
-  <path d="m128 54 62 36-62 36-62-36 62-36Z" fill="url(#orm-face)"/>
-  <path d="m128 68 38 22-38 22-38-22 38-22Z" fill="url(#orm-red)"/>
-  <path d="m128 79 19 11-19 11-19-11 19-11Z" fill="#fff" fill-opacity=".95"/><circle cx="128" cy="90" r="4" fill="#D92D20"/>
-  <path d="m66 103 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
-  <path d="m82 127 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
-  <path d="m66 138 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
-  <path d="m82 162 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
-  <path d="M174 71c9 5 16 10 21 17" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5"/><circle cx="197" cy="93" r="5" fill="#fff"/>
+  <defs><linearGradient id="orm-title-red" x1="24" y1="18" x2="230" y2="242" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-title-red)"/>
+  <path d="M66 55h81c47 0 76 25 76 64 0 28-16 49-43 59l45 36h-54l-39-31h-19v31H66V55Zm47 39v53h31c20 0 32-10 32-27s-12-26-32-26h-31Z" fill="#fff" fill-rule="evenodd" clip-rule="evenodd"/>
+  <path d="M67 91h36M67 126h36M67 161h36" fill="none" stroke="#B51F1A" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="158" cy="120" r="7" fill="#fff"/><circle cx="158" cy="120" r="2.5" fill="#D72D24"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
