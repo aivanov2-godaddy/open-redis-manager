@@ -493,6 +493,7 @@ ok($manager->start($account)->{success}, 'start the test instance again after th
     }
     my $redis_manifest_json = JSON::PP->new->canonical(1)->encode($manifest) . "\n";
     $manifest->{backend} = 'valkey';
+    local $manager->{binary_probe} = sub { return 1; };
     open(my $valkey_manifest_handle, '>', $manifest_path) or die "write Valkey diagnostics manifest fixture: $!";
     print {$valkey_manifest_handle} JSON::PP->new->canonical(1)->encode($manifest) . "\n";
     close($valkey_manifest_handle) or die "close Valkey diagnostics manifest fixture: $!";
@@ -520,6 +521,8 @@ ok($manager->start($account)->{success}, 'start the test instance again after th
         data_root => $data_instances,
         policy => $policy,
         expected_owner_uid => $<,
+        binary_paths => { redis => ['/usr/bin/redis-server'], valkey => ['/usr/bin/valkey-server'] },
+        binary_probe => sub { return $_[0] eq 'redis'; },
         systemctl_call => sub { return (1, 'active'); },
         redis_cli_call => sub {
             my ($backend, $socket, @arguments) = @_;

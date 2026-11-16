@@ -229,8 +229,7 @@ sub read_diagnostics {
 
     my $manifest = $self->_read_manifest($account);
     return _failure('diagnostics_unavailable') if ref($manifest) ne 'HASH'
-        || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/
-        || ($manifest->{socket} // '') !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+        || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
 
     my $backend = $manifest->{backend};
     my $socket = $manifest->{socket};
