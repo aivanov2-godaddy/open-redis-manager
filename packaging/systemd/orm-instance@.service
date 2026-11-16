@@ -1,6 +1,7 @@
 [Unit]
 Description=Open Redis Manager cache instance for %i
 After=local-fs.target
+Wants=orm-metrics-collect@%i.timer
 ConditionPathIsDirectory=/var/lib/orm-instances/%i
 ConditionPathExists=/etc/orm-instances/%i/manifest.json
 

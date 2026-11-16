@@ -1,7 +1,8 @@
 package Orm::Broker::InstanceManager;
 use strict;
 use warnings;
-use Fcntl qw(O_RDONLY O_WRONLY O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
+use Errno qw(ENOENT);
+use Fcntl qw(O_RDONLY O_WRONLY O_RDWR O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
 use JSON::PP ();
 use POSIX qw(WNOHANG _exit setgid setuid);
@@ -23,6 +24,8 @@ my %RDB_CHECK_BINARIES = (
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
+my $MAX_METRICS_HISTORY_SAMPLES = 720;
+my $MAX_METRICS_HISTORY_BYTES = 262144;
 my $MAX_BACKUPS_PER_ACCOUNT = 3;
 my $MAX_BACKUP_BYTES = 128 * 1024 * 1024;
 my $BACKUP_TIMEOUT_SECONDS = 60;
@@ -75,12 +78,13 @@ sub new {
 }
 
 sub dispatch {
-    my ($self, $operation, $account, $preset, $settings, $backup_id) = @_;
+    my ($self, $operation, $account, $preset, $settings, $backup_id, $metrics_range) = @_;
     return _failure('not_authorized') if ref($account) ne 'HASH';
     return _failure('invalid_request') if !_valid_account($account);
 
     return $self->status($account) if $operation eq 'instance.status';
     return $self->metrics($account) if $operation eq 'instance.metrics';
+    return $self->metrics_history($account, $metrics_range) if $operation eq 'metrics.history';
     return $self->backups($account) if $operation eq 'backup.list';
     return $self->create_backup($account) if $operation eq 'backup.create';
     return $self->restore_backup($account, $backup_id) if $operation eq 'backup.restore';
@@ -381,6 +385,7 @@ sub metrics {
         return $stale if $stale;
         return _failure(!$active && ($state eq 'inactive' || $state eq 'failed') ? 'not_running' : 'instance_unavailable');
     }
+    $self->_ensure_metrics_timer($account);
 
     my $info;
     if (ref($self->{metrics_probe}) eq 'CODE') {
@@ -401,9 +406,39 @@ sub metrics {
     }
     my $sample = { %metrics, sampled_at => time };
     my $retained = $self->_write_metrics_snapshot($account, $sample);
+    $self->_write_metrics_history($account, $sample);
     return {
         %{$sample}, retained => $retained ? JSON::PP::true : JSON::PP::false,
         stale => JSON::PP::false, success => JSON::PP::true, version => 1,
+    };
+}
+
+sub metrics_history {
+    my ($self, $account, $range) = @_;
+    return _failure('invalid_request') if !defined($range) || ref($range) || $range !~ /\A(?:24h|7d)\z/;
+    return _failure('not_configured') if !$self->_read_manifest($account);
+    my $lock = $self->_metrics_history_lock($account);
+    return _failure('metrics_history_unavailable') if !defined($lock);
+    my $history = $self->_read_metrics_history_locked($account);
+    close($lock);
+    return _failure('metrics_history_unavailable') if ref($history) ne 'ARRAY';
+
+    my $range_seconds = $range eq '24h' ? 24 * 60 * 60 : 7 * 24 * 60 * 60;
+    my $cutoff = time - $range_seconds;
+    my @samples = grep { $_->{sampled_at} >= $cutoff } @{$history};
+    my $maximum = $range eq '24h' ? 24 : 168;
+    @samples = @samples[@samples - $maximum .. $#samples] if @samples > $maximum;
+    my @series = map {
+        my $sample = $_;
+        { map { $_ => 0 + $sample->{$_} } qw(sampled_at memory_used_bytes connected_clients keyspace_hits keyspace_misses) }
+    } @samples;
+    my ($timer_active, $timer_state) = $self->_systemctl('is-active', $self->_metrics_timer_unit($account->{name}));
+    return {
+        history => \@series,
+        range => $range,
+        scheduled => $timer_active && $timer_state eq 'active' ? JSON::PP::true : JSON::PP::false,
+        success => JSON::PP::true,
+        version => 1,
     };
 }
 
@@ -949,6 +984,128 @@ sub _write_metrics_snapshot {
     my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'metrics.json');
     my $snapshot = JSON::PP->new->canonical(1)->encode($sample) . "\n";
     return $self->_atomic_write($path, $snapshot, 0600, $self->{expected_owner_uid}, $self->{expected_owner_uid});
+}
+
+sub _metrics_timer_unit {
+    my ($self, $account_name) = @_;
+    return 'orm-metrics-collect@' . $account_name . '.timer';
+}
+
+sub _ensure_metrics_timer {
+    my ($self, $account) = @_;
+    return 0 if !_valid_account($account);
+    my $unit = $self->_metrics_timer_unit($account->{name});
+    my ($active, $state) = $self->_systemctl('is-active', $unit);
+    return 1 if $active && $state eq 'active';
+    my ($started) = $self->_systemctl('start', $unit);
+    ($active, $state) = $self->_systemctl('is-active', $unit) if $started;
+    return $started && $active && $state eq 'active' ? 1 : 0;
+}
+
+sub _metrics_history_lock {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $directory = $self->_account_config_dir($account->{name});
+    my @directory_stat = lstat($directory);
+    return undef if !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $directory_stat[4] != $self->{expected_owner_uid}
+        || $directory_stat[5] != $account->{gid} || ($directory_stat[2] & 0027) != 0;
+    my $path = File::Spec->catfile($directory, 'metrics-history.lock');
+    my $lock;
+    return undef if !sysopen($lock, $path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+    my @path_stat = lstat($path);
+    my @file_stat = stat($lock);
+    if (!@path_stat || !@file_stat || !S_ISREG($file_stat[2])
+        || $file_stat[0] != $path_stat[0] || $file_stat[1] != $path_stat[1]
+        || $file_stat[4] != $self->{expected_owner_uid} || $file_stat[5] != $self->{expected_owner_uid}
+        || $file_stat[3] != 1 || ($file_stat[2] & 0777) != 0600
+        || !flock($lock, LOCK_EX | LOCK_NB)) {
+        close($lock);
+        return undef;
+    }
+    return $lock;
+}
+
+sub _write_metrics_history {
+    my ($self, $account, $sample) = @_;
+    return 0 if ref($sample) ne 'HASH'
+        || !_valid_metrics({ map { $_ => $sample->{$_} } @METRIC_FIELDS })
+        || !defined($sample->{sampled_at}) || ref($sample->{sampled_at})
+        || $sample->{sampled_at} !~ /\A[0-9]{1,10}\z/;
+    my $lock = $self->_metrics_history_lock($account);
+    return 0 if !defined($lock);
+    my $history = $self->_read_metrics_history_locked($account);
+    if (ref($history) ne 'ARRAY') {
+        close($lock);
+        return 0;
+    }
+    my $cutoff = time - $MAX_METRICS_AGE_SECONDS;
+    @{$history} = grep { $_->{sampled_at} >= $cutoff } @{$history};
+    my %stored = map { $_ => 0 + $sample->{$_} } (@METRIC_FIELDS, 'sampled_at');
+    my $bucket = int($stored{sampled_at} / 3600);
+    if (@{$history}) {
+        my $last_bucket = int($history->[-1]->{sampled_at} / 3600);
+        if ($bucket < $last_bucket) {
+            close($lock);
+            return 1;
+        }
+        if ($bucket == $last_bucket) {
+            $history->[-1] = \%stored;
+        } else {
+            push @{$history}, \%stored;
+        }
+    } else {
+        push @{$history}, \%stored;
+    }
+    shift @{$history} while @{$history} > $MAX_METRICS_HISTORY_SAMPLES;
+    my $encoded = JSON::PP->new->canonical(1)->encode($history) . "\n";
+    my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'metrics-history.json');
+    my $saved = length($encoded) <= $MAX_METRICS_HISTORY_BYTES
+        && $self->_atomic_write($path, $encoded, 0600, $self->{expected_owner_uid}, $self->{expected_owner_uid});
+    close($lock);
+    return $saved ? 1 : 0;
+}
+
+sub _read_metrics_history_locked {
+    my ($self, $account) = @_;
+    my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'metrics-history.json');
+    my @path_stat = lstat($path);
+    if (!@path_stat) {
+        return [] if $! == ENOENT;
+        return undef;
+    }
+    return undef if !S_ISREG($path_stat[2])
+        || $path_stat[4] != $self->{expected_owner_uid} || $path_stat[5] != $self->{expected_owner_uid}
+        || $path_stat[3] != 1 || ($path_stat[2] & 0777) != 0600
+        || $path_stat[7] > $MAX_METRICS_HISTORY_BYTES;
+    my $handle;
+    return undef if !sysopen($handle, $path, O_RDONLY | O_NOFOLLOW);
+    my @opened = stat($handle);
+    if (!@opened || $opened[0] != $path_stat[0] || $opened[1] != $path_stat[1]
+        || !S_ISREG($opened[2]) || $opened[4] != $self->{expected_owner_uid}
+        || $opened[5] != $self->{expected_owner_uid} || $opened[3] != 1
+        || ($opened[2] & 0777) != 0600 || $opened[7] > $MAX_METRICS_HISTORY_BYTES) {
+        close($handle);
+        return undef;
+    }
+    my $json = '';
+    my $read = read($handle, $json, $MAX_METRICS_HISTORY_BYTES + 1);
+    my $closed = close($handle);
+    return undef if !defined($read) || !$closed || length($json) > $MAX_METRICS_HISTORY_BYTES || $json !~ /\n\z/;
+    my $history = eval { JSON::PP->new->decode(substr($json, 0, -1)) };
+    return undef if ref($history) ne 'ARRAY' || @{$history} > $MAX_METRICS_HISTORY_SAMPLES;
+    my $previous_bucket = -1;
+    for my $sample (@{$history}) {
+        return undef if ref($sample) ne 'HASH'
+            || join(',', sort keys %{$sample}) ne join(',', sort(@METRIC_FIELDS, 'sampled_at'))
+            || !_valid_metrics({ map { $_ => $sample->{$_} } @METRIC_FIELDS })
+            || !defined($sample->{sampled_at}) || ref($sample->{sampled_at})
+            || $sample->{sampled_at} !~ /\A[0-9]{1,10}\z/ || $sample->{sampled_at} > time + 300;
+        my $bucket = int($sample->{sampled_at} / 3600);
+        return undef if $bucket <= $previous_bucket;
+        $previous_bucket = $bucket;
+    }
+    return $history;
 }
 
 sub _read_metrics_snapshot {

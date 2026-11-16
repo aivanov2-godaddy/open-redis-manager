@@ -24,6 +24,9 @@ ORM_INSTANCE_ROOT=/etc/orm-instances
 ORM_INSTANCE_DATA=/var/lib/orm-instances
 ORM_INSTANCE_UNIT=/etc/systemd/system/orm-instance@.service
 ORM_INSTANCE_LAUNCHER="$ORM_3RDPARTY/bin/orm-instance-launcher"
+ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
+ORM_METRICS_SERVICE=/etc/systemd/system/orm-metrics-collect@.service
+ORM_METRICS_TIMER=/etc/systemd/system/orm-metrics-collect@.timer
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
@@ -70,6 +73,7 @@ orm_install_paths_are_clear() {
         "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" \
         "$ORM_BROKER_BIN" \
         "$ORM_INSTANCE_LAUNCHER" \
+        "$ORM_METRICS_COLLECTOR" \
         "$ORM_BROKER_LIB/AccountResolver.pm" \
         "$ORM_BROKER_LIB/BackendPolicy.pm" \
         "$ORM_BROKER_LIB/Handler.pm" \
@@ -80,6 +84,8 @@ orm_install_paths_are_clear() {
         "$ORM_BROKER_LIB/Server.pm" \
         "$ORM_BROKER_UNIT" \
         "$ORM_INSTANCE_UNIT" \
+        "$ORM_METRICS_SERVICE" \
+        "$ORM_METRICS_TIMER" \
         "$ORM_APPCONFIG"; do
         [[ ! -e "$path" && ! -L "$path" ]] || orm_die "refusing to overwrite existing path: $path"
     done
@@ -150,6 +156,7 @@ $ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php|$ORM_3RDPARTY/src/Orm/Cpanel
 $ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php|$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php
 $ORM_REPO_ROOT/bin/orm-broker.pl|$ORM_BROKER_BIN
 $ORM_REPO_ROOT/bin/orm-instance-launcher.pl|$ORM_INSTANCE_LAUNCHER
+$ORM_REPO_ROOT/bin/orm-metrics-collect.pl|$ORM_METRICS_COLLECTOR
 $ORM_REPO_ROOT/src/Orm/Broker/AccountResolver.pm|$ORM_BROKER_LIB/AccountResolver.pm
 $ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm|$ORM_BROKER_LIB/BackendPolicy.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Handler.pm|$ORM_BROKER_LIB/Handler.pm
@@ -160,6 +167,8 @@ $ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm|$ORM_BROKER_LIB/Protocol.pm
 $ORM_REPO_ROOT/src/Orm/Broker/Server.pm|$ORM_BROKER_LIB/Server.pm
 $ORM_PACKAGE_ROOT/systemd/orm-broker.service|$ORM_BROKER_UNIT
 $ORM_PACKAGE_ROOT/systemd/orm-instance@.service|$ORM_INSTANCE_UNIT
+$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service|$ORM_METRICS_SERVICE
+$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer|$ORM_METRICS_TIMER
 EOF
 }
 

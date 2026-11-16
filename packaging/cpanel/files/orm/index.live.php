@@ -60,6 +60,10 @@ $canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceS
 $liveMetrics = $canRequestMetrics
     ? $instanceClient->request('instance.metrics')
     : null;
+$historyRange = is_string($_GET['orm_metrics_range'] ?? null) && in_array($_GET['orm_metrics_range'], ['24h', '7d'], true)
+    ? $_GET['orm_metrics_range']
+    : '24h';
+$metricsHistory = $canRequestMetrics ? $instanceClient->metricsHistory($historyRange) : null;
 $canRequestBackups = $brokerVerified && is_array($instanceStatus) && ($instanceStatus['success'] ?? false) === true
     && ($instanceStatus['state'] ?? null) !== 'not_configured';
 $backupList = $canRequestBackups ? $instanceClient->request('backup.list') : null;
@@ -124,6 +128,39 @@ $hitRatio = $hasLiveMetrics && $hitCount > 0
     : 'No lookups yet';
 $uptimeDays = $hasLiveMetrics ? intdiv($liveMetrics['uptime_seconds'], 86400) : 0;
 $uptimeHours = $hasLiveMetrics ? intdiv($liveMetrics['uptime_seconds'] % 86400, 3600) : 0;
+$renderHistoryChart = static function (array $samples, string $field, string $label, string $color, bool $ratio = false) use ($formatBytes): void {
+    $values = array_map(static function (array $sample) use ($field, $ratio): int|float {
+        if ($ratio) {
+            $lookups = $sample['keyspace_hits'] + $sample['keyspace_misses'];
+            return $lookups > 0 ? ($sample['keyspace_hits'] / $lookups) * 100 : 0;
+        }
+        return $sample[$field];
+    }, $samples);
+    $maximum = max($values ?: [0]);
+    $minimum = min($values ?: [0]);
+    $span = max(1, $maximum - $minimum);
+    $lastIndex = max(1, count($values) - 1);
+    $points = [];
+    foreach ($values as $index => $value) {
+        $x = 8 + ($index / $lastIndex) * 284;
+        $y = 8 + (1 - (($value - $minimum) / $span)) * 64;
+        $points[] = number_format($x, 1, '.', '') . ',' . number_format($y, 1, '.', '');
+    }
+    $lastValue = $values === [] ? 0 : (float) end($values);
+    $formatted = $ratio ? number_format($lastValue, 1) . '%'
+        : ($field === 'memory_used_bytes' ? $formatBytes((int) $lastValue) : number_format($lastValue));
+    ?>
+    <article class="orm-history-chart" aria-label="<?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> history">
+      <h4><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
+      <strong><?= htmlspecialchars($formatted, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>
+      <svg viewBox="0 0 300 88" role="img" aria-label="<?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> trend, <?= count($samples) ?> hourly samples">
+        <path d="M8 80H292M8 44H292M8 8H292" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+        <?php if ($points !== []): ?><polyline points="<?= htmlspecialchars(implode(' ', $points), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" fill="none" stroke="<?= htmlspecialchars($color, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><?php endif; ?>
+      </svg>
+      <span><?= count($samples) ?> hourly samples</span>
+    </article>
+    <?php
+};
 $stateClass = match ($instanceStatus['state'] ?? null) {
     'running' => 'is-running',
     'starting', 'stopping' => 'is-pending',
@@ -176,6 +213,17 @@ try {
         .orm-metric-value { display: block; margin-top: 8px; color: #172235; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
         .orm-metrics-note { color: #59677c; font-size: 13px; }
         .orm-metrics-note.is-stale { padding: 10px 12px; border-left: 3px solid #b77813; border-radius: 4px; background: #fff6e5; color: #714b0b; }
+        .orm-history { margin: 22px 0 18px; }
+        .orm-history-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+        .orm-history-ranges { display: inline-flex; gap: 6px; }
+        .orm-history-ranges a { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 7px; color: #263b57; text-decoration: none; }
+        .orm-history-ranges a[aria-current="true"] { border-color: #2855d9; background: #2855d9; color: #fff; }
+        .orm-history-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .orm-history-chart { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+        .orm-history-chart h4 { margin: 0 0 8px; color: #59677c; font-size: 13px; font-weight: 600; }
+        .orm-history-chart strong { font-size: 20px; }
+        .orm-history-chart svg { display: block; width: 100%; margin-top: 8px; }
+        .orm-history-chart span { color: #59677c; font-size: 12px; }
         .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
@@ -208,7 +256,7 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } }
       </style>
-      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 64 64" aria-hidden="true"><rect x="1" y="1" width="62" height="62" rx="17" fill="#D92D20"/><g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.2"><path d="M32 10 49 19 32 28 15 19 32 10Z"/><path d="M15 19v8l17 9 17-9v-8"/><path d="M15 28v8l17 9 17-9v-8"/><path d="M15 37v4l17 9 17-9v-4"/></g><g fill="#FFFFFF"><circle cx="21" cy="23" r="1.6"/><circle cx="21" cy="32" r="1.6"/><circle cx="21" cy="41" r="1.6"/></g></svg>Open Redis Manager</h1>
+      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="ormBrandRed" x1="12" y1="10" x2="112" y2="118"><stop stop-color="#EF382B"/><stop offset="1" stop-color="#C91E16"/></linearGradient></defs><rect x="2" y="2" width="124" height="124" rx="34" fill="url(#ormBrandRed)"/><path d="M17 36c0-10.5 8.5-19 19-19h56c10.5 0 19 8.5 19 19v56c0 10.5-8.5 19-19 19H36c-10.5 0-19-8.5-19-19V36Z" fill="#FFF" fill-opacity=".035" stroke="#FFF" stroke-opacity=".16" stroke-width="2"/><g stroke="#FFF" stroke-linecap="round" stroke-linejoin="round"><path d="m64 27 34 19-34 19-34-19 34-19Z" fill="#FFF" stroke-width="4"/><path d="m30 46 34 19 34-19v13L64 79 30 59V46Zm0 17 34 19 34-19v13L64 96 30 76V63Zm0 17 34 19 34-19v4L64 104 30 84v-4Z" fill="#FFF" stroke-width="3"/><path d="M30 46v38l34 20 34-20V46" fill="none" stroke-width="4"/></g><g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".62" stroke-width="2.5"><path d="m31 59 33 19 33-19"/><path d="m31 76 33 19 33-19"/></g><g fill="#D92D20"><circle cx="40" cy="53" r="3.2"/><circle cx="40" cy="70" r="3.2"/><circle cx="40" cy="86" r="3.2"/></g><g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-width="2.5"><path d="M47 53h10M47 70h10M47 86h10"/></g></svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
@@ -249,11 +297,32 @@ try {
                     <strong><?= $liveMetrics['stale'] ? 'Stale sample' : 'Current sample' ?>.</strong>
                     Captured <?= htmlspecialchars(gmdate('Y-m-d H:i:s', $liveMetrics['sampled_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC.
                     <?php if ($liveMetrics['stale'] || $liveMetrics['retained']): ?>
-                      This latest sample is saved for up to 30 days; no history is stored.
+                      This latest sample is saved for up to 30 days.
                     <?php else: ?>
-                      This live sample could not be saved for fallback use. No history is stored.
+                      This live sample could not be saved for fallback use.
                     <?php endif; ?>
                   </p>
+                  <div class="orm-history">
+                    <div class="orm-history-header">
+                      <h4>Hourly history</h4>
+                      <nav class="orm-history-ranges" aria-label="Metrics history range">
+                        <a href="?orm_metrics_range=24h"<?= $historyRange === '24h' ? ' aria-current="true"' : '' ?>>24 hours</a>
+                        <a href="?orm_metrics_range=7d"<?= $historyRange === '7d' ? ' aria-current="true"' : '' ?>>7 days</a>
+                      </nav>
+                    </div>
+                    <?php if (is_array($metricsHistory) && ($metricsHistory['success'] ?? false) === true && $metricsHistory['history'] !== []): ?>
+                      <div class="orm-history-grid">
+                        <?php $renderHistoryChart($metricsHistory['history'], 'memory_used_bytes', 'Memory used', '#d92d20'); ?>
+                        <?php $renderHistoryChart($metricsHistory['history'], 'connected_clients', 'Connected clients', '#317a9d'); ?>
+                        <?php $renderHistoryChart($metricsHistory['history'], 'keyspace_hits', 'Cache hit ratio', '#16804a', true); ?>
+                      </div>
+                      <p class="orm-metrics-note" role="status">Hourly samples are collected while your cache is running and kept for up to 30 days.</p>
+                    <?php elseif (is_array($metricsHistory) && ($metricsHistory['success'] ?? false) === true): ?>
+                      <p class="orm-metrics-note" role="status">No hourly samples are available for this range yet. Collection runs while your cache is active<?= $metricsHistory['scheduled'] ? '.' : '; scheduled collection is currently unavailable.' ?></p>
+                    <?php else: ?>
+                      <p class="orm-metrics-note" role="status">Hourly history is temporarily unavailable. The current usage sample is shown above when available.</p>
+                    <?php endif; ?>
+                  </div>
                 <?php else: ?>
                   <p class="orm-metrics-note" role="status">No recent usage sample is available. ORM could not return live metrics or a saved sample.</p>
                 <?php endif; ?>

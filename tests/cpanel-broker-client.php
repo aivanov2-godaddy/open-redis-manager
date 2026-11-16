@@ -84,6 +84,39 @@ $badStaleMetrics = new BrokerClient(static fn (string $request): string =>
     "{\"commands_per_second\":12,\"connected_clients\":3,\"keyspace_hits\":90,\"keyspace_misses\":10,\"memory_peak_bytes\":2097152,\"memory_used_bytes\":1048576,\"retained\":true,\"sampled_at\":\"1794760000\",\"stale\":1,\"success\":true,\"uptime_seconds\":3600,\"version\":1}\n"
 );
 $assert($badStaleMetrics->request('instance.metrics') === null, 'Reject malformed timestamp and stale marker types.');
+$historyRequests = [];
+$historySamples = [
+    ['sampled_at' => 1794760000, 'memory_used_bytes' => 1048576, 'connected_clients' => 2, 'keyspace_hits' => 9, 'keyspace_misses' => 1],
+    ['sampled_at' => 1794763600, 'memory_used_bytes' => 2097152, 'connected_clients' => 3, 'keyspace_hits' => 19, 'keyspace_misses' => 1],
+];
+$historyClient = new BrokerClient(static function (string $request) use (&$historyRequests, $historySamples): string {
+    $historyRequests[] = $request;
+    return json_encode(['history' => $historySamples, 'range' => '24h', 'scheduled' => true, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n";
+});
+$history = $historyClient->metricsHistory('24h');
+$assert($history['history'] === $historySamples && $history['scheduled'] === true,
+    'Parse a bounded hourly history response.');
+$assert($historyRequests[0] === "{\"operation\":\"metrics.history\",\"range\":\"24h\",\"version\":1}\n",
+    'Send the canonical selected history range without account identifiers.');
+$assert($historyClient->metricsHistory('30d') === null, 'Reject unsupported history ranges before broker I/O.');
+$assert(count($historyRequests) === 1, 'Do not send an invalid history range to the broker.');
+$wrongHistoryRange = new BrokerClient(static fn (string $request): string =>
+    "{\"history\":[],\"range\":\"7d\",\"scheduled\":true,\"success\":true,\"version\":1}\n"
+);
+$assert($wrongHistoryRange->metricsHistory('24h') === null, 'Reject a history response for a different requested range.');
+$unorderedHistory = new BrokerClient(static fn (string $request): string =>
+    json_encode(['history' => [$historySamples[1], $historySamples[0]], 'range' => '24h', 'scheduled' => true, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n"
+);
+$assert($unorderedHistory->metricsHistory('24h') === null, 'Reject history points that are not strictly time ordered.');
+$oversizedHistory = new BrokerClient(static function (string $request): string {
+    $samples = array_fill(0, 25, ['sampled_at' => 1794760000, 'memory_used_bytes' => 1, 'connected_clients' => 1, 'keyspace_hits' => 1, 'keyspace_misses' => 1]);
+    return json_encode(['history' => $samples, 'range' => '24h', 'scheduled' => true, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n";
+});
+$assert($oversizedHistory->metricsHistory('24h') === null, 'Reject more hourly samples than the selected range can contain.');
+$badHistoryValue = new BrokerClient(static fn (string $request): string =>
+    "{\"history\":[{\"sampled_at\":1794760000,\"memory_used_bytes\":-1,\"connected_clients\":1,\"keyspace_hits\":1,\"keyspace_misses\":1}],\"range\":\"24h\",\"scheduled\":true,\"success\":true,\"version\":1}\n"
+);
+$assert($badHistoryValue->metricsHistory('24h') === null, 'Reject negative hourly history values.');
 $backupId = 'snapshot-1794760000-a1b2c3d4.rdb';
 $backupRow = ['created_at' => 1794760000, 'id' => $backupId, 'size_bytes' => 4096];
 $backupRequests = [];

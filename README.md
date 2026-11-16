@@ -2,9 +2,9 @@
 
 <p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager logo"></p>
 
-An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, read-only connection guidance, WHM backend discovery, and root-only per-account service controls. Production readiness still requires live cPanel validation.
+An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, hourly usage history, account-level backups and restore, read-only connection guidance, WHM backend discovery, and root-only per-account service controls. Production readiness still requires live cPanel validation.
 
-> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed account-scoped broker for initialization, status, live metrics, bounded configuration, start and stop. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
+> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed account-scoped broker for initialization, status, live and hourly metrics, bounded configuration, start/stop, and account backups with restore. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
 
 ## What is here
 
@@ -12,6 +12,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 - cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
+- The original ORM red cache mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg) and used across the README, cPanel, and WHM surfaces.
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
 - An implementation roadmap and GitHub issue drafts in [`project/`](project/).
 

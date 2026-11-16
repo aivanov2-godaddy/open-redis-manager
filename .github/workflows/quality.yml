@@ -30,7 +30,7 @@ jobs:
         run: python tests/cpanel-live-smoke.py --help >/dev/null
       - name: Check broker Perl syntax and tests
         run: |
-          for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl; do perl -I src -c "$file"; done
+          for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl; do perl -I src -c "$file"; done
           prove -I src tests/*.t
       - name: Check cPanel broker client
         run: php tests/cpanel-broker-client.php
@@ -40,5 +40,7 @@ jobs:
         run: php tests/session-request-guard.php
       - name: Stage instance launcher for systemd unit verification
         run: sudo install -D -m 0755 bin/orm-instance-launcher.pl /usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher
+      - name: Stage metrics collector for systemd unit verification
+        run: sudo install -D -m 0755 bin/orm-metrics-collect.pl /usr/local/cpanel/3rdparty/orm/bin/orm-metrics-collect.pl
       - name: Verify ORM systemd units
-        run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service
+        run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service packaging/systemd/orm-metrics-collect@.service packaging/systemd/orm-metrics-collect@.timer

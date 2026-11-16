@@ -9,10 +9,11 @@ use Throwable;
 final class BrokerClient
 {
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
-    private const MAX_RESPONSE_BYTES = 4096;
+    private const MAX_RESPONSE_BYTES = 40960;
     private const OPERATIONS = [
         'instance.status',
         'instance.metrics',
+        'metrics.history',
         'instance.provision',
         'instance.configure',
         'instance.start',
@@ -35,7 +36,7 @@ final class BrokerClient
     }
 
     /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
-    public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null): ?array
+    public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null, ?string $range = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
             return null;
@@ -54,6 +55,10 @@ final class BrokerClient
             || ($backupId !== null && !self::validBackupId($backupId))) {
             return null;
         }
+        if (($operation === 'metrics.history') !== ($range !== null)
+            || ($range !== null && !in_array($range, ['24h', '7d'], true))) {
+            return null;
+        }
 
         if ($config !== null) {
             $payload = [
@@ -70,6 +75,8 @@ final class BrokerClient
                 'operation' => $operation,
                 'version' => 1,
             ];
+        } elseif ($operation === 'metrics.history') {
+            $payload = ['operation' => $operation, 'range' => $range, 'version' => 1];
         } else {
             $payload = $preset === null
                 ? ['operation' => $operation, 'version' => 1]
@@ -129,6 +136,37 @@ final class BrokerClient
                     && $decoded['state'] === 'running'
                     ? $decoded
                     : null;
+            }
+            if ($operation === 'metrics.history') {
+                $keys = array_keys($decoded);
+                sort($keys);
+                if ($keys !== ['history', 'range', 'scheduled', 'success', 'version']
+                    || ($decoded['range'] ?? null) !== $range || !is_bool($decoded['scheduled'] ?? null)
+                    || !is_array($decoded['history'] ?? null) || !array_is_list($decoded['history'])
+                    || count($decoded['history']) > ($range === '24h' ? 24 : 168)) {
+                    return null;
+                }
+                $previousTimestamp = 0;
+                foreach ($decoded['history'] as $sample) {
+                    if (!is_array($sample)) {
+                        return null;
+                    }
+                    $sampleKeys = array_keys($sample);
+                    sort($sampleKeys);
+                    if ($sampleKeys !== ['connected_clients', 'keyspace_hits', 'keyspace_misses', 'memory_used_bytes', 'sampled_at']) {
+                        return null;
+                    }
+                    foreach (['sampled_at', 'memory_used_bytes', 'connected_clients', 'keyspace_hits', 'keyspace_misses'] as $field) {
+                        if (!is_int($sample[$field]) || $sample[$field] < 0 || $sample[$field] > 9_000_000_000_000_000) {
+                            return null;
+                        }
+                    }
+                    if ($sample['sampled_at'] > 9_999_999_999 || $sample['sampled_at'] <= $previousTimestamp) {
+                        return null;
+                    }
+                    $previousTimestamp = $sample['sampled_at'];
+                }
+                return $decoded;
             }
             if (in_array('memory_used_bytes', $keys, true)) {
                 $metricKeys = ['commands_per_second', 'connected_clients', 'keyspace_hits', 'keyspace_misses',
@@ -210,6 +248,7 @@ final class BrokerClient
                 'configuration_uncertain',
                 'backup_failed', 'backup_invalid', 'backup_in_progress', 'backup_retention_failed',
                 'backup_storage_unavailable',
+                'metrics_history_unavailable',
             ], true)) {
             return null;
         }
@@ -257,6 +296,12 @@ final class BrokerClient
     public function restoreBackup(string $backupId): ?array
     {
         return $this->request('backup.restore', null, null, $backupId);
+    }
+
+    /** @return array{success:bool,version:int,range:string,scheduled:bool,history:list<array{sampled_at:int,memory_used_bytes:int,connected_clients:int,keyspace_hits:int,keyspace_misses:int}>}|null */
+    public function metricsHistory(string $range): ?array
+    {
+        return $this->request('metrics.history', null, null, null, $range);
     }
 
     /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string}>}|null */
