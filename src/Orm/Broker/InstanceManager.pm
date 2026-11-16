@@ -430,7 +430,7 @@ sub metrics_history {
     @samples = @samples[@samples - $maximum .. $#samples] if @samples > $maximum;
     my @series = map {
         my $sample = $_;
-        { map { $_ => 0 + $sample->{$_} } qw(sampled_at memory_used_bytes connected_clients keyspace_hits keyspace_misses) }
+        +{ map { $_ => 0 + $sample->{$_} } qw(sampled_at memory_used_bytes connected_clients keyspace_hits keyspace_misses) }
     } @samples;
     my ($timer_active, $timer_state) = $self->_systemctl('is-active', $self->_metrics_timer_unit($account->{name}));
     return {
