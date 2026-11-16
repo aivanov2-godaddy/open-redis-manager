@@ -232,8 +232,9 @@ orm_installed_files_match_current_package() {
 }
 
 orm_validate_install_manifest() {
-    local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner header version records_start recorded_target extra
-    local -A recorded=() expected=()
+    local manifest="$1" validation_mode="${2:-strict}" key source target mode expected_digest actual_digest owner manifest_mode file_owner file_mode header version records_start recorded_target extra expected_target expected_mode
+    local -A recorded=() expected=() expected_targets=()
+    [[ "$validation_mode" == strict || "$validation_mode" == allow-known-subset ]] || return 1
     [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
     owner="$(stat -c '%u' -- "$manifest")" || return 1
     manifest_mode="$(stat -c '%a' -- "$manifest")" || return 1
@@ -248,6 +249,7 @@ orm_validate_install_manifest() {
             ;;
         *) return 1 ;;
     esac
+    [[ "$validation_mode" != allow-known-subset || "$header" == orm-install-manifest-v3 ]] || return 1
     while IFS='|' read -r key mode expected_digest recorded_target extra; do
         [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ && -z "${extra:-}" ]] || return 1
         if [[ "$header" == orm-install-manifest-v3 ]]; then
@@ -258,22 +260,32 @@ orm_validate_install_manifest() {
         [[ -z "${recorded[$key]+present}" ]] || return 1
         recorded[$key]="$mode|$expected_digest|${recorded_target:-}"
     done < <(tail -n +"$records_start" -- "$manifest")
+    [[ "${#recorded[@]}" -gt 0 ]] || return 1
     while IFS='|' read -r key source target mode; do
-        expected[$key]=1
+        [[ -z "${expected[$key]+present}" && -z "${expected_targets[$target]+present}" ]] || return 1
+        expected[$key]="$target|$mode"
+        expected_targets[$target]=1
         orm_safe_target_parent_chain "$target" || return 1
-        [[ -n "${recorded[$key]+present}" ]] || return 1
-        IFS='|' read -r expected_mode expected_digest recorded_target <<<"${recorded[$key]}"
-        if [[ "$header" == orm-install-manifest-v3 ]]; then
-            [[ "$recorded_target" == "$target" ]] || return 1
-        fi
-        [[ "$expected_mode" == "$mode" && -f "$target" && ! -L "$target" ]] || return 1
-        file_owner="$(stat -c '%u' -- "$target")" || return 1
-        [[ "$file_owner" == 0 ]] || return 1
-        [[ "$(stat -c '%a' -- "$target")" == "$mode" ]] || return 1
-        actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" || return 1
-        [[ "$actual_digest" == "$expected_digest" ]] || return 1
     done < <(orm_package_file_map)
-    [[ "${#recorded[@]}" -eq "${#expected[@]}" ]]
+    for key in "${!recorded[@]}"; do
+        [[ -n "${expected[$key]+present}" ]] || return 1
+        IFS='|' read -r expected_target expected_mode <<<"${expected[$key]}"
+        IFS='|' read -r file_mode expected_digest recorded_target <<<"${recorded[$key]}"
+        if [[ "$header" == orm-install-manifest-v3 ]]; then
+            [[ "$recorded_target" == "$expected_target" ]] || return 1
+        fi
+        [[ "$file_mode" == "$expected_mode" && -f "$expected_target" && ! -L "$expected_target" ]] || return 1
+        file_owner="$(stat -c '%u' -- "$expected_target")" || return 1
+        [[ "$file_owner" == 0 ]] || return 1
+        [[ "$(stat -c '%a' -- "$expected_target")" == "$expected_mode" ]] || return 1
+        actual_digest="$(sha256sum -- "$expected_target" | awk '{print $1}')" || return 1
+        [[ "$actual_digest" == "$expected_digest" ]] || return 1
+    done
+    if [[ "$validation_mode" == strict ]]; then
+        [[ "${#recorded[@]}" -eq "${#expected[@]}" ]]
+    else
+        [[ "${#recorded[@]}" -le "${#expected[@]}" ]]
+    fi
 }
 
 orm_valid_version() {

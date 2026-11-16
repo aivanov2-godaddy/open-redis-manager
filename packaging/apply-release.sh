@@ -32,7 +32,7 @@ orm_acquire_lifecycle_lock "$0" "$@"
 [[ -n "$test_target_root" ]] || orm_require_root_and_platform
 
 if [[ -z "$test_target_root" ]]; then
-    orm_validate_install_manifest "$install_manifest" \
+    orm_validate_install_manifest "$install_manifest" allow-known-subset \
         || orm_die 'the installed ORM manifest or one of its managed files failed integrity validation.'
     orm_registration_state || orm_die 'WHM AppConfig registration is missing or could not be verified.'
 fi
