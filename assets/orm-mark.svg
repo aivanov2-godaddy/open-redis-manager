@@ -1,21 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A crisp white R monogram with three data bands on a Redis-red field.</desc>
+  <desc id="orm-desc">A single flowing white ribbon spiral representing data in motion, on a vivid Redis-red field.</desc>
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="242" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orm-red" x1="24" y1="16" x2="228" y2="240" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F04438"/>
       <stop offset="1" stop-color="#C81E1E"/>
     </linearGradient>
-    <linearGradient id="orm-mark" x1="80" y1="49" x2="190" y2="211" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orm-mark" x1="72" y1="55" x2="185" y2="202" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFF3F1"/>
+      <stop offset="1" stop-color="#FFE8E5"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-red)"/>
-  <path d="M66 55h81c47 0 76 25 76 64 0 28-16 49-43 59l45 36h-54l-39-31h-19v31H66V55Zm47 39v53h31c20 0 32-10 32-27s-12-26-32-26h-31Z" fill="url(#orm-mark)" fill-rule="evenodd" clip-rule="evenodd"/>
-  <!-- Three quiet cuts in the stem recall separate cache layers without repeating the old stack icon. -->
-  <path d="M67 91h36M67 126h36M67 161h36" fill="none" stroke="#B51F1A" stroke-width="7" stroke-linecap="round"/>
-  <!-- A single control node anchors the monogram and remains visible at compact sizes. -->
-  <circle cx="158" cy="120" r="7" fill="#FFFFFF"/>
-  <circle cx="158" cy="120" r="2.5" fill="#D72D24"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
+  <path d="M187 66c-31-28-85-21-112 14-34 44-17 108 30 129 43 19 94-3 108-45 14-42-12-83-52-88-34-5-64 19-66 51-2 27 18 49 44 49 21 0 37-15 38-34 1-16-11-29-26-30-13-1-23 9-23 21 0 9 7 16 16 16" fill="none" stroke="url(#orm-mark)" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
