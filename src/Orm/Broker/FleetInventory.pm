@@ -138,6 +138,63 @@ sub backup {
     return _fleet_failure($error, $username, $action, $audited, $safety_id);
 }
 
+sub migrate {
+    my ($self, $username, $target_backend, $writes_quiesced) = @_;
+    my $action = 'migration.to-valkey';
+    return _fleet_failure('invalid_request', $username, $action, 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/
+        || !defined($target_backend) || ref($target_backend) || $target_backend ne 'valkey'
+        || !defined($writes_quiesced) || ref($writes_quiesced) || !$writes_quiesced;
+
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || $account->{name} ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+
+    my $manager = $self->{instance_manager};
+    my $result = eval { $manager->migrate_to_valkey($account) }
+        if defined($manager) && eval { $manager->can('migrate_to_valkey') };
+    if (ref($result) ne 'HASH') {
+        my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+        return _fleet_failure('operation_failed', $username, $action, $audited);
+    }
+
+    if ($result->{success}) {
+        my $backup_id = _valid_backup_id($result->{backup_id}) ? $result->{backup_id} : undef;
+        if (!defined($backup_id) || ($result->{source_backend} // '') ne 'redis'
+            || ($result->{target_backend} // '') ne 'valkey' || ($result->{state} // '') ne 'running') {
+            my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+            return _fleet_failure('operation_failed', $username, $action, $audited);
+        }
+        my $audited = _audit_event($self, 0, $username, $action, 'success', 'running');
+        return {
+            action => $action,
+            audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+            safety_backup_id => $backup_id,
+            source_backend => 'redis',
+            state => 'running',
+            success => JSON::PP::true,
+            target_backend => 'valkey',
+            username => $username,
+            version => 1,
+        };
+    }
+
+    my %allowed_errors = map { $_ => 1 } qw(
+        account_unavailable backend_unavailable backup_storage_unavailable invalid_request
+        migration_failed migration_pause_failed migration_recovery_required migration_rollback_failed
+        migration_state_unavailable migration_timeout migration_unsupported migration_validation_failed
+        migration_validation_unavailable migration_snapshot_failed not_configured not_running
+        operation_in_progress rate_limited
+    );
+    my $error = defined($result->{error}) && !ref($result->{error}) && $allowed_errors{$result->{error}}
+        ? $result->{error} : 'operation_failed';
+    my $safety_id = _valid_backup_id($result->{safety_backup_id}) ? $result->{safety_backup_id} : undef;
+    my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
+    return _fleet_failure($error, $username, $action, $audited, $safety_id);
+}
+
 sub page {
     my ($self, $offset) = @_;
     return _failure('invalid_request') if !defined($offset) || ref($offset)
@@ -197,6 +254,8 @@ sub page {
                 ? $status->{state} : 'unhealthy';
             $state = 'unhealthy' if !defined($state)
                 || $state !~ /\A(?:stopped|starting|running|stopping|failed)\z/;
+            my $backend = eval { $self->{instance_manager}->backend($candidate->{account}) };
+            $backend = 'unknown' if !defined($backend) || ref($backend) || $backend !~ /\A(?:redis|valkey)\z/;
             my $backup_response = eval { $self->{instance_manager}->backups($candidate->{account}) };
             my @backups;
             my $backups_available = 0;
@@ -222,6 +281,7 @@ sub page {
             push @page, {
                 backups => \@backups,
                 backups_available => $backups_available ? JSON::PP::true : JSON::PP::false,
+                backend => $backend,
                 username => $candidate->{username},
                 state => $state,
             };
@@ -303,7 +363,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 

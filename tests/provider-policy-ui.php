@@ -33,8 +33,11 @@ $assertions = [
         && str_contains($cpanelPage, 'data:image/png;base64,') && str_contains($cpanelPage, '$providerBranding[\'support_url\']')
         && str_contains($cpanelPage, 'footer_visible') && str_contains($cpanelPage, '--orm-primary')
         && str_contains($cpanelPage, '--orm-surface') && str_contains($cpanelPage, '--orm-text')
-        && str_contains($cpanelPage, 'M128 55 187 86v73') && str_contains($cpanelPage, 'm128 73 29 15')
-        && !str_contains($cpanelPage, 'M166 63C154 55 141 51'),
+        && str_contains($cpanelPage, 'M66 55h81c47 0 76 25 76 64') && str_contains($cpanelPage, 'M67 91h36M67 126h36M67 161h36')
+        && !str_contains($cpanelPage, 'M128 55 187 86v73'),
+    is_string($whmPage) && str_contains($whmPage, "'fleet.migrate'")
+        && str_contains($whmPage, 'migrateFleetAccount($username, $targetBackend, $writesQuiesced)')
+        && str_contains($whmPage, 'name="writes_quiesced"') && str_contains($whmPage, 'SessionRequestGuard::allowsMutation($_SERVER)'),
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
         && str_contains($packageMap, 'ProviderPolicy.pm'),
 ];

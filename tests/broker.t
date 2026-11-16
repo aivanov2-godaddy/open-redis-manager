@@ -33,6 +33,11 @@ is(parse_request('{"operation":"fleet.backup.create","username":"acct01","versio
 my $fleet_restore = parse_request('{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n");
 ok($fleet_restore && $fleet_restore->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb'
     && $fleet_restore->{username} eq 'acct01', 'accept a canonical account-scoped fleet restore request');
+my $fleet_migration_request = '{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","version":1,"writes_quiesced":true}' . "\n";
+my $fleet_migration = parse_request($fleet_migration_request);
+ok($fleet_migration && $fleet_migration->{operation} eq 'fleet.migrate'
+    && $fleet_migration->{target_backend} eq 'valkey' && $fleet_migration->{writes_quiesced},
+    'accept only an acknowledged root Redis-to-Valkey migration request');
 for my $range (qw(24h 7d)) {
     is(parse_request('{"operation":"metrics.history","range":"' . $range . '","version":1}' . "\n")->{range},
         $range, "accept a canonical $range metrics history request");
@@ -64,6 +69,9 @@ for my $invalid (
     '{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n",
     '{"backup_id":"../x.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n",
     '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",
+    '{"operation":"fleet.migrate","target_backend":"redis","username":"acct01","version":1,"writes_quiesced":true}' . "\n",
+    '{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","version":1,"writes_quiesced":false}' . "\n",
+    '{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","path":"/tmp/x","version":1,"writes_quiesced":true}' . "\n",
     '{"operation":"backup.restore","backup_id":"snapshot-1794760000-a1b2c3d4.rdb","version":1}' . "\n",
     '{"operation":"metrics.history","range":"30d","version":1}' . "\n",
     '{"range":"24h","operation":"metrics.history","version":1}' . "\n",
@@ -418,6 +426,11 @@ is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', '
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
+my $held_instance_lock = $manager->_acquire_instance_lock($account);
+ok(defined($held_instance_lock), 'acquire the root-owned per-account operation lock');
+is($manager->start($account)->{error}, 'operation_in_progress',
+    'serialize service lifecycle requests against migrations and restore operations');
+close($held_instance_lock) or die "close held instance lock: $!";
 my $restarted = $manager->restart($account);
 ok($restarted->{success} && $restarted->{state} eq 'running', 'restart a validated instance through its fixed systemd unit');
 ok((grep { $_->[0] eq 'restart' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-instance@ormtest.service' } @systemctl_calls),
@@ -431,6 +444,106 @@ is(scalar(grep { $_->[0] eq 'restart' } @systemctl_calls), $restart_calls_before
 ok($manager->start($account)->{success}, 'start the test instance again after the restart guard check');
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
     'return validated saved settings in the instance status');
+
+my $migration_etc = "$tmp/migration-etc";
+my $migration_data = "$tmp/migration-data";
+make_path($migration_etc, $migration_data);
+chmod(0755, $migration_etc, $migration_data) or die "chmod migration roots: $!";
+my $migration_unit_state = 'inactive';
+my $migration_source_version = '7.4.0';
+my $fail_target_rdb_check = 0;
+my $fail_valkey_ping_once = 0;
+my $migration_manager = Orm::Broker::InstanceManager->new(
+    etc_root => $migration_etc,
+    data_root => $migration_data,
+    policy => $policy,
+    provider_policy => Orm::Broker::ProviderPolicy->new(
+        path => "$tmp/etc/missing-migration-policy.json", expected_owner_uid => $<,
+    ),
+    expected_owner_uid => $<,
+    restore_state_timeout => 1,
+    binary_paths => { redis => ['/usr/bin/redis-server'], valkey => ['/usr/bin/valkey-server'] },
+    binary_probe => sub { return 1; },
+    backend_version_probe => sub { return 'Valkey server v=7.2.5'; },
+    redis_cli_call => sub {
+        my ($backend, $socket, @arguments) = @_;
+        return "redis_version:$migration_source_version\r\n" if $backend eq 'redis' && $arguments[0] eq 'INFO' && $arguments[1] eq 'server';
+        return "# Keyspace\r\ndb0:keys=2,expires=1,avg_ttl=10\r\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'keyspace';
+        return "PONG\n" if $arguments[0] eq 'PING' && $backend eq 'redis';
+        if ($arguments[0] eq 'PING' && $backend eq 'valkey' && $fail_valkey_ping_once) {
+            $fail_valkey_ping_once = 0;
+            return "NOAUTH\n";
+        }
+        return "OK\n" if $arguments[0] eq 'CLIENT';
+        return undef;
+    },
+    backup_create => sub {
+        my ($backend, $socket, $path) = @_;
+        open(my $snapshot, '>', $path) or return 0;
+        binmode($snapshot);
+        print {$snapshot} 'synthetic RDB snapshot';
+        return close($snapshot) ? 1 : 0;
+    },
+    rdb_check => sub {
+        my ($backend, $path) = @_;
+        return 0 if $backend eq 'valkey' && $fail_target_rdb_check;
+        open(my $snapshot, '<', $path) or return 0;
+        local $/;
+        my $content = <$snapshot>;
+        close($snapshot);
+        return defined($content) && $content eq 'synthetic RDB snapshot';
+    },
+    systemctl_call => sub {
+        my (@args) = @_;
+        return ($migration_unit_state eq 'active', $migration_unit_state) if $args[0] eq 'is-active';
+        if ($args[0] eq 'start') { $migration_unit_state = 'active'; return (1, ''); }
+        if ($args[0] eq 'stop') { $migration_unit_state = 'inactive'; return (1, ''); }
+        return (1, '');
+    },
+);
+my $migration_account = { name => 'ormmig', uid => $<, gid => $test_gid };
+my $migration_provisioned = $migration_manager->provision($migration_account, 'generic');
+ok($migration_provisioned->{success}, 'provision an isolated Redis fixture for migration tests');
+my $migration_manifest_path = "$migration_etc/ormmig/manifest.json";
+my $legacy_manifest;
+{
+    local $/;
+    open(my $legacy_manifest_handle, '<', $migration_manifest_path) or die "read migration manifest fixture: $!";
+    $legacy_manifest = JSON::PP->new->decode(<$legacy_manifest_handle>);
+    close($legacy_manifest_handle) or die "close migration manifest fixture: $!";
+}
+delete $legacy_manifest->{preset};
+$legacy_manifest->{version} = 1;
+open(my $legacy_manifest_write, '>', $migration_manifest_path) or die "write legacy migration manifest fixture: $!";
+print {$legacy_manifest_write} JSON::PP->new->canonical(1)->encode($legacy_manifest) . "\n";
+close($legacy_manifest_write) or die "close legacy migration manifest fixture: $!";
+chmod(0640, $migration_manifest_path) or die "chmod legacy migration manifest fixture: $!";
+chown($<, $migration_account->{gid}, $migration_manifest_path) or die "chown legacy migration manifest fixture: $!";
+is($migration_manager->migrate_to_valkey($migration_account)->{error}, 'migration_unsupported',
+    'reject Redis 7.4 before pausing or modifying the instance');
+is($migration_unit_state, 'active', 'keep Redis running when the source version is unsupported');
+$migration_source_version = '7.2.5';
+$fail_target_rdb_check = 1;
+is($migration_manager->migrate_to_valkey($migration_account)->{error}, 'migration_validation_failed',
+    'refuse to stop Redis when the Valkey checker rejects the snapshot');
+is($migration_unit_state, 'active', 'leave the Redis service active after target snapshot validation fails');
+$fail_target_rdb_check = 0;
+$fail_valkey_ping_once = 1;
+my $rolled_back_migration = $migration_manager->migrate_to_valkey($migration_account);
+ok(!$rolled_back_migration->{success} && $rolled_back_migration->{error} eq 'migration_failed'
+    && defined($rolled_back_migration->{safety_backup_id}), 'roll back a target health failure and return its retained snapshot');
+is($migration_manager->backend($migration_account), 'redis', 'restore the Redis backend manifest after a failed Valkey start check');
+is($migration_manager->_read_manifest($migration_account)->{version}, 1,
+    'restore the original version-one manifest exactly after migration rollback');
+is($migration_unit_state, 'active', 'restart the Redis service after a failed migration');
+my $successful_migration = $migration_manager->migrate_to_valkey($migration_account);
+ok($successful_migration->{success} && $successful_migration->{source_backend} eq 'redis'
+    && $successful_migration->{target_backend} eq 'valkey', 'switch a validated Redis instance to Valkey');
+is($migration_manager->backend($migration_account), 'valkey', 'persist the Valkey backend only after verification');
+is($migration_manager->_read_manifest($migration_account)->{version}, 2,
+    'write a version-two manifest when the Valkey backend is committed');
+is($migration_unit_state, 'active', 'leave the verified Valkey service running');
+
 my $backup_root_path = "$data_instances/.orm-backups";
 my $account_backup_path = "$backup_root_path/ormtest";
 my $created_backup = $manager->dispatch('backup.create', $account);
@@ -801,6 +914,13 @@ ok(Orm::Broker::Server::_rate_allowed(\%fleet_backup_rates, 0, 101, 1, 1, 60, 'f
     'rate-limit fleet backup actions per account instead of blocking the whole fleet');
 ok(!Orm::Broker::Server::_rate_allowed(\%fleet_backup_rates, 0, 101, 1, 1, 60, 'fleet.backup:acct01'),
     'share the slow-operation limit between snapshot creation and restore for one account');
+my %fleet_migration_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 100, 1, 1, 60, 'fleet.migrate:acct01'),
+    'allow one root migration per account in its bounded slow-operation bucket');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60, 'fleet.migrate:acct02'),
+    'rate-limit long migrations per account rather than blocking other accounts');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60, 'fleet.migrate:acct01'),
+    'rate-limit repeated migration attempts for the same account');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);

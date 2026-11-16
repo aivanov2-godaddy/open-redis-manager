@@ -27,6 +27,9 @@ sub parse_request {
     if ($frame =~ /\A\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","operation":"fleet\.backup\.restore","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { backup_id => $1, operation => 'fleet.backup.restore', username => $2, version => 1 };
     }
+    if ($frame =~ /\A\{"operation":"fleet\.migrate","target_backend":"valkey","username":"([a-zA-Z0-9_-]{1,16})","version":1,"writes_quiesced":true\}\n\z/) {
+        return { operation => 'fleet.migrate', target_backend => 'valkey', username => $1, version => 1, writes_quiesced => 1 };
+    }
     if ($frame =~ /\A\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","operation":"backup\.restore","version":1\}\n\z/) {
         return { backup_id => $1, operation => 'backup.restore', version => 1 };
     }

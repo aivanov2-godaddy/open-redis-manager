@@ -30,6 +30,7 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our %CONTROL_STATES;
     our @BACKUP_CALLS;
     our %BACKUPS;
+    our @MIGRATION_CALLS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -47,6 +48,15 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     sub backups {
         my ($self, $account) = @_;
         return { success => 1, backups => $BACKUPS{$account->{name}} // [] };
+    }
+    sub backend { return $_[1]->{name} eq 'acct01' ? 'redis' : 'valkey'; }
+    sub migrate_to_valkey {
+        my ($self, $account) = @_;
+        push @MIGRATION_CALLS, $account->{name};
+        return {
+            success => 1, backup_id => 'snapshot-1794760000-a1b2c3d4.rdb',
+            source_backend => 'redis', target_backend => 'valkey', state => 'running',
+        };
     }
     sub create_backup {
         my ($self, $account) = @_;
@@ -104,6 +114,7 @@ is($first->{total}, 35, 'skip malformed account directories but include configur
 is(scalar @{$first->{entries}}, 4, 'bound fleet responses to a four-account page');
 is($first->{entries}[0]->{username}, 'acct01', 'sort fleet entries by account name');
 is($first->{entries}[0]->{state}, 'running', 'report normalized running state');
+is($first->{entries}[0]->{backend}, 'redis', 'include the validated backend on a root fleet row');
 ok($first->{entries}[0]->{backups_available} && @{$first->{entries}[0]->{backups}} == 0,
     'report an available empty per-account snapshot list');
 is($first->{entries}[3]->{username}, 'acct04', 'first page ends at the fixed page size');
@@ -190,6 +201,35 @@ is_deeply($Local::FleetManager::BACKUP_CALLS[-1], ['restore', 'acct01', $backup_
     'restore only the selected validated snapshot of the resolved account');
 is_deeply($audit[-1], [0, 'acct01', 'backup.restore', 'success', 'running'],
     'audit root fleet restore outcome without snapshot contents');
+my $migration_result = $inventory->migrate('acct01', 'valkey', 1);
+ok($migration_result->{success} && $migration_result->{target_backend} eq 'valkey'
+    && $migration_result->{safety_backup_id} eq $backup_id,
+    'migrate a resolved Redis account and return only the retained safety snapshot');
+is_deeply($Local::FleetManager::MIGRATION_CALLS[-1], ['acct01'],
+    'migrate only the account resolved from the trusted name lookup');
+is_deeply($audit[-1], [0, 'acct01', 'migration.to-valkey', 'success', 'running'],
+    'audit migration outcome without Redis contents or credentials');
+is($inventory->migrate('acct01', 'redis', 1)->{error}, 'invalid_request',
+    'accept only the fixed Valkey migration target');
+is($inventory->migrate('acct01', 'valkey', 0)->{error}, 'invalid_request',
+    'require an explicit application-writer quiescence acknowledgement');
+is($inventory->migrate('acct99', 'valkey', 1)->{error}, 'account_unavailable',
+    'reject migration for an account absent from the trusted system lookup');
+my $migrationRequest = '{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","version":1,"writes_quiesced":true}' . "\n";
+is(parse_request($migrationRequest)->{operation}, 'fleet.migrate', 'accept the fixed root migration request');
+ok(!parse_request('{"operation":"fleet.migrate","target_backend":"redis","username":"acct01","version":1,"writes_quiesced":true}' . "\n")
+    && !parse_request('{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","version":1,"writes_quiesced":false}' . "\n")
+    && !parse_request('{"operation":"fleet.migrate","target_backend":"valkey","username":"acct01","path":"/tmp/x","version":1,"writes_quiesced":true}' . "\n"),
+    'reject a mutable target, missing write-quiescence acknowledgement, and extra migration fields');
+my $nonRootMigration = Orm::Broker::Handler->handle_frame($migrationRequest, 10001, undef, undef, $inventory);
+like($nonRootMigration, qr/"error":"not_authorized"/, 'deny non-root peers from account migration');
+is_deeply($audit[-1], [10001, 'acct01', 'migration.to-valkey', 'not_authorized', 'unavailable'],
+    'audit denied migration using only the kernel peer identity');
+my $calls_before_migration = scalar @Local::FleetManager::MIGRATION_CALLS;
+my $rootMigration = Orm::Broker::Handler->handle_frame($migrationRequest, 0, undef, undef, $inventory);
+like($rootMigration, qr/"target_backend":"valkey"/, 'allow root to request the fixed Valkey migration');
+is(scalar @Local::FleetManager::MIGRATION_CALLS, $calls_before_migration + 1,
+    'route an authorized migration to the account manager exactly once');
 is($inventory->backup('acct99', 'backup.create')->{error}, 'account_unavailable',
     'reject fleet backup actions for accounts absent from trusted lookup');
 is($inventory->backup('../root', 'backup.create')->{error}, 'invalid_request',

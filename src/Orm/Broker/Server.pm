@@ -138,11 +138,13 @@ sub run {
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                         || $request->{operation} eq 'fleet.control'
                         || $request->{operation} eq 'fleet.backup.create'
-                        || $request->{operation} eq 'fleet.backup.restore') ? 1
+                        || $request->{operation} eq 'fleet.backup.restore'
+                        || $request->{operation} eq 'fleet.migrate') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
                 my $rate_window = ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
-                    || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore') ? 60 : 1;
-                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control|fleet\.backup\.(?:create|restore)|provider\.resellers)\z/ ? 1 : 0;
+                    || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore'
+                    || $request->{operation} eq 'fleet.migrate') ? 60 : 1;
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
                 my $rate_bucket = $request->{operation} eq 'fleet.control'
                     ? 'fleet.control'
                     : $request->{operation} eq 'fleet.list' ? 'fleet.list'
@@ -151,6 +153,8 @@ sub run {
                     : $request->{operation} eq 'provider.branding' ? 'provider.branding'
                     : $request->{operation} =~ /\Afleet\.backup\./
                         ? 'fleet.backup:' . $request->{username}
+                    : $request->{operation} eq 'fleet.migrate'
+                        ? 'fleet.migrate:' . $request->{username}
                         : $rate_window;
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
                     _write_and_close($selector, \%clients, $fd, {
