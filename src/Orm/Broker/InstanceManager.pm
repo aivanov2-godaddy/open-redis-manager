@@ -6,6 +6,7 @@ use Fcntl qw(O_RDONLY O_WRONLY O_RDWR O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
 use JSON::PP ();
 use POSIX qw(WNOHANG _exit setgid setuid);
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use Orm::Broker::BackendPolicy;
 use Orm::Broker::ProviderPolicy;
 use Sys::Syslog qw(:standard :macros);
@@ -71,6 +72,7 @@ sub new {
         client_paths => $args{client_paths} // \%CLIENT_BINARIES,
         rdb_check_paths => $args{rdb_check_paths} // \%RDB_CHECK_BINARIES,
         rdb_check => $args{rdb_check},
+        backend_version_probe => $args{backend_version_probe},
         restore_audit => $args{restore_audit},
         restore_state_timeout => defined($args{restore_state_timeout}) ? $args{restore_state_timeout} : 20,
         metrics_probe => $args{metrics_probe},
@@ -208,6 +210,14 @@ sub status {
     return _failure('instance_unavailable');
 }
 
+sub backend {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $manifest = $self->_read_manifest($account);
+    return undef if ref($manifest) ne 'HASH' || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
+    return $manifest->{backend};
+}
+
 sub provision {
     my ($self, $account, $preset) = @_;
     $preset = 'generic' if !defined($preset);
@@ -313,6 +323,15 @@ sub _provision_locked {
 
 sub start {
     my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_start_locked($account);
+    close($lock);
+    return $response;
+}
+
+sub _start_locked {
+    my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($ok) = $self->_systemctl('start', '--no-block', $self->_unit_name($account->{name}));
@@ -324,6 +343,15 @@ sub start {
 
 sub stop {
     my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_stop_locked($account);
+    close($lock);
+    return $response;
+}
+
+sub _stop_locked {
+    my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($ok) = $self->_systemctl('stop', '--no-block', $self->_unit_name($account->{name}));
@@ -334,6 +362,15 @@ sub stop {
 }
 
 sub restart {
+    my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_restart_locked($account);
+    close($lock);
+    return $response;
+}
+
+sub _restart_locked {
     my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
@@ -347,7 +384,293 @@ sub restart {
     return _failure('service_failed');
 }
 
+sub migrate_to_valkey {
+    my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = eval { $self->_migrate_to_valkey_locked($account) };
+    close($lock);
+    return ref($response) eq 'HASH' ? $response : _failure('migration_failed');
+}
+
+sub _migrate_to_valkey_locked {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    return _failure('migration_unsupported') if $manifest->{backend} ne 'redis';
+    return _failure('backend_unavailable') if !defined($self->_available_binary('valkey'));
+
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('not_running') if !$active || $state ne 'active';
+
+    my $source_info = $self->_run_redis_cli('redis', $manifest->{socket}, 'INFO', 'server');
+    my ($source_version) = defined($source_info)
+        ? $source_info =~ /^redis_version:([0-9]+\.[0-9]+\.[0-9]+)\r?$/m : ();
+    my $target_version = $self->_backend_server_version('valkey');
+    return _failure('migration_unsupported') if !defined($source_version)
+        || !_version_in_range($source_version, '6.2.0', '7.2.999')
+        || !defined($target_version) || !_version_at_least($target_version, '7.2.0');
+
+    my $keyspace = $self->_migration_keyspace('redis', $manifest->{socket});
+    return _failure('migration_state_unavailable') if ref($keyspace) ne 'HASH';
+    my ($backup_directory, $backup_state) = $self->_backup_directory($account, 1);
+    return _failure('backup_storage_unavailable') if !$backup_directory || $backup_state ne 'ready';
+    my ($backup_lock, $lock_error) = $self->_acquire_backup_lock($backup_directory);
+    return _failure($lock_error) if !defined($backup_lock);
+
+    my $unit = $self->_unit_name($account->{name});
+    my $paused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'PAUSE', '180000', 'WRITE');
+    if (!$paused) {
+        close($backup_lock);
+        return _failure('migration_pause_failed');
+    }
+    my $pause_started = clock_gettime(CLOCK_MONOTONIC);
+
+    my $snapshot = $self->_create_backup_locked($account, $manifest, $backup_directory, undef);
+    if (ref($snapshot) ne 'HASH' || !$snapshot->{success} || ref($snapshot->{backup}) ne 'HASH') {
+        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        close($backup_lock);
+        return _failure($unpaused ? 'migration_snapshot_failed' : 'migration_recovery_required');
+    }
+    my $backup_id = $snapshot->{backup}->{id};
+    my @temporary_paths;
+    my $finish = sub {
+        my ($response) = @_;
+        unlink($_) for grep { defined($_) && (-e $_ || -l $_) } @temporary_paths;
+        close($backup_lock);
+        return $response;
+    };
+
+    my $paused_keyspace = $self->_migration_keyspace('redis', $manifest->{socket});
+    if (ref($paused_keyspace) ne 'HASH' || !_same_keyspace($keyspace, $paused_keyspace)) {
+        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $error = $unpaused ? 'migration_state_unavailable' : 'migration_recovery_required';
+        return $finish->(_failure($error));
+    }
+
+    my $stage = $self->_new_backup_stage_path($backup_directory, 'restore');
+    if (!defined($stage)) {
+        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        return $finish->(_failure($unpaused ? 'backup_storage_unavailable' : 'migration_recovery_required'));
+    }
+    push @temporary_paths, $stage;
+    my $copied = $self->_stage_backup_copy($backup_directory, $backup_id, $stage, $account);
+    my $target_check = $copied ? $self->_run_rdb_check('valkey', $stage, $account) : 0;
+    if (!$copied || !defined($target_check) || !$target_check) {
+        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $error = !$unpaused ? 'migration_recovery_required'
+            : !$copied ? 'backup_storage_unavailable'
+            : !defined($target_check) ? 'migration_validation_unavailable' : 'migration_validation_failed';
+        return $finish->(_failure($error));
+    }
+
+    my $pause_age = clock_gettime(CLOCK_MONOTONIC) - $pause_started;
+    if ($pause_age >= 150) {
+        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        return $finish->(_failure($unpaused ? 'migration_timeout' : 'migration_recovery_required'));
+    }
+
+    my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
+    if (!$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout})) {
+        my $recovered = $self->_ensure_unit_running($unit);
+        my $unpaused = $recovered && $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $error = !$recovered || !$unpaused ? 'migration_recovery_required' : 'migration_failed';
+        return $finish->(_failure($error));
+    }
+
+    my $dump_path = File::Spec->catfile($manifest->{data}, 'dump.rdb');
+    if (!$self->_restore_target_safe($dump_path, $account, 1)) {
+        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
+        return $finish->(_migration_failure($recovered, $backup_id));
+    }
+    my $installed = $self->_install_restore_stage($stage, $dump_path, $account, 1);
+    if ($installed != 1) {
+        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
+        return $finish->(_migration_failure($recovered, $backup_id));
+    }
+
+    my %target_manifest = %{$manifest};
+    delete $target_manifest{settings};
+    $target_manifest{backend} = 'valkey';
+    $target_manifest{version} = 2;
+    my %original_manifest = %{$manifest};
+    delete $original_manifest{settings};
+    delete $original_manifest{preset} if $original_manifest{version} == 1;
+    my $original_manifest_json = JSON::PP->new->canonical(1)->encode(\%original_manifest) . "\n";
+    my $target_manifest_json = JSON::PP->new->canonical(1)->encode(\%target_manifest) . "\n";
+    my $manifest_path = $self->_manifest_path($account->{name});
+    if (!$self->_atomic_write($manifest_path, $target_manifest_json, 0640,
+        $self->{expected_owner_uid}, $account->{gid})) {
+        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
+        return $finish->(_migration_failure($recovered, $backup_id));
+    }
+
+    my ($started) = $self->_systemctl('start', '--no-block', $unit);
+    my $target_started = $started && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout});
+    my $target_ping = $target_started && $self->_redis_cli_command('valkey', $manifest->{socket}, 'PING');
+    my $target_keyspace = $target_ping ? $self->_migration_keyspace('valkey', $manifest->{socket}) : undef;
+    if (!$target_started || !$target_ping || ref($target_keyspace) ne 'HASH'
+        || !_same_keyspace($keyspace, $target_keyspace)) {
+        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
+        return $finish->(_migration_failure($recovered, $backup_id));
+    }
+
+    return $finish->({
+        backup_id => $backup_id,
+        source_backend => 'redis',
+        state => 'running',
+        success => JSON::PP::true,
+        target_backend => 'valkey',
+        version => 1,
+    });
+}
+
+sub _rollback_migration {
+    my ($self, $account, $manifest, $backup_directory, $backup_id, $expected_keyspace) = @_;
+    my $unit = $self->_unit_name($account->{name});
+    my ($state_ok, $state) = $self->_systemctl('is-active', $unit);
+    if ($state_ok && $state eq 'active') {
+        my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
+        return 0 if !$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout});
+    } elsif (!$state_ok || ($state ne 'inactive' && $state ne 'failed')) {
+        return 0;
+    }
+
+    my $stage = $self->_new_backup_stage_path($backup_directory, 'rollback');
+    return 0 if !defined($stage);
+    my $staged = $self->_stage_backup_copy($backup_directory, $backup_id, $stage, $account);
+    my $valid = $staged ? $self->_run_rdb_check('redis', $stage, $account) : 0;
+    if (!$staged || !defined($valid) || !$valid) {
+        unlink($stage) if -e $stage || -l $stage;
+        return 0;
+    }
+    my $dump_path = File::Spec->catfile($manifest->{data}, 'dump.rdb');
+    if (!$self->_restore_target_safe($dump_path, $account, 1)
+        || $self->_install_restore_stage($stage, $dump_path, $account, 1) != 1) {
+        unlink($stage) if -e $stage || -l $stage;
+        return 0;
+    }
+    my %original_manifest = %{$manifest};
+    delete $original_manifest{settings};
+    delete $original_manifest{preset} if $original_manifest{version} == 1;
+    my $manifest_json = JSON::PP->new->canonical(1)->encode(\%original_manifest) . "\n";
+    return 0 if !$self->_atomic_write($self->_manifest_path($account->{name}), $manifest_json,
+        0640, $self->{expected_owner_uid}, $account->{gid});
+    my ($started) = $self->_systemctl('start', '--no-block', $unit);
+    return 0 if !$started || !$self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout});
+    return 0 if !$self->_redis_cli_command('redis', $manifest->{socket}, 'PING');
+    my $restored_keyspace = $self->_migration_keyspace('redis', $manifest->{socket});
+    return ref($restored_keyspace) eq 'HASH' && _same_keyspace($expected_keyspace, $restored_keyspace) ? 1 : 0;
+}
+
+sub _migration_keyspace {
+    my ($self, $backend, $socket) = @_;
+    my $info = $self->_run_redis_cli($backend, $socket, 'INFO', 'keyspace');
+    return undef if !defined($info) || length($info) > 1024;
+    my %keyspace;
+    for my $line (split(/\r?\n/, $info)) {
+        next if $line eq '' || $line =~ /^#/;
+        return undef if $line !~ /\Adb([0-9]+):keys=([0-9]+),expires=([0-9]+),avg_ttl=[0-9]+\z/;
+        my ($database, $keys, $expires) = (0 + $1, 0 + $2, 0 + $3);
+        return undef if $database > 15 || $keys > 9_000_000_000_000_000 || $expires > $keys
+            || exists($keyspace{$database});
+        $keyspace{$database} = { expires => $expires, keys => $keys };
+    }
+    return \%keyspace;
+}
+
+sub _same_keyspace {
+    my ($left, $right) = @_;
+    return 0 if ref($left) ne 'HASH' || ref($right) ne 'HASH'
+        || join(',', sort { $a <=> $b } keys %{$left}) ne join(',', sort { $a <=> $b } keys %{$right});
+    for my $database (keys %{$left}) {
+        return 0 if ref($left->{$database}) ne 'HASH' || ref($right->{$database}) ne 'HASH'
+            || $left->{$database}->{keys} != $right->{$database}->{keys}
+            || $left->{$database}->{expires} != $right->{$database}->{expires};
+    }
+    return 1;
+}
+
+sub _backend_server_version {
+    my ($self, $backend) = @_;
+    my $path = $self->_available_binary($backend);
+    return undef if !defined($path);
+    my $output;
+    if (ref($self->{backend_version_probe}) eq 'CODE') {
+        $output = eval { $self->{backend_version_probe}->($backend, $path) };
+    } else {
+        my $completed = eval {
+            local $SIG{ALRM} = sub { die "Backend version timeout\n" };
+            local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+            alarm(3);
+            if (open(my $pipe, '-|', $path, '--version')) {
+                $output = '';
+                my $read = read($pipe, $output, 513);
+                $output = undef if !defined($read) || $read > 512 || !close($pipe);
+            }
+            alarm(0);
+            1;
+        };
+        alarm(0);
+        return undef if !$completed;
+    }
+    return undef if !defined($output) || ref($output) || length($output) > 512;
+    my ($version) = $output =~ /\bv=([0-9]+\.[0-9]+\.[0-9]+)\b/;
+    return $version;
+}
+
+sub _version_at_least {
+    my ($version, $minimum) = @_;
+    return 0 if !defined($version) || !defined($minimum);
+    my @version = split(/[.]/, $version);
+    my @minimum = split(/[.]/, $minimum);
+    return 0 if @version != 3 || @minimum != 3 || grep { !/\A[0-9]+\z/ } (@version, @minimum);
+    for my $index (0 .. 2) {
+        return 1 if $version[$index] > $minimum[$index];
+        return 0 if $version[$index] < $minimum[$index];
+    }
+    return 1;
+}
+
+sub _version_in_range {
+    my ($version, $minimum, $maximum) = @_;
+    return _version_at_least($version, $minimum) && !_version_at_least($version, _next_version($maximum));
+}
+
+sub _next_version {
+    my ($version) = @_;
+    my @parts = split(/[.]/, $version);
+    return $version if @parts != 3;
+    return join('.', $parts[0], $parts[1], $parts[2] + 1);
+}
+
+sub _migration_failure {
+    my ($recovered, $backup_id) = @_;
+    my $response = _failure($recovered ? 'migration_failed' : 'migration_rollback_failed');
+    $response->{safety_backup_id} = $backup_id if defined($backup_id)
+        && $backup_id =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+    return $response;
+}
+
+sub _redis_cli_command {
+    my ($self, $backend, $socket, @arguments) = @_;
+    return 0 if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
+    my $output = $self->_run_redis_cli($backend, $socket, @arguments);
+    return defined($output) && $output eq "OK\n" if @arguments && $arguments[0] eq 'CLIENT';
+    return defined($output) && $output eq "PONG\n" if @arguments && $arguments[0] eq 'PING';
+    return 0;
+}
+
 sub configure {
+    my ($self, $account, $settings) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_configure_locked($account, $settings);
+    close($lock);
+    return $response;
+}
+
+sub _configure_locked {
     my ($self, $account, $settings) = @_;
     return _failure('invalid_request') if !_valid_settings($settings);
     my $provider_decision = $self->{provider_policy}->memory_decision($account, $settings->{memory_mib});
@@ -581,6 +904,15 @@ sub backups {
 
 sub create_backup {
     my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_create_backup_public_locked($account);
+    close($lock);
+    return $response;
+}
+
+sub _create_backup_public_locked {
+    my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
@@ -678,6 +1010,15 @@ sub _create_backup_locked {
 }
 
 sub restore_backup {
+    my ($self, $account, $backup_id) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $response = $self->_restore_backup_locked($account, $backup_id);
+    close($lock);
+    return $response;
+}
+
+sub _restore_backup_locked {
     my ($self, $account, $backup_id) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
@@ -1525,6 +1866,30 @@ sub _acquire_reseller_quota_lock {
         || $file_stat[4] != $self->{expected_owner_uid} || $file_stat[3] != 1
         || ($file_stat[2] & 0777) != 0600 || ($path_stat[2] & 0777) != 0600
         || !flock($handle, LOCK_EX)) {
+        close($handle);
+        return undef;
+    }
+    return $handle;
+}
+
+sub _acquire_instance_lock {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $directory = $self->_account_config_dir($account->{name});
+    my @directory_stat = lstat($directory);
+    return undef if !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $directory_stat[4] != $self->{expected_owner_uid}
+        || $directory_stat[5] != $account->{gid} || ($directory_stat[2] & 0027) != 0;
+    my $path = File::Spec->catfile($directory, '.operation.lock');
+    my $handle;
+    return undef if !sysopen($handle, $path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+    my @file_stat = stat($handle);
+    my @path_stat = lstat($path);
+    if (!@file_stat || !@path_stat || !S_ISREG($file_stat[2])
+        || $file_stat[0] != $path_stat[0] || $file_stat[1] != $path_stat[1]
+        || $file_stat[4] != $self->{expected_owner_uid} || $file_stat[5] != $self->{expected_owner_uid}
+        || $file_stat[3] != 1 || ($file_stat[2] & 0777) != 0600
+        || !flock($handle, LOCK_EX | LOCK_NB)) {
         close($handle);
         return undef;
     }

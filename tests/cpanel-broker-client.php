@@ -322,7 +322,7 @@ $assert($multiFrame->request('instance.status') === null, 'Reject multiple respo
 $fleetRequests = [];
 $fleet = new BrokerClient(static function (string $request) use (&$fleetRequests): string {
     $fleetRequests[] = $request;
-    return "{\"entries\":[{\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
+    return "{\"entries\":[{\"backend\":\"redis\",\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
 });
 $fleetPage = $fleet->requestFleetPage(30);
 $assert($fleetRequests[0] === "{\"offset\":30,\"operation\":\"fleet.list\",\"version\":1}\n",
@@ -332,11 +332,11 @@ $assert($fleetPage['total'] === 31 && $fleetPage['entries'][0]['username'] === '
 $assert($fleet->requestFleetPage(-1) === null, 'Reject negative fleet offsets before sending.');
 
 $badFleet = new BrokerClient(static fn (string $request): string =>
-    "{\"entries\":[{\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"../root\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+    "{\"entries\":[{\"backend\":\"redis\",\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"../root\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
 );
 $assert($badFleet->requestFleetPage(0) === null, 'Reject unsafe account names in fleet responses.');
 $malformedFleetBackups = new BrokerClient(static fn (string $request): string =>
-    "{\"entries\":[{\"backups\":[{\"created_at\":1794760000,\"id\":\"../x.rdb\",\"size_bytes\":4096}],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+    "{\"entries\":[{\"backend\":\"redis\",\"backups\":[{\"created_at\":1794760000,\"id\":\"../x.rdb\",\"size_bytes\":4096}],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
 );
 $assert($malformedFleetBackups->requestFleetPage(0) === null, 'Reject unsafe snapshot metadata in fleet responses.');
 
@@ -393,5 +393,26 @@ $assert(str_contains($fleetRestoreRequests[0], '"operation":"fleet.backup.restor
 $assert($fleetBackup->backupFleetAccount('../root', 'create') === null
     && $fleetBackup->backupFleetAccount('demo', 'restore', '../outside.rdb') === null,
     'Reject unsafe account and snapshot identifiers before broker I/O.');
+
+$migrationRequests = [];
+$migrationClient = new BrokerClient(static function (string $request) use (&$migrationRequests): string {
+    $migrationRequests[] = $request;
+    return "{\"action\":\"migration.to-valkey\",\"audit_logged\":true,\"safety_backup_id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"source_backend\":\"redis\",\"state\":\"running\",\"success\":true,\"target_backend\":\"valkey\",\"username\":\"demo\",\"version\":1}\n";
+});
+$migrationResult = $migrationClient->migrateFleetAccount('demo', 'valkey', true);
+$assert($migrationRequests[0] === "{\"operation\":\"fleet.migrate\",\"target_backend\":\"valkey\",\"username\":\"demo\",\"version\":1,\"writes_quiesced\":true}\n",
+    'Send the fixed Valkey target with a required write-quiescence acknowledgement.');
+$assert(($migrationResult['success'] ?? false) && $migrationResult['safety_backup_id'] === 'snapshot-1794760000-a1b2c3d4.rdb',
+    'Parse the migration receipt only when the account, backends, state, audit status, and snapshot are valid.');
+$assert($migrationClient->migrateFleetAccount('../root', 'valkey', true) === null
+    && $migrationClient->migrateFleetAccount('demo', 'redis', true) === null
+    && $migrationClient->migrateFleetAccount('demo', 'valkey', false) === null
+    && count($migrationRequests) === 1,
+    'Reject unsafe migration targets and unconfirmed write downtime before broker I/O.');
+$unsafeMigrationReceipt = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"migration.to-valkey\",\"audit_logged\":true,\"safety_backup_id\":\"../dump.rdb\",\"source_backend\":\"redis\",\"state\":\"running\",\"success\":true,\"target_backend\":\"valkey\",\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($unsafeMigrationReceipt->migrateFleetAccount('demo', 'valkey', true) === null,
+    'Reject a migration receipt containing an unsafe safety snapshot identifier.');
 
 fwrite(STDOUT, "cPanel broker client checks passed: {$checks}\n");

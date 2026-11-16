@@ -474,7 +474,7 @@ final class BrokerClient
         return $this->request('metrics.history', null, null, null, $range);
     }
 
-    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string,backups_available:bool,backups:list<array{id:string,created_at:int,size_bytes:int}>}>}|null */
+    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string,backend:string,backups_available:bool,backups:list<array{id:string,created_at:int,size_bytes:int}>}>}|null */
     public function requestFleetPage(int $offset): ?array
     {
         if ($offset < 0 || $offset > 10000) {
@@ -518,7 +518,8 @@ final class BrokerClient
             }
             $entryKeys = array_keys($entry);
             sort($entryKeys);
-            if ($entryKeys !== ['backups', 'backups_available', 'state', 'username']
+            if ($entryKeys !== ['backend', 'backups', 'backups_available', 'state', 'username']
+                || !in_array($entry['backend'] ?? null, ['redis', 'valkey', 'unknown'], true)
                 || !is_bool($entry['backups_available']) || !is_array($entry['backups'])
                 || count($entry['backups']) > 3
                 || (!$entry['backups_available'] && $entry['backups'] !== [])) {
@@ -589,6 +590,83 @@ final class BrokerClient
             'error' => $decoded['error'],
             'version' => 1,
             ...(array_key_exists('audit_logged', $decoded) ? ['audit_logged' => $decoded['audit_logged']] : []),
+        ];
+    }
+
+    /** @return array{success:bool,version:int,username?:string,action?:string,source_backend?:string,target_backend?:string,state?:string,audit_logged?:bool,safety_backup_id?:string,error?:string}|null */
+    public function migrateFleetAccount(string $username, string $targetBackend, bool $writesQuiesced): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
+            || $targetBackend !== 'valkey' || !$writesQuiesced) {
+            return null;
+        }
+        $request = json_encode([
+            'operation' => 'fleet.migrate',
+            'target_backend' => $targetBackend,
+            'username' => $username,
+            'version' => 1,
+            'writes_quiesced' => true,
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, self::BACKUP_OPERATION_TIMEOUT_SECONDS)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 5, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($decoded['success']) {
+            if ($keys !== ['action', 'audit_logged', 'safety_backup_id', 'source_backend', 'state', 'success', 'target_backend', 'username', 'version']
+                || ($decoded['action'] ?? null) !== 'migration.to-valkey'
+                || ($decoded['username'] ?? null) !== $username
+                || ($decoded['source_backend'] ?? null) !== 'redis' || ($decoded['target_backend'] ?? null) !== 'valkey'
+                || ($decoded['state'] ?? null) !== 'running' || !is_bool($decoded['audit_logged'] ?? null)
+                || !self::validBackupId($decoded['safety_backup_id'] ?? null)) {
+                return null;
+            }
+            return $decoded;
+        }
+        $allowedKeySets = [
+            ['error', 'success', 'version'],
+            ['action', 'audit_logged', 'error', 'safety_backup_id', 'success', 'username', 'version'],
+            ['action', 'audit_logged', 'error', 'success', 'username', 'version'],
+        ];
+        if (!in_array($keys, $allowedKeySets, true)
+            || !in_array($decoded['error'] ?? null, [
+                'invalid_request', 'not_authorized', 'operation_failed', 'account_unavailable', 'backend_unavailable',
+                'backup_storage_unavailable', 'migration_failed', 'migration_pause_failed', 'migration_recovery_required',
+                'migration_rollback_failed', 'migration_state_unavailable', 'migration_timeout', 'migration_unsupported',
+                'migration_validation_failed', 'migration_validation_unavailable', 'migration_snapshot_failed',
+                'not_configured', 'not_running', 'operation_in_progress', 'rate_limited',
+            ], true)) {
+            return null;
+        }
+        if (isset($decoded['action']) && ($decoded['action'] !== 'migration.to-valkey'
+            || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null))) {
+            return null;
+        }
+        if (isset($decoded['safety_backup_id']) && !self::validBackupId($decoded['safety_backup_id'])) {
+            return null;
+        }
+        return [
+            'success' => false,
+            'error' => $decoded['error'],
+            'version' => 1,
+            ...(isset($decoded['action']) ? [
+                'action' => 'migration.to-valkey',
+                'username' => $username,
+                'audit_logged' => $decoded['audit_logged'],
+            ] : []),
+            ...(isset($decoded['safety_backup_id']) ? ['safety_backup_id' => $decoded['safety_backup_id']] : []),
         ];
     }
 

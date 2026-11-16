@@ -16,6 +16,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [cPanel stale monitoring preview](previews/cpanel-monitoring-stale.html) | Stopped service with last-known metrics, stale marker and 30-day retention explanation | HTML preview; image capture pending |
 | [cPanel connection details](cpanel-connection-details.png) | Private socket path, authentication mode, and seven account-specific copyable client/application helpers | 1440 × 2650; [HTML preview](previews/connection-details.html) |
 | [WHM fleet](whm-fleet.png) | Root-only account inventory with service and per-account snapshot controls | 1440 × 1100 |
+| [WHM Redis-to-Valkey migration](whm-redis-valkey-migration.png) | Synthetic root WHM row with source/target versions, writer-quiescence acknowledgement and snapshot rollback guidance | 1440 × 1000; [SVG source](previews/whm-redis-valkey-migration.svg) |
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |

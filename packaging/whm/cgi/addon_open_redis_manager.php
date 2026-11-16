@@ -25,6 +25,7 @@ $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : nu
 $resellerSummary = null;
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
+$fleetMigrationMessage = null;
 $controlRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'fleet.control';
 if ($controlRequest) {
@@ -130,6 +131,65 @@ if ($fleetBackupRequest) {
             $text .= ' The denial could not be confirmed in the audit log.';
         }
         $fleetBackupMessage = ['type' => 'error', 'text' => $text];
+    }
+}
+$fleetMigrationRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.migrate';
+if ($fleetMigrationRequest) {
+    $username = $_POST['username'] ?? null;
+    $targetBackend = $_POST['target_backend'] ?? null;
+    $writesQuiesced = ($_POST['writes_quiesced'] ?? null) === '1';
+    $result = is_string($username) && is_string($targetBackend)
+        ? $fleetClient->migrateFleetAccount($username, $targetBackend, $writesQuiesced)
+        : null;
+    if ($result === null) {
+        $fleetMigrationMessage = ['type' => 'error', 'text' => 'The migration request could not be verified. Refresh the page and try again.'];
+    } elseif ($result['success']) {
+        if (is_array($fleetPage)) {
+            foreach ($fleetPage['entries'] as &$entry) {
+                if ($entry['username'] === $result['username']) {
+                    $entry['backend'] = 'valkey';
+                    $entry['state'] = 'running';
+                }
+            }
+            unset($entry);
+        }
+        $fleetMigrationMessage = [
+            'type' => 'success',
+            'text' => 'Migrated ' . $result['username'] . ' to Valkey. Safety snapshot '
+                . $result['safety_backup_id'] . ' was retained; the service is running.'
+                . ($result['audit_logged'] ? ' The result was recorded in the system authentication log.'
+                    : ' Warning: the migration completed, but its audit record could not be confirmed.'),
+        ];
+    } else {
+        $migrationMessages = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'backend_unavailable' => 'Valkey is not installed or available on this server.',
+            'backup_storage_unavailable' => 'Snapshot storage is unavailable or failed its security checks.',
+            'migration_failed' => 'The switch did not complete; ORM restored Redis from the safety snapshot.',
+            'migration_pause_failed' => 'ORM could not pause Redis writes; no migration was started.',
+            'migration_recovery_required' => 'ORM could not verify automatic recovery. Keep application writers paused and inspect the account before retrying.',
+            'migration_rollback_failed' => 'Automatic recovery failed. Keep application writers paused and inspect the retained snapshot before retrying.',
+            'migration_state_unavailable' => 'ORM could not verify the source keyspace; no migration was started.',
+            'migration_timeout' => 'The safety window expired; ORM cancelled the switch and resumed Redis.',
+            'migration_unsupported' => 'This Redis/Valkey version combination is outside the supported migration range.',
+            'migration_validation_failed' => 'The Valkey RDB validator rejected the safety snapshot; no switch was made.',
+            'migration_validation_unavailable' => 'The Valkey RDB validator is unavailable; no switch was made.',
+            'migration_snapshot_failed' => 'ORM could not create a safety snapshot; no switch was made.',
+            'not_configured' => 'The selected account does not have an ORM instance.',
+            'not_running' => 'Start the Redis instance before migrating it.',
+            'operation_in_progress' => 'Another operation is already running for this account.',
+            'rate_limited' => 'Wait before retrying this account migration.',
+        ];
+        $text = 'Migration for ' . ($result['username'] ?? $username) . ' was not completed. '
+            . ($migrationMessages[$result['error'] ?? ''] ?? 'The account action was rejected.');
+        if (is_string($result['safety_backup_id'] ?? null)) {
+            $text .= ' Safety snapshot ' . $result['safety_backup_id'] . ' was retained.';
+        }
+        if (array_key_exists('audit_logged', $result) && !$result['audit_logged']) {
+            $text .= ' The result could not be confirmed in the audit log.';
+        }
+        $fleetMigrationMessage = ['type' => 'error', 'text' => $text];
     }
 }
 $policyMessage = null;
@@ -312,6 +372,9 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php if ($fleetBackupMessage !== null): ?>
         <p role="<?= $fleetBackupMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetBackupMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
+      <?php if ($fleetMigrationMessage !== null): ?>
+        <p role="<?= $fleetMigrationMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetMigrationMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
       <?php if ($fleetPage === null): ?>
         <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
       <?php else: ?>
@@ -329,13 +392,14 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="failed">Failed</option>
           <option value="unhealthy">Unhealthy</option>
         </select>
-        <p>Each row shows snapshots retained for that account. Backup and restore requests run per account and return that account's result; restore briefly interrupts service and may lose newer writes.</p>
+        <p>Each row shows snapshots retained for that account. Migration is available for running Redis instances only. Stop all application writers before using it; service connections will be interrupted while the snapshot is validated and the backend is switched.</p>
         <table>
-          <thead><tr><th scope="col">cPanel account</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Backups and restore</th></tr></thead>
+          <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                 <th scope="row"><?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
+                <td><?= htmlspecialchars(ucfirst($entry['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td><?= htmlspecialchars(ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td>
                   <form method="post" class="orm-fleet-actions">
@@ -345,6 +409,19 @@ WHM::header('Open Redis Manager', 0, 0);
                     <button type="submit" name="fleet_action" value="stop" onclick="return confirm('Stop the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may fail until it is started again.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><rect x="4.5" y="4.5" width="11" height="11" rx="1" fill="currentColor"/></svg> Stop</button>
                     <button type="submit" name="fleet_action" value="restart" onclick="return confirm('Restart the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may briefly lose access.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M15.7 7.5A6 6 0 0 0 5.3 5.7L3.5 7.5M3.5 4v3.5H7M4.3 12.5a6 6 0 0 0 10.4 1.8l1.8-1.8m0 3.5v-3.5H13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Restart</button>
                   </form>
+                </td>
+                <td>
+                  <?php if ($entry['backend'] === 'redis'): ?>
+                    <form method="post" class="orm-fleet-actions">
+                      <input type="hidden" name="orm_action" value="fleet.migrate">
+                      <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <input type="hidden" name="target_backend" value="valkey">
+                      <label><input type="checkbox" name="writes_quiesced" value="1" required> Application writers are stopped or paused</label>
+                      <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?> onclick="return confirm('Migrate <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> from Redis to Valkey? The cache will be interrupted. ORM will save and validate a safety snapshot, and will attempt to roll back automatically if the switch fails.')">Migrate to Valkey</button>
+                    </form>
+                  <?php else: ?>
+                    <span><?= $entry['backend'] === 'valkey' ? 'Already using Valkey' : 'Unavailable' ?></span>
+                  <?php endif; ?>
                 </td>
                 <td>
                   <form method="post" class="orm-fleet-actions">

@@ -69,6 +69,21 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.migrate') {
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, 'migration.to-valkey') }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $migration_response = eval {
+                    $fleet_inventory->migrate($request->{username}, $request->{target_backend}, $request->{writes_quiesced})
+                };
+                $response = ref($migration_response) eq 'HASH' ? $migration_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
 
         my $account = defined($resolver) ? eval { $resolver->resolve_account($peer_uid) } : undef;
         if (defined($response)) {

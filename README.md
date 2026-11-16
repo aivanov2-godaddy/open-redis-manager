@@ -2,7 +2,7 @@
 
 <p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager white ribbon spiral on a Redis-red background"></p>
 
-An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, hourly usage history, account-level backups and restore, read-only connection guidance, WHM backend discovery, and root-only per-account service and snapshot controls. Production readiness still requires disposable-host validation.
+An open-source Redis and Valkey control panel for cPanel and WHM. This repository includes a standalone PHP prototype and an early installed integration with account-scoped Redis/Valkey lifecycle controls, hourly usage history, account-level backups and restore, read-only connection guidance, WHM backend discovery, and root-only per-account service, snapshot and guarded Redis-to-Valkey migration controls. Production readiness still requires disposable-host validation.
 
 > **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector are wired to a closed broker for initialization, status, live and hourly metrics, bounded configuration, lifecycle controls, and account backups with restore. Root WHM can also create and restore snapshots for a selected account. The manual installer and lifecycle still need a supported disposable-host validation matrix. Do not install on a production server.
 
@@ -14,6 +14,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - The ORM Redis-red spiral mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
 - Root WHM can manage package and reseller provisioning/memory ceilings, choose report-only/warn/enforce behavior, and set Simple/Developer/Advanced cPanel exposure. Existing instances are grandfathered when policy changes.
+- Root WHM can migrate one running ORM-managed Redis 6.2–7.2 account to Valkey 7.2+, after acknowledging that application writers are paused. ORM snapshots, validates and attempts rollback; [migration limits and recovery](docs/guides/redis-valkey-migration.md) explain the remaining live validation gate.
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
 - An implementation roadmap and GitHub issue drafts in [`project/`](project/).
 
