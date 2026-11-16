@@ -108,25 +108,37 @@ orm_validate_legacy_identity_v1() {
     local manifest="$ORM_PACKAGE_ROOT/legacy/identity-v1/install.manifest"
     local key target mode expected_mode expected_digest actual_digest file_owner
     local -A recorded=() expected=()
-    [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
-    [[ "$(head -n 1 -- "$manifest")" == orm-identity-install-v1 ]] || return 1
+    [[ -f "$manifest" && ! -L "$manifest" ]] \
+        || { printf 'ORM upgrader: legacy baseline manifest is missing or unsafe.\n' >&2; return 1; }
+    [[ "$(head -n 1 -- "$manifest")" == orm-identity-install-v1 ]] \
+        || { printf 'ORM upgrader: legacy baseline manifest version is unsupported.\n' >&2; return 1; }
     while IFS='|' read -r key mode expected_digest; do
-        [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
-        [[ -z "${recorded[$key]+present}" ]] || return 1
+        [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ ]] \
+            || { printf 'ORM upgrader: legacy baseline manifest contains an invalid record.\n' >&2; return 1; }
+        [[ -z "${recorded[$key]+present}" ]] \
+            || { printf 'ORM upgrader: legacy baseline manifest repeats a file key.\n' >&2; return 1; }
         recorded[$key]="$mode|$expected_digest"
     done < <(tail -n +2 -- "$manifest")
     while IFS='|' read -r key target mode; do
         expected[$key]=1
-        orm_safe_target_parent_chain "$target" || return 1
-        [[ -n "${recorded[$key]+present}" && -f "$target" && ! -L "$target" ]] || return 1
-        file_owner="$(stat -c '%u' -- "$target")" || return 1
-        [[ "$file_owner" == 0 ]] || return 1
+        orm_safe_target_parent_chain "$target" \
+            || { printf 'ORM upgrader: legacy target directory is unsafe for %s.\n' "$key" >&2; return 1; }
+        [[ -n "${recorded[$key]+present}" && -f "$target" && ! -L "$target" ]] \
+            || { printf 'ORM upgrader: a legacy install file is missing or unsafe (%s).\n' "$key" >&2; return 1; }
+        file_owner="$(stat -c '%u' -- "$target")" \
+            || { printf 'ORM upgrader: could not read ownership for %s.\n' "$key" >&2; return 1; }
+        [[ "$file_owner" == 0 ]] \
+            || { printf 'ORM upgrader: legacy install file is not root-owned (%s).\n' "$key" >&2; return 1; }
         IFS='|' read -r expected_mode expected_digest <<<"${recorded[$key]}"
-        [[ "$expected_mode" == "$mode" && "$(stat -c '%a' -- "$target")" == "$mode" ]] || return 1
-        actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" || return 1
-        [[ "$actual_digest" == "$expected_digest" ]] || return 1
+        [[ "$expected_mode" == "$mode" && "$(stat -c '%a' -- "$target")" == "$mode" ]] \
+            || { printf 'ORM upgrader: legacy install file has an unexpected mode (%s).\n' "$key" >&2; return 1; }
+        actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" \
+            || { printf 'ORM upgrader: could not verify the content of %s.\n' "$key" >&2; return 1; }
+        [[ "$actual_digest" == "$expected_digest" ]] \
+            || { printf 'ORM upgrader: legacy install file content does not match the baseline (%s).\n' "$key" >&2; return 1; }
     done < <(orm_legacy_identity_v1_file_map)
-    [[ "${#recorded[@]}" -eq "${#expected[@]}" ]]
+    [[ "${#recorded[@]}" -eq "${#expected[@]}" ]] \
+        || { printf 'ORM upgrader: legacy baseline manifest file count does not match the supported package.\n' >&2; return 1; }
 }
 
 orm_write_install_manifest() {
