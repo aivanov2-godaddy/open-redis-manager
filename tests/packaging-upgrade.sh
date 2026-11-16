@@ -403,10 +403,20 @@ done
 
 prepare_case draining
 touch "$TEST_ROOT/busy-connection"
-(sleep 2.5; rm -f -- "$TEST_ROOT/busy-connection") &
+(
+    for attempt in {1..200}; do
+        if [[ -e "$TEST_ROOT/busy-connection-observed" ]]; then
+            sleep 0.25
+            rm -f -- "$TEST_ROOT/busy-connection"
+            exit 0
+        fi
+        sleep 0.05
+    done
+    exit 1
+) &
 busy_cleanup_pid=$!
 run_upgrade_expect_success
-wait "$busy_cleanup_pid"
+wait "$busy_cleanup_pid" || { printf 'the drain test did not expose an in-flight connection before its timeout.\n' >&2; exit 1; }
 [[ -e "$TEST_ROOT/busy-connection-observed" ]] \
     || { printf 'the drain test never exposed an in-flight connection to the upgrader.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active ]] \
