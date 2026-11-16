@@ -7,6 +7,8 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.ph
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 
 $authenticatedUser = $_ENV['REMOTE_USER'] ?? getenv('REMOTE_USER');
@@ -293,8 +295,16 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     if ($available && $policyStore->select($submittedBackend)) {
         $policy = $submittedBackend;
         $policyMessage = 'The default backend for new ORM instances has been updated.';
+        $auditLogged = \Orm\Security\WhmAuditEventWriter::backendSelection($submittedBackend, true);
+        if (!$auditLogged) {
+            $policyMessage .= ' Warning: the change succeeded, but its audit record could not be confirmed.';
+        }
     } else {
         $policyMessage = 'The backend choice could not be saved. Choose an installed Redis-compatible backend.';
+        \Orm\Security\WhmAuditEventWriter::backendSelection(
+            is_string($submittedBackend) && in_array($submittedBackend, ['redis', 'valkey'], true) ? $submittedBackend : 'unavailable',
+            false
+        );
     }
 }
 $providerPolicyMessage = null;
@@ -423,7 +433,9 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     : ($providerAction === 'save-branding'
                         ? 'Provider branding saved and mirrored to cPanel.'
                         : 'Provider policy saved. Reseller quotas gate new provisions only; existing instances were not rewritten.');
-                error_log('ORM provider policy changed through root WHM; action=' . $providerAction);
+                if (!\Orm\Security\WhmAuditEventWriter::providerPolicyChanged($providerAction)) {
+                    $providerPolicyMessage .= ' Warning: the change succeeded, but its audit record could not be confirmed.';
+                }
             } else {
                 $providerPolicyMessage = 'The provider policy could not be saved safely. No changes were applied.';
             }
@@ -439,6 +451,56 @@ if (is_array($fleetPage)) {
     }
 }
 $resellerSummary = $rootAuthorized ? $fleetClient->request('provider.resellers') : null;
+$auditToday = gmdate('Y-m-d');
+$auditYesterday = gmdate('Y-m-d', time() - 86400);
+$auditForm = [
+    'from' => is_string($_POST['audit_from'] ?? null) ? $_POST['audit_from'] : $auditYesterday,
+    'to' => is_string($_POST['audit_to'] ?? null) ? $_POST['audit_to'] : $auditToday,
+    'account' => is_string($_POST['audit_account'] ?? null) ? $_POST['audit_account'] : '',
+    'action' => is_string($_POST['audit_action'] ?? null) ? $_POST['audit_action'] : '',
+    'result' => is_string($_POST['audit_result'] ?? null) ? $_POST['audit_result'] : '',
+];
+$auditResult = null;
+$auditMessage = null;
+$auditPage = filter_var($_POST['audit_page'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 19]]);
+$auditPage = $auditPage === false ? 0 : $auditPage;
+$auditRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && in_array($_POST['orm_audit_action'] ?? null, ['search', 'export'], true);
+if ($auditRequest) {
+    $datesMatchShape = preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}\z/', $auditForm['from']) === 1
+        && preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}\z/', $auditForm['to']) === 1;
+    $fromDate = $datesMatchShape ? DateTimeImmutable::createFromFormat('!Y-m-d', $auditForm['from'], new DateTimeZone('UTC')) : false;
+    $toDate = $datesMatchShape ? DateTimeImmutable::createFromFormat('!Y-m-d', $auditForm['to'], new DateTimeZone('UTC')) : false;
+    $datesValid = $fromDate instanceof DateTimeImmutable && $toDate instanceof DateTimeImmutable
+        && $fromDate->format('Y-m-d') === $auditForm['from'] && $toDate->format('Y-m-d') === $auditForm['to'];
+    $auditFilters = \Orm\Security\WhmAuditLog::normalizeFilters([
+        'account' => $auditForm['account'], 'action' => $auditForm['action'], 'result' => $auditForm['result'],
+    ]);
+    if (!$datesValid || $auditFilters === null
+        || $toDate->getTimestamp() + 86399 < $fromDate->getTimestamp()
+        || $toDate->getTimestamp() + 86399 - $fromDate->getTimestamp() >= 604800) {
+        $auditMessage = 'Choose valid filters and a UTC date range no longer than seven days.';
+    } else {
+        $auditResult = (new \Orm\Security\WhmAuditLog())->read(
+            $fromDate->getTimestamp(), $toDate->getTimestamp() + 86399, $auditFilters
+        );
+        if (($auditResult['success'] ?? false) !== true) {
+            $auditMessage = 'The audit query could not be completed. Check the filters and try again.';
+        } elseif ($_POST['orm_audit_action'] === 'export') {
+            $json = \Orm\Security\WhmAuditLog::toJson($auditResult);
+            if ($json === null) {
+                http_response_code(500);
+                exit;
+            }
+            header('Content-Type: application/json; charset=utf-8');
+            header('Cache-Control: private, no-store, max-age=0');
+            header('X-Content-Type-Options: nosniff');
+            header('Content-Disposition: attachment; filename="orm-audit-' . gmdate('Ymd-His') . '.json"');
+            echo $json;
+            exit;
+        }
+    }
+}
 
 if (!$authorized) {
     http_response_code(403);
@@ -920,6 +982,84 @@ WHM::header('Open Redis Manager', 0, 0);
           </table>
         <?php endif; ?>
         <p>Provider policy is stored in a private root-owned file. Changes are recorded in the server log. Reseller identity and usage come from trusted account records and root-owned instance manifests; no account list or provider limits are sent to cPanel users.</p>
+      <?php endif; ?>
+    </section>
+    <section aria-labelledby="orm-audit-title">
+      <h2 id="orm-audit-title">ORM audit log</h2>
+      <p>Search retained, recognized ORM events from the host journal. Filters and exports are limited to seven UTC days. An empty result does not prove that no activity occurred.</p>
+      <?php if ($auditMessage !== null): ?><p role="alert"><?= htmlspecialchars($auditMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+      <form method="post">
+        <input type="hidden" name="orm_audit_action" value="search">
+        <label for="orm-audit-from">From (UTC)</label>
+        <input id="orm-audit-from" name="audit_from" type="date" value="<?= htmlspecialchars($auditForm['from'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" required>
+        <label for="orm-audit-to">Through (UTC)</label>
+        <input id="orm-audit-to" name="audit_to" type="date" value="<?= htmlspecialchars($auditForm['to'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" required>
+        <label for="orm-audit-account">Account</label>
+        <input id="orm-audit-account" name="audit_account" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" value="<?= htmlspecialchars($auditForm['account'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" placeholder="Any account or global">
+        <label for="orm-audit-action">Action</label>
+        <select id="orm-audit-action" name="audit_action">
+          <option value="">All actions</option>
+          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation'] as $action): ?>
+            <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
+          <?php endforeach; ?>
+        </select>
+        <label for="orm-audit-result">Result</label>
+        <input id="orm-audit-result" name="audit_result" type="text" maxlength="48" pattern="[a-z][a-z0-9_-]{0,47}" value="<?= htmlspecialchars($auditForm['result'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" placeholder="Any result">
+        <button type="submit">Search audit log</button>
+      </form>
+      <?php if (is_array($auditResult) && ($auditResult['success'] ?? false) === true): ?>
+        <p role="status"><?= (int) $auditResult['record_count'] ?> records in range<?= $auditResult['partial'] ? '; coverage is partial' : '' ?>.</p>
+        <ul>
+          <?php foreach ($auditResult['sources'] as $source): ?>
+            <li><code><?= htmlspecialchars($source['identifier'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code>: <?= htmlspecialchars($source['status'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; <?= (int) $source['parsed_events'] ?> recognized events; <?= (int) $source['unrecognized_rows'] ?> unrecognized rows<?= $source['reason'] !== null ? '; ' . htmlspecialchars($source['reason'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?>.</li>
+          <?php endforeach; ?>
+        </ul>
+        <?php if ($auditResult['partial']): ?><p role="alert">Some source data was unavailable, truncated, or unrecognized. Treat these results as incomplete.</p><?php endif; ?>
+        <form method="post">
+          <input type="hidden" name="orm_audit_action" value="export">
+          <input type="hidden" name="audit_from" value="<?= htmlspecialchars($auditForm['from'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="audit_to" value="<?= htmlspecialchars($auditForm['to'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="audit_account" value="<?= htmlspecialchars($auditForm['account'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="audit_action" value="<?= htmlspecialchars($auditForm['action'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="audit_result" value="<?= htmlspecialchars($auditForm['result'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <button type="submit">Download normalized JSON</button>
+        </form>
+        <?php $auditRows = array_slice($auditResult['records'], $auditPage * 50, 50); ?>
+        <?php if ($auditRows === []): ?>
+          <p>No retained recognized ORM events match these filters.</p>
+        <?php else: ?>
+          <table>
+            <thead><tr><th scope="col">Time (UTC)</th><th scope="col">Source</th><th scope="col">Actor UID</th><th scope="col">Account</th><th scope="col">Action</th><th scope="col">Result</th><th scope="col">State</th></tr></thead>
+            <tbody>
+              <?php foreach ($auditRows as $event): ?>
+                <tr>
+                  <td><time datetime="<?= htmlspecialchars($event['timestamp_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars($event['timestamp_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></time></td>
+                  <td><code><?= htmlspecialchars($event['source'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></td>
+                  <td><?= htmlspecialchars($event['actor'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars($event['account'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                  <td><code><?= htmlspecialchars($event['action'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></td>
+                  <td><?= htmlspecialchars($event['result'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                  <td><?= htmlspecialchars($event['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+          <?php if ($auditPage > 0 || count($auditResult['records']) > ($auditPage + 1) * 50): ?>
+            <form method="post">
+              <input type="hidden" name="orm_audit_action" value="search">
+              <input type="hidden" name="audit_from" value="<?= htmlspecialchars($auditForm['from'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <input type="hidden" name="audit_to" value="<?= htmlspecialchars($auditForm['to'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <input type="hidden" name="audit_account" value="<?= htmlspecialchars($auditForm['account'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <input type="hidden" name="audit_action" value="<?= htmlspecialchars($auditForm['action'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <input type="hidden" name="audit_result" value="<?= htmlspecialchars($auditForm['result'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+              <button name="audit_page" value="<?= max(0, $auditPage - 1) ?>"<?= $auditPage === 0 ? ' disabled' : '' ?>>Previous</button>
+              <span>Page <?= $auditPage + 1 ?> of <?= max(1, (int) ceil(count($auditResult['records']) / 50)) ?></span>
+              <button name="audit_page" value="<?= $auditPage + 1 ?>"<?= count($auditResult['records']) <= ($auditPage + 1) * 50 ? ' disabled' : '' ?>>Next</button>
+            </form>
+          <?php endif; ?>
+        <?php endif; ?>
+        <h3>Coverage and retention</h3>
+        <p>Only recognized events retained by <code>orm-broker</code> and <code>orm-whm</code> are shown. cPanel provisioning, configuration, start, and stop requests are not included. Host journal retention and forwarding determine how far back records exist. Raw messages, command output, Redis keys/values, passwords, host paths, and other journal identifiers are never shown or exported.</p>
       <?php endif; ?>
     </section>
   <?php endif; ?>

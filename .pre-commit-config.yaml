@@ -35,3 +35,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-whm-audit-log
+        name: WHM audit log checks
+        entry: php tests/whm-audit-log.php
+        language: system
+        pass_filenames: false
+        always_run: true

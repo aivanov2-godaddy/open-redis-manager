@@ -10,7 +10,13 @@ $assertions = [
         && str_contains($whmPage, "'provider.policy.update'"),
     is_string($whmPage) && str_contains($whmPage, 'if (!$rootAuthorized)')
         && str_contains($whmPage, 'Package resource policy'),
-    is_string($whmPage) && str_contains($whmPage, "error_log('ORM provider policy changed through root WHM"),
+    is_string($whmPage) && str_contains($whmPage, 'WhmAuditEventWriter::providerPolicyChanged($providerAction)')
+        && str_contains($whmPage, 'WhmAuditEventWriter::backendSelection($submittedBackend, true)'),
+    is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
+        && str_contains($whmPage, "in_array(\$_POST['orm_audit_action'] ?? null, ['search', 'export'], true)")
+        && str_contains($whmPage, "'Cache-Control: private, no-store, max-age=0'")
+        && str_contains($whmPage, "'X-Content-Type-Options: nosniff'")
+        && str_contains($whmPage, 'Download normalized JSON'),
     is_string($whmPage) && str_contains($whmPage, 'name="provider_exposure"')
         && str_contains($whmPage, 'value="warn"') && str_contains($whmPage, 'Reseller quotas'),
     is_string($whmPage) && str_contains($whmPage, "request('provider.resellers')")
@@ -60,7 +66,8 @@ $assertions = [
         && str_contains($whmPage, "? 'Unverifiable' : ucfirst(\$entry['state'])")
         && str_contains($whmPage, 'manifest, ownership, or service state'),
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
-        && str_contains($packageMap, 'ProviderPolicy.pm'),
+        && str_contains($packageMap, 'ProviderPolicy.pm')
+        && str_contains($packageMap, 'WhmAuditLog.php') && str_contains($packageMap, 'WhmAuditEventWriter.php'),
 ];
 foreach ($assertions as $index => $passed) {
     if (!$passed) {

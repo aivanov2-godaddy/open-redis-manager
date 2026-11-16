@@ -214,6 +214,8 @@ my $reported_only = $provider_policy->provision_decision({%{$policy_account}, pl
 ok($reported_only && $reported_only->{allowed} && @{$reported_only->{violations}} == 2
     && $reported_only->{mode} eq 'warn' && @policy_audit == 4,
     'migrate version-one report-only policy to compatible warnings without blocking package provisioning');
+like($policy_audit[-1], qr/\Aprovider_policy actor_uid=43210 account=policyacct action=policy\.violation result=warn state=/,
+    'emit provider policy violations with the trusted account actor and a fixed structured audit schema');
 $enforced_package_policy->{version} = 3;
 $enforced_package_policy->{mode} = 'enforce';
 $enforced_package_policy->{exposure} = 'developer';

@@ -79,6 +79,8 @@ orm_package_file_map() {
         backend_discovery "$ORM_REPO_ROOT/src/Orm/Backend/BackendDiscovery.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendDiscovery.php" 644 \
         whm_acl "$ORM_REPO_ROOT/src/Orm/Security/WhmAcl.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAcl.php" 644 \
         session_request_guard "$ORM_REPO_ROOT/src/Orm/Security/SessionRequestGuard.php" "$ORM_3RDPARTY/src/Orm/Security/SessionRequestGuard.php" 644 \
+        whm_audit_log "$ORM_REPO_ROOT/src/Orm/Security/WhmAuditLog.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAuditLog.php" 644 \
+        whm_audit_event_writer "$ORM_REPO_ROOT/src/Orm/Security/WhmAuditEventWriter.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAuditEventWriter.php" 644 \
         account_context "$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" 644 \
         broker_identity "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" 644 \
         broker_client "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" 644 \
