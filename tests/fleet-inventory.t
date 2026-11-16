@@ -215,7 +215,7 @@ my $rootDiagnostics = Orm::Broker::Handler->handle_frame($diagnostics_request, 0
 like($rootDiagnostics, qr/"success":true/, 'allow root peers to request bounded read-only diagnostics');
 
 my $recoveryScanRequest = '{"operation":"fleet.recovery.scan","username":"acct02","version":1}' . "\n";
-my $recoveryRepairRequest = '{"repair":"start","operation":"fleet.recovery.repair","username":"acct02","version":1}' . "\n";
+my $recoveryRepairRequest = '{"operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n";
 is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
 is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
 ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n"),
