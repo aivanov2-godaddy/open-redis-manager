@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 mkdir -m 0755 /var/cpanel /usr/local/cpanel
 mkdir -m 0755 /usr/local/cpanel/3rdparty
-install -d -o root -g root -m 0700 "$state_root/updates/jobs"
+install -d -o root -g root -m 0700 "$state_root" "$state_root/updates" "$state_root/updates/jobs"
 install -D -o root -g root -m 0755 "$repo_root/bin/orm-update-worker.pl" \
     "$package_root/bin/orm-update-worker.pl"
 install -D -o root -g root -m 0755 /dev/null "$package_root/packaging/apply-release.sh"
