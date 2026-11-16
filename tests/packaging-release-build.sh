@@ -38,6 +38,7 @@ grep -R -q -- 'BEGIN RSA PRIVATE KEY\|BEGIN PRIVATE KEY' "$bundle" \
 
 install -m 0644 -- "$bundle/orm-test.pem" "$trusted_key_root/orm-test.pem"
 source "$source_root/packaging/release-lib.sh"
+source "$source_root/packaging/lib.sh"
 ORM_PACKAGE_ROOT="$source_root/packaging"
 ORM_PERL="$(command -v perl)"
 verified_version="$(orm_release_verify_bundle \
