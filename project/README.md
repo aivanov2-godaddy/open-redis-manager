@@ -24,7 +24,7 @@ Goal: implement the remaining documented administration workflows after the safe
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
 - [#52 — Complete WHM fleet recovery and aggregate visibility](https://github.com/aivanov2-godaddy/open-redis-manager/issues/52) — closed after the guarded recovery and page-scoped fleet-count implementation ([historical draft](issues/08-whm-recovery-aggregates.md))
-- [#67 — Build actionable cPanel health guidance](https://github.com/aivanov2-godaddy/open-redis-manager/issues/67) ([draft](issues/09-health-guidance.md))
+- [#67 — Build actionable cPanel health guidance](https://github.com/aivanov2-godaddy/open-redis-manager/issues/67) — completed by [PR #73](https://github.com/aivanov2-godaddy/open-redis-manager/pull/73) ([draft](issues/09-health-guidance.md))
 - [#69 — Add a WHM audit viewer and export](https://github.com/aivanov2-godaddy/open-redis-manager/issues/69) ([draft](issues/10-audit-viewer.md))
 - [#70 — Implement a signed, versioned WHM updater](https://github.com/aivanov2-godaddy/open-redis-manager/issues/70) ([draft](issues/11-signed-updater.md))
 - [#68 — Add fleet aggregates and batched snapshot operations](https://github.com/aivanov2-godaddy/open-redis-manager/issues/68) ([draft](issues/12-fleet-aggregates.md))
@@ -39,8 +39,8 @@ Open a feature branch and pull request for each coherent implementation incremen
 ## Current status (2026-11-16)
 
 - Upstream repository: public. `main` tracks the upstream default branch; implementation work is reviewed through feature branches and pull requests.
-- Milestones #1 and #2 exist on GitHub. The 0.1.0 release gates remain open in issues #1 and #7. The 0.2.0 feature backlog is tracked by issues #67–#71.
-- Recent merged work includes PR #57 (validation and release-gate documentation), #58 (ENOSPC rollback coverage), #59 (ORM brand icon), #60 (isolated fresh-install and rollback coverage), #64 (optional account-scoped Redis AUTH), #65 (AUTH release gates), and #66 (feature coverage catalog).
+- Milestones #1 and #2 exist on GitHub. The 0.1.0 release gates remain open in issues #1 and #7. Issue #67 is complete; the remaining 0.2.0 feature backlog is tracked by issues #68–#71.
+- Recent merged work includes PR #57 (validation and release-gate documentation), #58 (ENOSPC rollback coverage), #59 (ORM brand icon), #60 (isolated fresh-install and rollback coverage), #64 (optional account-scoped Redis AUTH), #65 (AUTH release gates), #66 (feature coverage catalog), #72 (0.2 feature backlog), and #73 (cPanel health guidance).
 - The repository includes a manual development installer, cPanel/WHM entry points, an account-bound broker, instance lifecycle/configuration, metrics, backups and restore, package/reseller policy, provider branding, application discovery, guarded migration, root-only diagnostics, and a fixed recovery scan/start action. The prototype UI uses sample data.
 - Linux CI and fixture tests cover important broker and packaging paths, including fresh-install success/rollback in an isolated mock cPanel root. The live cPanel smoke has verified account identity only. Live fresh install, lifecycle, ACLs across supported releases, restore, migration, recovery, uninstall, CloudLinux/CageFS and failure-injection behavior remain release gates. No ORM-supported production host matrix is established.
 - The [host compatibility and validation matrix](../docs/validation/compatibility-matrix.md), [sanitized validation record template](../docs/validation/record-template.md), and [unreleased release notes](../docs/release-notes.md) track the gap between implemented code and validated deployment support.
