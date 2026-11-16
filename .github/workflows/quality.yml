@@ -23,7 +23,7 @@ jobs:
       - name: Run pre-commit checks
         run: pre-commit run --all-files
       - name: Check packaging shell syntax
-        run: bash -n packaging/install.sh packaging/uninstall.sh packaging/upgrade.sh packaging/lib.sh packaging/release-lib.sh tests/packaging-install.sh tests/packaging-upgrade.sh tests/packaging-manifest.sh tests/packaging-release-verification.sh tests/packaging-release-archive.sh
+        run: bash -n packaging/install.sh packaging/uninstall.sh packaging/upgrade.sh packaging/lib.sh packaging/release-lib.sh packaging/preview-release.sh tests/packaging-install.sh tests/packaging-upgrade.sh tests/packaging-manifest.sh tests/packaging-release-verification.sh tests/packaging-release-archive.sh
       - name: Check release archive inspector syntax
         run: perl -c packaging/inspect-release-archive.pl
       - name: Check packaging fresh install and rollback

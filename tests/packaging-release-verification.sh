@@ -91,6 +91,20 @@ expect_invalid() {
 write_metadata
 [[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
+preview="$(bash "$repo_root/packaging/preview-release.sh" \
+    "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" \
+    || { printf 'valid signed release did not produce a preview.\n' >&2; exit 1; }
+printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
+    local $/;
+    my $preview = decode_json(<STDIN>);
+    exit 1 unless $preview->{schema} eq "orm-update-preview-v1";
+    exit 1 unless $preview->{installedVersion} eq "0.1.0-dev";
+    exit 1 unless $preview->{candidateVersion} eq "0.2.0";
+    exit 1 unless $preview->{verified} && !$preview->{mutationsApplied};
+    exit 1 unless ref($preview->{migrationActions}) eq "ARRAY";
+    exit 1 unless ref($preview->{archiveInventory}{files}) eq "ARRAY";
+    exit 1 unless grep { $_->{path} eq "packaging/install.sh" } @{$preview->{archiveInventory}{files}};
+' || { printf 'release preview JSON was incomplete or invalid.\n' >&2; exit 1; }
 
 if (cd "$test_root" && orm_release_metadata_verify release.metadata release.sig "$artifact" "$key_dir" '0.1.0-dev' >/dev/null 2>&1); then
     printf 'relative release paths were accepted.\n' >&2

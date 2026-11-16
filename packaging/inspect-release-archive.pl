@@ -2,12 +2,16 @@
 use strict;
 use warnings;
 use Archive::Tar;
+use Digest::SHA qw(sha256_hex);
 use FindBin;
 use IO::Uncompress::Gunzip qw($GunzipError);
+use JSON::PP;
 
-my ($archive, $version) = @ARGV;
-defined($archive) && defined($version) && @ARGV == 2
-    or die "Usage: perl inspect-release-archive.pl ARCHIVE VERSION\n";
+my ($archive, $version, $output_mode) = @ARGV;
+defined($archive) && defined($version) && (@ARGV == 2 || @ARGV == 3)
+    or die "Usage: perl inspect-release-archive.pl ARCHIVE VERSION [--json]\n";
+($output_mode //= q{}) eq q{} || $output_mode eq '--json'
+    or die "ORM release archive: unsupported output mode.\n";
 $version =~ /\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/
     or die "ORM release archive: invalid release version.\n";
 -f $archive && !-l $archive
@@ -58,7 +62,7 @@ close $required_handle
     or die "ORM release archive: could not finish reading required-file manifest.\n";
 scalar(keys %required) >= 40
     or die "ORM release archive: required-file manifest is incomplete.\n";
-for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/release-required-files.txt)) {
+for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/release-required-files.txt)) {
     exists($required{$core_file})
         or die "ORM release archive: required-file manifest omits a core package file.\n";
 }
@@ -68,6 +72,7 @@ ref($next) eq 'CODE'
     or die "ORM release archive: could not read archive structure.\n";
 
 my (%seen, %path_types);
+my @inventory;
 my ($members, $expanded_bytes, $root_seen) = (0, 0, 0);
 my ($version_contents, $warning) = (undef, 0);
 local $SIG{__WARN__} = sub { $warning = 1 };
@@ -134,9 +139,18 @@ while (1) {
         $expanded_bytes <= $max_total_bytes
             or die "ORM release archive: expanded size exceeds the limit.\n";
         $required{$relative} = 1 if exists $required{$relative};
+        my $content = $member->get_content;
+        defined($content)
+            or die "ORM release archive: file content could not be read.\n";
         if ($relative eq 'VERSION') {
-            $version_contents = $member->get_content;
+            $version_contents = $content;
         }
+        push @inventory, {
+            path => $relative,
+            size => 0 + $size,
+            mode => sprintf('%04o', $mode),
+            sha256 => sha256_hex($content),
+        };
     }
 }
 $root_seen == 1
@@ -148,4 +162,12 @@ for my $path (keys %required) {
 defined($version_contents) && $version_contents eq "$version\n"
     or die "ORM release archive: packaged version does not match signed metadata.\n";
 
-print "$members|$expanded_bytes\n";
+if ($output_mode eq '--json') {
+    print JSON::PP->new->canonical->encode({
+        members => 0 + $members,
+        totalBytes => 0 + $expanded_bytes,
+        files => \@inventory,
+    }), "\n";
+} else {
+    print "$members|$expanded_bytes\n";
+}
