@@ -90,6 +90,7 @@ broker_stopped=0
 socket_quarantined=0
 files_touched=0
 upgrade_succeeded=0
+keep_backup=0
 quarantine_path=''
 
 rollback_upgrade() {
@@ -111,6 +112,7 @@ rollback_upgrade() {
     fi
     if [[ "$files_touched" -eq 1 ]]; then
         while IFS='|' read -r key source target mode; do
+            [[ "$key" == whm_appconfig ]] && continue
             if [[ -f "$backup_root/$key" && ! -L "$backup_root/$key" ]]; then
                 mkdir -p -- "$(dirname -- "$target")" || rollback_failed=1
                 saved="$(mktemp "$(dirname -- "$target")/.orm-rollback.XXXXXXXX")" || { rollback_failed=1; continue; }
@@ -126,7 +128,6 @@ rollback_upgrade() {
         [[ ! -f "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]] || rm -f -- "$ORM_INSTALL_MANIFEST" || rollback_failed=1
     fi
     if [[ "$cpanel_changed" -eq 1 ]]; then
-        "$ORM_UNINSTALL_PLUGIN" "$current_archive" --theme="$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
         "$ORM_INSTALL_PLUGIN" "$legacy_archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
     fi
     if [[ "$files_touched" -eq 1 || "$broker_stopped" -eq 1 ]]; then
@@ -150,13 +151,17 @@ rollback_upgrade() {
 cleanup_upgrade() {
     local status=$?
     if [[ "$status" -ne 0 && "$upgrade_succeeded" -eq 0 ]]; then
-        rollback_upgrade || status=1
+        if ! rollback_upgrade; then
+            status=1
+            keep_backup=1
+            printf 'ORM upgrader: recovery files retained at %s\n' "$backup_root" >&2
+        fi
     fi
     rm -f -- "$current_archive" "$legacy_archive"
     [[ -z "${temporary:-}" || ! -f "$temporary" || -L "$temporary" ]] || rm -f -- "$temporary"
     [[ ! -f "${ORM_INSTALL_MANIFEST}.tmp.$$" || -L "${ORM_INSTALL_MANIFEST}.tmp.$$" ]] \
         || rm -f -- "${ORM_INSTALL_MANIFEST}.tmp.$$"
-    rm -rf -- "$backup_root"
+    [[ "$keep_backup" -eq 1 ]] || rm -rf -- "$backup_root"
     exit "$status"
 }
 trap cleanup_upgrade EXIT
@@ -206,10 +211,12 @@ if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
 fi
 
 cpanel_changed=1
-"$ORM_UNINSTALL_PLUGIN" "$current_archive" --theme="$ORM_CPanel_THEME"
 "$ORM_INSTALL_PLUGIN" "$current_archive" --theme "$ORM_CPanel_THEME"
 files_touched=1
 while IFS='|' read -r key source target mode; do
+    # register_appconfig owns this file; it was validated and is included in the manifest,
+    # but cPanel recommends changing AppConfig only through its utilities.
+    [[ "$key" == whm_appconfig ]] && continue
     mkdir -p -- "$(dirname -- "$target")"
     temporary="$(mktemp "$(dirname -- "$target")/.orm-upgrade.XXXXXXXX")"
     install -m "$mode" "$source" "$temporary"

@@ -65,16 +65,27 @@ printf 'uninstall_plugin %s\n' "$*" >>"$TEST_LOG"
 feature_sha="$(tar -xOzf "$1" orm-feature.svg | sha256sum | awk '{print $1}')"
 [[ "$feature_sha" == "$TEST_CURRENT_FEATURE_SHA" ]] || exit 49
 rm -f -- "$TEST_CPANEL_MARKER"
+if [[ "${TEST_FAIL_UNINSTALL_PLUGIN_ONCE:-0}" == 1 && ! -e "$TEST_ROOT/uninstall-plugin-failure-used" ]]; then
+    : >"$TEST_ROOT/uninstall-plugin-failure-used"
+    exit 43
+fi
 MOCK
     cat >"$test_root/bin/register_appconfig" <<'MOCK'
 #!/usr/bin/env bash
 printf 'register_appconfig %s\n' "$*" >>"$TEST_LOG"
+cp -- "$1" "$ORM_APPCONFIG"
+chmod 0600 "$ORM_APPCONFIG"
 printf '1\n' >"$TEST_APPCONFIG_STATE"
 MOCK
     cat >"$test_root/bin/unregister_appconfig" <<'MOCK'
 #!/usr/bin/env bash
 printf 'unregister_appconfig %s\n' "$*" >>"$TEST_LOG"
 printf '0\n' >"$TEST_APPCONFIG_STATE"
+rm -f -- "$ORM_APPCONFIG"
+if [[ "${TEST_FAIL_UNREGISTER_ONCE:-0}" == 1 && ! -e "$TEST_ROOT/unregister-failure-used" ]]; then
+    : >"$TEST_ROOT/unregister-failure-used"
+    exit 43
+fi
 MOCK
     cat >"$test_root/bin/is_registered_with_appconfig" <<'MOCK'
 #!/usr/bin/env bash
@@ -89,6 +100,16 @@ active_file="$TEST_SYSTEMCTL_STATE.active"
 case "${1:-}" in
     is-enabled) cat "$enabled_file" ;;
     is-active) cat "$active_file" ;;
+    enable) printf 'enabled\n' >"$enabled_file" ;;
+    disable)
+        printf 'disabled\n' >"$enabled_file"
+        if [[ "${2:-}" == --now ]]; then
+            printf 'inactive\n' >"$active_file"
+            if [[ -f "$TEST_ROOT/socket.pid" ]]; then kill "$(cat "$TEST_ROOT/socket.pid")" 2>/dev/null || true; rm -f -- "$TEST_ROOT/socket.pid"; fi
+            if [[ -f "$TEST_ROOT/initial-socket.pid" ]]; then kill "$(cat "$TEST_ROOT/initial-socket.pid")" 2>/dev/null || true; rm -f -- "$TEST_ROOT/initial-socket.pid"; fi
+            rm -f -- "$TEST_SOCKET"
+        fi
+        ;;
     show) printf '4242\n' ;;
     daemon-reload)
         printf 'daemon-reload\n' >>"$TEST_LOG"
@@ -161,6 +182,7 @@ MOCK
     printf '1\n' >"$TEST_APPCONFIG_STATE"
     cp -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$test_root/var/cpanel/apps/open_redis_manager.conf"
     chmod 0600 "$test_root/var/cpanel/apps/open_redis_manager.conf"
+    export TEST_APPCONFIG_INODE="$(stat -c '%i' "$test_root/var/cpanel/apps/open_redis_manager.conf")"
 
     ORM_CPANEL_ROOT="$test_root/cpanel"
     ORM_INSTALL_PLUGIN="$test_root/bin/install_plugin"
@@ -217,9 +239,16 @@ MOCK
         printf 'ORM_BROKER_UNIT=%q\nORM_INSTANCE_ROOT=%q\nORM_INSTANCE_DATA=%q\nORM_INSTANCE_UNIT=%q\n' "$ORM_BROKER_UNIT" "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" "$ORM_INSTANCE_UNIT"
         printf 'ORM_INSTANCE_LAUNCHER=%q\nORM_METRICS_COLLECTOR=%q\nORM_METRICS_SERVICE=%q\nORM_METRICS_TIMER=%q\n' "$ORM_INSTANCE_LAUNCHER" "$ORM_METRICS_COLLECTOR" "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER"
         printf 'ORM_BROKER_SOCKET=%q\n' "$ORM_BROKER_SOCKET"
+        printf '# ORM_SCRIPT_BODY\n'
         tail -n +4 "$repo_root/packaging/upgrade.sh"
     } >"$runner"
     chmod 0755 "$runner"
+    uninstall_runner="$test_root/uninstall-test.sh"
+    {
+        sed '/^# ORM_SCRIPT_BODY$/,$d' "$runner"
+        tail -n +4 "$repo_root/packaging/uninstall.sh"
+    } >"$uninstall_runner"
+    chmod 0755 "$uninstall_runner"
 }
 
 run_upgrade_expect_success() {
@@ -227,6 +256,28 @@ run_upgrade_expect_success() {
         printf 'expected the upgrade to succeed in %s.\n' "$test_root" >&2
         exit 1
     fi
+}
+
+prepare_empty_instance_roots() {
+    mkdir -m 0711 "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"
+}
+
+assert_current_install_restored() {
+    orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
+        || { printf 'uninstall rollback did not restore the installed-file manifest.\n' >&2; exit 1; }
+    [[ "$(cat "$TEST_APPCONFIG_STATE")" == 1 && -f "$ORM_APPCONFIG" ]] \
+        || { printf 'uninstall rollback did not restore WHM AppConfig registration.\n' >&2; exit 1; }
+    cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+        || { printf 'uninstall rollback changed the WHM AppConfig content.\n' >&2; exit 1; }
+    [[ "$(cat "$TEST_CPANEL_MARKER")" == current ]] \
+        || { printf 'uninstall rollback did not restore the cPanel plugin.\n' >&2; exit 1; }
+    [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active && -S "$TEST_SOCKET" ]] \
+        || { printf 'uninstall rollback did not restore broker state.\n' >&2; exit 1; }
+    [[ -d "$ORM_INSTANCE_ROOT" && -d "$ORM_INSTANCE_DATA" \
+        && -z "$(find "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" -mindepth 1 -print -quit)" ]] \
+        || { printf 'uninstall rollback changed empty instance roots.\n' >&2; exit 1; }
+    [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
+        || { printf 'uninstall rollback left transaction files behind.\n' >&2; exit 1; }
 }
 
 assert_legacy_restored() {
@@ -250,6 +301,8 @@ assert_legacy_restored() {
         || { printf 'rollback did not restore cPanel registration state.\n' >&2; exit 1; }
     cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
         || { printf 'rollback changed the WHM AppConfig file.\n' >&2; exit 1; }
+    [[ "$(stat -c '%i' "$ORM_APPCONFIG")" == "$TEST_APPCONFIG_INODE" ]] \
+        || { printf 'rollback replaced the registered WHM AppConfig file.\n' >&2; exit 1; }
     [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
         || { printf 'rollback left a transaction temporary file behind.\n' >&2; exit 1; }
 }
@@ -277,10 +330,58 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'new install m
     || { printf 'successful upgrade changed broker enabled or active state.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_CPANEL_MARKER")" == current && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \
     || { printf 'successful upgrade did not preserve cPanel and WHM registration.\n' >&2; exit 1; }
+[[ "$(stat -c '%i' "$ORM_APPCONFIG")" == "$TEST_APPCONFIG_INODE" ]] \
+    || { printf 'successful upgrade replaced the registered WHM AppConfig file.\n' >&2; exit 1; }
+! grep -q '^uninstall_plugin ' "$TEST_LOG" \
+    || { printf 'successful upgrade removed the cPanel plugin registration before reinstalling it.\n' >&2; exit 1; }
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
     || { printf 'successful upgrade left a transaction temporary file behind.\n' >&2; exit 1; }
+
+prepare_empty_instance_roots
+"$test_root/uninstall-test.sh"
+[[ ! -e "$ORM_3RDPARTY" && ! -e "$ORM_BROKER_UNIT" && ! -e "$ORM_APPCONFIG" \
+    && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" \
+    && ! -e "$TEST_CPANEL_MARKER" && "$(cat "$TEST_APPCONFIG_STATE")" == 0 \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive ]] \
+    || { printf 'successful uninstall left ORM files, registration, instance roots, or broker service behind.\n' >&2; exit 1; }
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
+    || { printf 'successful uninstall left transaction files behind.\n' >&2; exit 1; }
 cleanup_test_root
 trap - EXIT
+
+prepare_case uninstall-unregistered-appconfig
+run_upgrade_expect_success
+prepare_empty_instance_roots
+printf '0\n' >"$TEST_APPCONFIG_STATE"
+: >"$TEST_LOG"
+if "$test_root/uninstall-test.sh"; then
+    printf 'expected uninstall refusal for an unregistered but present AppConfig file.\n' >&2
+    exit 1
+fi
+[[ -f "$ORM_APPCONFIG" && -S "$TEST_SOCKET" && -e "$TEST_CPANEL_MARKER" \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active && ! -s "$TEST_LOG" ]] \
+    || { printf 'uninstall preflight changed an ambiguous AppConfig installation.\n' >&2; exit 1; }
+cleanup_test_root
+trap - EXIT
+
+for failure in uninstall-plugin unregister-appconfig; do
+    prepare_case "uninstall-rollback-$failure"
+    run_upgrade_expect_success
+    prepare_empty_instance_roots
+    case "$failure" in
+        uninstall-plugin) export TEST_FAIL_UNINSTALL_PLUGIN_ONCE=1 ;;
+        unregister-appconfig) export TEST_FAIL_UNREGISTER_ONCE=1 ;;
+    esac
+    if "$test_root/uninstall-test.sh"; then
+        printf 'expected injected uninstall failure at %s.\n' "$failure" >&2
+        exit 1
+    fi
+    assert_current_install_restored
+    cleanup_test_root
+    trap - EXIT
+    unset TEST_FAIL_UNINSTALL_PLUGIN_ONCE TEST_FAIL_UNREGISTER_ONCE
+done
 
 prepare_case draining
 touch "$TEST_ROOT/busy-connection"
@@ -395,6 +496,9 @@ fi
 [[ -e "$TEST_ROOT/restore-failure-used" && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive \
     && "$(cat "$TEST_CPANEL_MARKER")" == legacy && ! -S "$TEST_SOCKET" ]] \
     || { printf 'rollback-restoration failure did not leave the broker stopped.\n' >&2; exit 1; }
+recovery_backup="$(find "$TMPDIR" -mindepth 1 -maxdepth 1 -type d -name 'orm-upgrade.*' -print -quit)"
+[[ -n "$recovery_backup" && -f "$recovery_backup/broker_server" ]] \
+    || { printf 'incomplete rollback did not retain its recovery files.\n' >&2; exit 1; }
 if grep -Fxq 'start' "$TEST_LOG"; then
     printf 'broker restarted despite an incomplete rollback.\n' >&2
     exit 1

@@ -38,7 +38,18 @@ orm_acquire_lifecycle_lock() {
     [[ ! -L "$ORM_LIFECYCLE_LOCK" && ! -d "$ORM_LIFECYCLE_LOCK" ]] \
         || orm_die 'the ORM lifecycle lock path is unsafe.'
     install -d -o root -g root -m 0755 "$(dirname -- "$ORM_LIFECYCLE_LOCK")"
+    local previous_umask
+    previous_umask="$(umask)"
+    umask 077
     exec 9>>"$ORM_LIFECYCLE_LOCK"
+    umask "$previous_umask"
+    [[ -f "$ORM_LIFECYCLE_LOCK" && ! -L "$ORM_LIFECYCLE_LOCK" ]] \
+        || orm_die 'the ORM lifecycle lock file is unsafe.'
+    [[ "$(stat -c '%u' -- "$ORM_LIFECYCLE_LOCK")" == 0 ]] \
+        || orm_die 'the ORM lifecycle lock file is not root-owned.'
+    local lock_mode
+    lock_mode="$(stat -c '%a' -- "$ORM_LIFECYCLE_LOCK")"
+    (( (8#$lock_mode & 0022) == 0 )) || orm_die 'the ORM lifecycle lock file is writable by another user.'
     flock -n 9 || orm_die 'another ORM install, upgrade, or uninstall is already running.'
 }
 

@@ -13,7 +13,7 @@ This folder contains the cPanel and WHM registration files, authenticated UI ent
 - `whm/cgi/addon_open_redis_manager.php` renders the WHM interface and repeats an ACL check before showing it.
 - `cpanel/icons/` and `whm/icons/` hold original ORM registration artwork.
 - `install.sh` installs the cPanel link and WHM discovery page from this checkout.
-- `upgrade.sh` is a guarded compatibility bridge for the exact identity-only install manifest in `legacy/identity-v1/`. It refuses unknown or modified files and any existing instance roots, drains active broker requests, rolls back package files and cPanel registration on failure, and preserves the broker's enabled/active state. This is not a general updater for later releases.
+- `upgrade.sh` is a guarded compatibility bridge for the exact identity-only install manifest in `legacy/identity-v1/`. It refuses unknown or modified files and any existing instance roots, drains active broker requests, reapplies cPanel registration through `install_plugin` without first removing its existing feature IDs, rolls back package files and registration on failure, and preserves the broker's enabled/active state. It retains recovery files if rollback fails. This is not a general updater for later releases.
 - `uninstall.sh` unregisters the cPanel link and WHM AppConfig entry, then removes only exact files whose contents match this checkout. A root-owned install manifest verifies deployed file hashes and modes first.
 - `lib.sh` contains shared fixed paths, platform checks, and cPanel package assembly.
 
