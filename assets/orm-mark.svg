@@ -1,12 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">Three white cache tiers with red status ports inside a white hexagonal frame on a red rounded square.</desc>
-  <rect x="4" y="4" width="248" height="248" rx="68" fill="#D92D20"/>
-  <path d="M128 39 198 79v98l-70 40-70-40V79l70-40Z" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="11"/>
-  <path d="M91 81h55l17 13-17 13H91L74 94l17-13Z" fill="#fff"/>
-  <path d="M91 115h55l17 13-17 13H91l-17-13 17-13Z" fill="#fff"/>
-  <path d="M91 149h55l17 13-17 13H91l-17-13 17-13Z" fill="#fff"/>
-  <circle cx="96" cy="94" r="4" fill="#D92D20"/>
-  <circle cx="96" cy="128" r="4" fill="#D92D20"/>
-  <circle cx="96" cy="162" r="4" fill="#D92D20"/>
+  <desc id="orm-desc">A white dimensional cache stack framed by an open hexagonal control loop on a red field.</desc>
+  <defs>
+    <linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E5392D"/>
+      <stop offset="1" stop-color="#D92D20"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
+
+  <!-- Open control loop: a deliberate gap and forward cue distinguish the mark from a plain database stack. -->
+  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Three crisp isometric cache planes with red channels for depth. -->
+  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/>
+  <path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
+  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/>
+  <path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/>
+  <path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
 </svg>

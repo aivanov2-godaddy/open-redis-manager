@@ -60,8 +60,18 @@ sub resolve_account {
         return undef;
     }
 
-    close($handle) or return undef;
-    return { name => $username, uid => 0 + $uid, gid => 0 + $entry->{gid} };
+    my $content = '';
+    my $read = read($handle, $content, $MAX_ACCOUNT_FILE_BYTES + 1);
+    my $closed = close($handle);
+    return undef if !defined($read) || !$closed || length($content) > $MAX_ACCOUNT_FILE_BYTES;
+    my @plans = $content =~ /^PLAN=([^\r\n]*)\r?$/mg;
+    my @owners = $content =~ /^OWNER=([^\r\n]*)\r?$/mg;
+    return undef if @plans > 1 || @owners > 1;
+    my $plan = @plans ? $plans[0] : 'default';
+    my $owner = @owners ? $owners[0] : 'root';
+    return undef if $plan !~ /\A[a-zA-Z0-9_.-]{1,64}\z/
+        || $owner !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+    return { name => $username, uid => 0 + $uid, gid => 0 + $entry->{gid}, plan => $plan, owner => $owner };
 }
 
 sub resolve_name {

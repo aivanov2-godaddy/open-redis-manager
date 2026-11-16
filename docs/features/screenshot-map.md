@@ -16,7 +16,7 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM recovery | Scan results, health actions, restart/config/credential/permission repair. |
 | WHM global settings | Defaults, update checks, user CLI visibility and history retention. |
 | WHM security | Firewall guidance, local binding and credential rotation. |
-| WHM package policy | Per-package service availability and capacity limits. |
+| WHM package policy | Root-only per-package service availability, memory ceilings, and snapshot retention; reseller quotas remain planned. |
 | WHM branding | Provider identity, colors and a cPanel preview. |
 | [ORM fleet inventory](../../screenshots/whm-fleet.png) | Synthetic root-only account table with service controls and per-account snapshot/restore UI. |
 | [WHM account action preview](../../screenshots/previews/whm-fleet.html) | Synthetic account table with service controls, snapshot states, restore confirmation and per-account result messaging. |

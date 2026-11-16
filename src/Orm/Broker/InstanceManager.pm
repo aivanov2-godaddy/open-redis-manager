@@ -7,6 +7,7 @@ use File::Spec;
 use JSON::PP ();
 use POSIX qw(WNOHANG _exit setgid setuid);
 use Orm::Broker::BackendPolicy;
+use Orm::Broker::ProviderPolicy;
 use Sys::Syslog qw(:standard :macros);
 
 my %SERVER_BINARIES = (
@@ -58,6 +59,7 @@ sub new {
         etc_root => $args{etc_root} // '/etc/orm-instances',
         data_root => $args{data_root} // '/var/lib/orm-instances',
         policy => $args{policy} // Orm::Broker::BackendPolicy->new(),
+        provider_policy => $args{provider_policy} // Orm::Broker::ProviderPolicy->new(),
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
         systemctl => $args{systemctl} // '/usr/bin/systemctl',
         systemctl_call => $args{systemctl_call},
@@ -136,6 +138,9 @@ sub provision {
     my $settings = _preset_settings($preset);
     my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
+    my $provider_decision = $self->{provider_policy}->provision_decision($account, $settings->{memory_mib});
+    return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
+    return _failure('provider_policy_denied') if !$provider_decision->{allowed};
 
     my $config_dir = $self->_account_config_dir($account->{name});
     my $data_dir = $self->_account_data_dir($account->{name});
@@ -184,7 +189,11 @@ sub provision {
     }
 
     my $current = $self->status($account);
-    return $current if $current->{success} && ($current->{state} eq 'running' || $current->{state} eq 'starting');
+    if ($current->{success} && ($current->{state} eq 'running' || $current->{state} eq 'starting')) {
+        $current->{policy_warnings} = $provider_decision->{violations}
+            if $provider_decision->{mode} eq 'report-only' && @{$provider_decision->{violations}};
+        return $current;
+    }
     $self->_systemctl('stop', '--no-block', $unit);
     $self->_systemctl('disable', $unit);
     return $self->_rollback_provision($account, $config_dir, $data_dir, 1, 'service_failed');
@@ -229,6 +238,9 @@ sub restart {
 sub configure {
     my ($self, $account, $settings) = @_;
     return _failure('invalid_request') if !_valid_settings($settings);
+    my $provider_decision = $self->{provider_policy}->memory_decision($account, $settings->{memory_mib});
+    return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
+    return _failure('provider_policy_denied') if !$provider_decision->{allowed};
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
@@ -269,7 +281,10 @@ sub configure {
 
     $manifest->{settings} = { %{$settings} };
     my $result_state = $state eq 'active' ? 'running' : $state eq 'failed' ? 'failed' : 'stopped';
-    return _state($result_state, $manifest);
+    my $result = _state($result_state, $manifest);
+    $result->{policy_warnings} = $provider_decision->{violations}
+        if $provider_decision->{mode} eq 'report-only' && @{$provider_decision->{violations}};
+    return $result;
 }
 
 sub _rollback_live_settings {
@@ -490,6 +505,10 @@ sub _create_backup_locked {
     my ($self, $account, $manifest, $directory, $preserve_id) = @_;
     my $existing = $self->_read_backup_entries($directory, $account);
     return _failure('backup_storage_unavailable') if ref($existing) ne 'ARRAY';
+    my $effective_policy = $self->{provider_policy}->effective_for($account);
+    return _failure('provider_policy_unavailable') if ref($effective_policy) ne 'HASH';
+    my $retention_limit = $effective_policy->{mode} eq 'enforce'
+        ? $effective_policy->{backup_retention} : $MAX_BACKUPS_PER_ACCOUNT;
     my $created_at = time;
     my $backup_id;
     my $temporary;
@@ -532,7 +551,7 @@ sub _create_backup_locked {
     my %preserve = ($backup_id => 1);
     $preserve{$preserve_id} = 1 if defined($preserve_id);
     for my $old_entry (reverse @{$all_entries}) {
-        last if @{$all_entries} <= $MAX_BACKUPS_PER_ACCOUNT;
+        last if @{$all_entries} <= $retention_limit;
         next if $preserve{$old_entry->{id}};
         my $old_path = File::Spec->catfile($directory, $old_entry->{id});
         return _failure('backup_retention_failed') if !unlink($old_path);
@@ -540,7 +559,7 @@ sub _create_backup_locked {
     }
     my $retained_entries = $self->_read_backup_entries($directory, $account);
     return _failure('backup_storage_unavailable') if ref($retained_entries) ne 'ARRAY';
-    return _failure('backup_retention_failed') if @{$retained_entries} > $MAX_BACKUPS_PER_ACCOUNT;
+    return _failure('backup_retention_failed') if @{$retained_entries} > $retention_limit;
     my ($created_entry) = grep { $_->{id} eq $backup_id } @{$retained_entries};
     return _failure('backup_storage_unavailable') if ref($created_entry) ne 'HASH';
     return { backup => $created_entry, success => JSON::PP::true, version => 1 };

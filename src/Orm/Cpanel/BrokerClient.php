@@ -195,18 +195,32 @@ final class BrokerClient
                 return null;
             }
             if (array_key_exists('config', $decoded)) {
+                $expectedKeys = ['config', 'preset', 'state', 'success', 'version'];
+                if (in_array($operation, ['instance.provision', 'instance.configure'], true)
+                    && array_key_exists('policy_warnings', $decoded)) {
+                    if (!self::validProviderPolicyWarnings($decoded['policy_warnings'])) {
+                        return null;
+                    }
+                    $expectedKeys[] = 'policy_warnings';
+                }
+                sort($expectedKeys);
                 if (!in_array($decoded['preset'] ?? null, ['wordpress', 'laravel', 'magento', 'session', 'generic'], true)
                     || !self::validConfig($decoded['config'])
-                    || $keys !== ['config', 'preset', 'state', 'success', 'version']) {
+                    || $keys !== $expectedKeys || (array_key_exists('policy_warnings', $decoded)
+                        && !in_array($operation, ['instance.provision', 'instance.configure'], true))) {
                     return null;
                 }
-                return [
+                $result = [
                     'success' => true,
                     'state' => $decoded['state'],
                     'version' => 1,
                     'preset' => $decoded['preset'],
                     'config' => $decoded['config'],
                 ];
+                if (array_key_exists('policy_warnings', $decoded)) {
+                    $result['policy_warnings'] = $decoded['policy_warnings'];
+                }
+                return $result;
             }
             if (array_key_exists('preset', $decoded)) {
                 if (!in_array($decoded['preset'], ['wordpress', 'laravel', 'magento', 'session', 'generic'], true)
@@ -226,6 +240,7 @@ final class BrokerClient
         if ($operation === 'backup.restore') {
             if (!in_array($decoded['error'] ?? null, [
                 'invalid_request', 'not_authorized', 'operation_failed', 'not_configured', 'not_running',
+                'provider_policy_unavailable',
                 'backup_not_found', 'backup_invalid', 'backup_in_progress', 'backup_retention_failed',
                 'backup_storage_unavailable', 'restore_validation_unavailable', 'restore_failed',
                 'restore_rollback_failed', 'rate_limited',
@@ -246,6 +261,7 @@ final class BrokerClient
             || !in_array($decoded['error'], [
                 'invalid_request', 'not_authorized', 'operation_failed', 'instance_unavailable',
                 'instance_exists', 'storage_unavailable', 'backend_policy_required', 'backend_unavailable',
+                'provider_policy_denied', 'provider_policy_unavailable',
                 'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
                 'configuration_unavailable', 'configuration_failed', 'configuration_storage_unavailable',
                 'configuration_uncertain',
@@ -272,6 +288,19 @@ final class BrokerClient
             && is_int($config['maxclients']) && $config['maxclients'] >= 10 && $config['maxclients'] <= 100
             && is_int($config['timeout']) && $config['timeout'] >= 0 && $config['timeout'] <= 300
             && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
+    }
+
+    private static function validProviderPolicyWarnings(mixed $warnings): bool
+    {
+        if (!is_array($warnings) || !array_is_list($warnings) || count($warnings) > 2) {
+            return false;
+        }
+        foreach ($warnings as $warning) {
+            if (!is_string($warning) || !in_array($warning, ['package_disabled', 'memory_limit_exceeded'], true)) {
+                return false;
+            }
+        }
+        return count(array_unique($warnings)) === count($warnings);
     }
 
     private static function validBackup(mixed $backup): bool

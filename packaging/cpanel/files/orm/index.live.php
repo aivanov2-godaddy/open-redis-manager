@@ -190,6 +190,8 @@ $stateClass = match ($instanceStatus['state'] ?? null) {
 $errorMessages = [
     'backend_policy_required' => 'Your hosting provider must select an installed backend before you can initialize a cache.',
     'backend_unavailable' => 'The selected cache backend is not available right now. Contact your hosting provider.',
+    'provider_policy_denied' => 'Your hosting package does not allow this cache setup or memory setting. Contact your hosting provider if you need a different limit.',
+    'provider_policy_unavailable' => 'The hosting provider policy could not be verified, so no change was made. Contact your hosting provider.',
     'instance_exists' => 'An instance record already exists. Refresh this page or contact your hosting provider.',
     'invalid_request' => 'The requested setup or configuration values are not valid.',
     'not_configured' => 'Initialize the cache before starting it.',
@@ -284,35 +286,13 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
-      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 128 128" aria-hidden="true">
-  <defs>
-    <linearGradient id="orm-red" x1="12" y1="8" x2="116" y2="120" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F04438"/>
-      <stop offset="1" stop-color="#C81E18"/>
-    </linearGradient>
-    <linearGradient id="orm-white" x1="38" y1="39" x2="88" y2="88" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFF7F6"/>
-    </linearGradient>
-  </defs>
-
-  <rect x="2" y="2" width="124" height="124" rx="34" fill="url(#orm-red)"/>
-  <rect x="15" y="15" width="98" height="98" rx="28" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
-
-  <!-- An open cache orbit wraps three managed data layers. -->
-  <path d="M82 27a42 42 0 1 0 17 34" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-width="6"/>
-  <path d="m78 19 15 1-7 13" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/>
-
-  <g fill="url(#orm-white)">
-    <rect x="45" y="40" width="39" height="12" rx="6"/>
-    <rect x="37" y="58" width="53" height="12" rx="6"/>
-    <rect x="43" y="76" width="42" height="12" rx="6"/>
-  </g>
-  <g fill="#C81E18">
-    <rect x="74" y="44" width="5" height="4" rx="2"/>
-    <rect x="79" y="62" width="6" height="4" rx="2"/>
-    <rect x="74" y="80" width="5" height="4" rx="2"/>
-  </g>
+      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
+  <defs><linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#E5392D"/><stop offset="1" stop-color="#D92D20"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
+  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/><path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
+  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
 </svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
@@ -325,7 +305,7 @@ try {
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
             <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?php if (is_string($actionResult['safety_backup_id'] ?? null)): ?> Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was retained and is available in the backup list.<?php endif; ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
+            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?><?php if (in_array($action, ['provision', 'configure'], true) && is_array($actionResult['policy_warnings'] ?? null) && $actionResult['policy_warnings'] !== []): ?> Provider policy is in report-only mode. It flagged: <?php $warningText = ['package_disabled' => 'this package is marked unavailable', 'memory_limit_exceeded' => 'the selected profile exceeds its package memory ceiling']; ?><?= htmlspecialchars(implode('; ', array_map(static fn (string $warning): string => $warningText[$warning] ?? 'a provider policy condition', $actionResult['policy_warnings'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
           <?php endif; ?>
           <?php if ($downloadFailure): ?>
             <p role="alert">The requested backup is unavailable or failed file validation.</p>
@@ -386,7 +366,7 @@ try {
               </section>
               <section aria-labelledby="orm-backups-title">
                 <h3 id="orm-backups-title">Backups</h3>
-                <p class="orm-note">Create an RDB snapshot while the cache stays online. Restoring briefly stops the cache and replaces its data with the selected snapshot; writes made after that snapshot may be lost. ORM creates a safety snapshot before restore. The transfer may use extra CPU and disk I/O. ORM keeps the three newest snapshots; creating another removes the oldest.</p>
+                <p class="orm-note">Create an RDB snapshot while the cache stays online. Restoring briefly stops the cache and replaces its data with the selected snapshot; writes made after that snapshot may be lost. ORM creates a safety snapshot before restore. The transfer may use extra CPU and disk I/O. The hosting provider's retention limit is applied when you create a new snapshot.</p>
                 <form method="post" class="orm-preset-form">
                   <input type="hidden" name="orm_action" value="backup.create">
                   <button type="submit"<?= $instanceStatus['state'] === 'running' ? '' : ' disabled' ?>>Create backup</button>
@@ -428,7 +408,7 @@ try {
                   <option value="magento">Magento — 64 MiB</option>
                   <option value="session">Session cache — 32 MiB</option>
                 </select>
-                <p class="orm-preset-help">Each profile uses the same private socket, 16 databases, 100-client ceiling, and non-persistent cache policy. Memory never exceeds the current 64 MiB host cap. Package-specific limits are not available in this build.</p>
+                <p class="orm-preset-help">Each profile uses the same private socket, 16 databases, 100-client ceiling, and non-persistent cache policy. The hosting provider may disable provisioning or enforce a lower package memory ceiling.</p>
                 <button type="submit">Initialize cache</button>
               </form>
             <?php else: ?>
@@ -441,6 +421,7 @@ try {
                       <label for="orm-memory-mib"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 9h8M8 13h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Memory limit (MiB)</span>
                         <input id="orm-memory-mib" name="orm_memory_mib" type="number" min="8" max="64" step="1" required value="<?= htmlspecialchars((string) $instanceStatus['config']['memory_mib'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                       </label>
+                      <p class="orm-note">Your hosting package may enforce a lower memory ceiling than the maximum shown here.</p>
                       <label for="orm-maxmemory-policy"><span class="orm-config-label"><svg class="orm-config-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M5 12h14M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="5" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/><circle cx="15" cy="12" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/><circle cx="11" cy="19" r="2" fill="#fff" stroke="currentColor" stroke-width="2"/></svg>When the cache is full</span>
                         <select id="orm-maxmemory-policy" name="orm_maxmemory_policy" required>
                           <?php foreach (['allkeys-lru' => 'Evict least recently used keys', 'allkeys-lfu' => 'Evict least frequently used keys', 'allkeys-random' => 'Evict random keys', 'volatile-lru' => 'Evict least recently used expiring keys', 'volatile-lfu' => 'Evict least frequently used expiring keys', 'volatile-random' => 'Evict random expiring keys', 'volatile-ttl' => 'Evict expiring keys with the shortest TTL', 'noeviction' => 'Reject writes when full'] as $policy => $label): ?>
