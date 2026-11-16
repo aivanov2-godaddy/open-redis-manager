@@ -1,17 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A bold open white ring with three data streams flowing through its opening, on a deep Redis-red field.</desc>
-  <defs>
-    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#EF392D"/>
-      <stop offset="1" stop-color="#C81E1E"/>
-    </linearGradient>
-    <linearGradient id="orm-white" x1="58" y1="55" x2="205" y2="202" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFE7E2"/>
-    </linearGradient>
-  </defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
-  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-white)" stroke-width="18" stroke-linecap="round"/>
-  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-white)" stroke-width="11" stroke-linecap="round"/>
+  <desc id="orm-desc">A custom white R monogram with three connected cache nodes on a vivid Redis-red tile.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
+  <path d="M75 205V53h66c35 0 55 18 55 48s-20 48-55 48H75m62 0 60 56" fill="none" stroke="#FFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M116 87h24c10 0 16 5 16 14s-6 14-16 14h-24" fill="none" stroke="#FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="116" cy="87" r="6" fill="#FFF"/>
+  <circle cx="140" cy="101" r="6" fill="#FFF"/>
+  <circle cx="116" cy="115" r="6" fill="#FFF"/>
 </svg>

@@ -33,11 +33,12 @@ $assertions = [
         && str_contains($cpanelPage, 'data:image/png;base64,') && str_contains($cpanelPage, '$providerBranding[\'support_url\']')
         && str_contains($cpanelPage, 'footer_visible') && str_contains($cpanelPage, '--orm-primary')
         && str_contains($cpanelPage, '--orm-surface') && str_contains($cpanelPage, '--orm-text')
-        && str_contains($cpanelPage, 'M162 82a68 68 0 1 0 0 92')
-        && !str_contains($cpanelPage, 'M66 55h81c47 0 76 25 76 64')
-        && !str_contains($cpanelPage, 'M128 55 187 86v73')
-        && str_contains($whmPage, 'M162 82a68 68 0 1 0 0 92')
-        && !str_contains($whmPage, 'M66 55h81c47 0 76 25 76 64'),
+        && str_contains($cpanelPage, 'M75 205V53h66c35 0 55 18 55 48')
+        && str_contains($cpanelPage, 'M116 87h24c10 0 16 5 16 14')
+        && str_contains($whmPage, 'M75 205V53h66c35 0 55 18 55 48')
+        && str_contains($whmPage, 'M116 87h24c10 0 16 5 16 14')
+        && !str_contains($cpanelPage, 'M162 82a68 68 0 1 0 0 92')
+        && !str_contains($whmPage, 'M162 82a68 68 0 1 0 0 92'),
     is_string($whmPage) && str_contains($whmPage, "'fleet.migrate'")
         && str_contains($whmPage, 'migrateFleetAccount($username, $targetBackend, $writesQuiesced)')
         && str_contains($whmPage, 'name="writes_quiesced"') && str_contains($whmPage, 'SessionRequestGuard::allowsMutation($_SERVER)'),
