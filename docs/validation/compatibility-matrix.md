@@ -62,12 +62,15 @@ Do not advertise any row as supported until a completed, reviewable validation r
 | Backup and restore | Broker tests exercise selected snapshots, validation, service restart, and rollback with fixtures | Not recorded |
 | Redis-to-Valkey migration | Broker tests exercise version gates, validation, success, and rollback with fixtures | Not recorded |
 | WHM recovery | Broker and fleet tests cover read-only scans and the fixed start repair | Not recorded |
+| Optional AUTH defaults and lifecycle | Broker fixtures cover disabled-by-default status, verified enable/rotation/disable, and config preservation | Not recorded |
+| AUTH restart failure and rollback | Broker fixtures cover failed PING verification and restoration of the prior auth state; PHP tests cover the cPanel action/response contract | Not recorded on cPanel |
+| AUTH credential disclosure | Broker/PHP diagnostics tests check secret exclusion from status, metrics, diagnostics, audit metadata, and helper output | Not recorded on cPanel |
 | Missing binaries / bad permissions | Guard and broker tests cover selected preflight and permission failures | Not recorded |
 | Full disk / ENOSPC | Perl broker test injects ENOSPC after a partial configuration write and checks fail-closed cleanup; this simulates the write error without filling a filesystem | Not recorded |
 | Stale metrics | Broker and PHP tests cover stale sample behavior | Not recorded |
 | Failed rollback | Packaging and broker fixtures cover selected rollback failures | Not recorded on cPanel |
 
-CI and fixture results are valuable repository evidence. They do not prove behavior across real cPanel releases, OS images, CloudLinux features, PHP handlers, or server package layouts.
+CI and fixture results are valuable repository evidence. They do not prove behavior across real cPanel releases, OS images, CloudLinux features, PHP handlers, server package layouts, or authentication with installed Redis/Valkey CLI processes. In particular, AUTH CLI environment handling and secret display in a real authenticated cPanel session still need host validation.
 
 ## Validation record requirements
 
