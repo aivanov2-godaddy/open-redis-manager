@@ -1,5 +1,6 @@
 use strict;
 use warnings;
+use Errno qw(ENOSPC);
 use Test::More;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
@@ -427,6 +428,30 @@ is_deeply([map { [@{$_}[2 .. $#$_]] } @config_get_cli_calls], [
 ], 'use one CONFIG GET pattern per command for pre-7.0 compatibility');
 my $account = { name => 'ormtest', uid => $<, gid => $test_gid };
 is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
+my $diskfull_account = { name => 'ormdiskfull', uid => $<, gid => $test_gid };
+my $write_calls_before_diskfull = scalar @systemctl_calls;
+$manager->{atomic_write_call} = sub {
+    my ($handle, $content, $path) = @_;
+    if ($path =~ m!ormdiskfull[/\\]redis[.]conf\z!) {
+        my $partial = substr($content, 0, 32);
+        my $written = syswrite($handle, $partial);
+        die "write ENOSPC fixture prefix: $!" if !defined($written) || $written != length($partial);
+        $! = ENOSPC;
+        return 0;
+    }
+    return print {$handle} $content;
+};
+my $diskfull_result = $manager->provision($diskfull_account, 'generic');
+is($diskfull_result->{error}, 'storage_unavailable', 'report storage failure when an atomic config write hits ENOSPC');
+ok(!-e "$etc_instances/ormdiskfull" && !-l "$etc_instances/ormdiskfull"
+    && !-e "$data_instances/ormdiskfull" && !-l "$data_instances/ormdiskfull",
+    'remove the partial configuration, manifest, and instance data after ENOSPC');
+is(scalar(@systemctl_calls), $write_calls_before_diskfull,
+    'do not start or enable a service after an ENOSPC provisioning failure');
+is_deeply($manager->dispatch('instance.status', $diskfull_account),
+    { state => 'not_configured', success => JSON::PP::true, version => 1 },
+    'leave the account unconfigured after partial state is rolled back');
+delete $manager->{atomic_write_call};
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');

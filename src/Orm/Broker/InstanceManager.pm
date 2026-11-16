@@ -81,6 +81,7 @@ sub new {
         config_get => $args{config_get},
         config_set => $args{config_set},
         backup_create => $args{backup_create},
+        atomic_write_call => $args{atomic_write_call},
         atomic_commit => $args{atomic_commit},
     }, $class;
 }
@@ -1933,7 +1934,9 @@ sub _stage_atomic_write {
     my ($self, $path, $content, $mode, $uid, $gid) = @_;
     my $temporary = $path . '.tmp-' . $$ . '-' . int(rand(1_000_000));
     return undef if !sysopen(my $handle, $temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-    my $ok = print {$handle} $content;
+    my $ok = ref($self->{atomic_write_call}) eq 'CODE'
+        ? eval { $self->{atomic_write_call}->($handle, $content, $path) }
+        : print {$handle} $content;
     $ok = 0 if !$ok || !close($handle);
     if ($ok) {
         $ok = chmod($mode, $temporary) && chown($uid, $gid, $temporary);
