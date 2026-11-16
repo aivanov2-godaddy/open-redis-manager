@@ -43,7 +43,7 @@ The rows below are candidate validation targets, not supported configurations. S
 | Candidate host combination | Required evidence | Status |
 |---|---|---|
 | AlmaLinux 9 + cPanel & WHM 134 LTS | Install, account boundary, WHM ACL, lifecycle, backup/restore, migration, recovery, uninstall | Not run |
-| AlmaLinux 10 + cPanel & WHM 134 or later | Same lifecycle and security scenarios; confirm package/service behavior | Not run |
+| AlmaLinux 10.3 + cPanel & WHM 138.0 build 24 | Same lifecycle and security scenarios; confirm package/service behavior | Partial: identity smoke passed; lifecycle and security scenarios not run |
 | Ubuntu 24.04 LTS + a currently supported cPanel release | Installer prerequisites, registration, service lifecycle, backup/restore, uninstall | Not run |
 | CloudLinux 9 + a currently supported cPanel release | Base installation first, then CageFS/PHP Selector, Alt-PHP, handler, domain socket visibility and lifecycle | Not run |
 | CloudLinux 10 + cPanel & WHM 134 or later | Supported conversion/install route, CageFS/PHP Selector, Alt-PHP, handler, domain socket visibility and lifecycle | Not run |
@@ -56,9 +56,9 @@ Do not advertise any row as supported until a completed, reviewable validation r
 |---|---|---|
 | Fresh install | Linux CI runs the installer in an isolated mock cPanel root and checks deployed files, manifest, AppConfig, service state, instance-root permissions, and rollback after registration failure | Not recorded |
 | Upgrade and uninstall | Linux CI mocks the identity-v1 upgrade, registration failures, rollback, and uninstall paths | Not recorded |
-| Account identity | Live smoke checks LiveAPI identity against the local broker | Passed in two private test runs; latest run was read-only and the deployed source revision was not established |
+| Account identity | Live smoke checks LiveAPI identity against the local broker | Passed in three private test runs; the 2026-11-16 run used an explicitly selected test account and did not establish the deployed source revision |
 | Account boundary and WHM ACL | Broker and PHP tests cover peer identity and root-only request paths | Not recorded across the matrix |
-| Redis/Valkey lifecycle | Broker tests exercise service and backend operations with fixtures | Not run; read-only discovery on the latest private test environment did not detect Redis or Valkey at the supported common paths |
+| Redis/Valkey discovery and lifecycle | Broker tests exercise service and backend operations with fixtures | One cPanel ea-podman Redis 6.2.24 container was observed during read-only inventory; ORM discovery and lifecycle operations were not run |
 | Backup and restore | Broker tests exercise selected snapshots, validation, service restart, and rollback with fixtures | Not recorded |
 | Redis-to-Valkey migration | Broker tests exercise version gates, validation, success, and rollback with fixtures | Not recorded |
 | WHM recovery | Broker and fleet tests cover read-only scans and the fixed start repair | Not recorded |

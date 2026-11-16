@@ -18,9 +18,9 @@ The check requires an installed ORM cPanel entry point, an active `orm-broker.se
 
 ## Current evidence
 
-A live cPanel identity smoke test has passed twice in private testing. In the latest read-only run, the installed page reported a verified account identity through LiveAPI while the broker was active. The installed files did not match the current repository checkout, so the deployed source revision was not established. No host, account, domain, address, email, credential, or session detail is recorded here.
+A third live cPanel identity smoke run passed on 2026-11-16. The sanitized environment and scenario results are in [`records/2026-11-16-identity-smoke.md`](records/2026-11-16-identity-smoke.md). The run verified the installed cPanel page's LiveAPI identity check while the broker was active and observed a Redis container managed by cPanel's Podman integration. It did not perform Redis/Valkey operations, and it did not establish which repository revision is installed.
 
-This evidence does not verify provisioning, lifecycle controls, metrics, configuration, backups, or a supported production matrix. Those remain release gates.
+This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
 
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
 
