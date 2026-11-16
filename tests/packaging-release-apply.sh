@@ -105,7 +105,9 @@ fi
 prepare_installation "$target_root" "$manifest"
 printf 'old broker revision\n' >"$target_root$broker_target"
 broker_digest="$(sha256sum "$target_root$broker_target" | awk '{print $1}')"
-sed -i "s#^broker_handler|644|[a-f0-9]*|$broker_target$#broker_handler|644|$broker_digest|$broker_target#" "$manifest"
+awk -F'|' -v digest="$broker_digest" 'BEGIN { OFS = "|" } $1 == "broker_handler" { $3 = digest } { print }' \
+    "$manifest" >"$manifest.next"
+mv -- "$manifest.next" "$manifest"
 before_broker_refusal="$(tree_snapshot "$target_root")"
 if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >/dev/null 2>&1; then
     printf 'release apply accepted an unsupported broker update.\n' >&2
