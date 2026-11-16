@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — Health guidance</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f7fb; color: #172235; font-family: Arial, sans-serif; }
+    .topbar { height: 62px; display: flex; align-items: center; gap: 14px; padding: 0 34px; color: #fff; background: #18283f; }
+    .brand-icon { width: 35px; height: 35px; }
+    .topbar strong { font-size: 17px; }
+    .topbar span { margin-left: auto; color: #d0d9e6; font-size: 13px; }
+    main { max-width: 1020px; margin: 30px auto; padding: 0 22px; }
+    h1 { margin: 0 0 8px; font-size: 27px; }
+    .subtitle { margin: 0 0 20px; color: #65748a; }
+    .card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+    .state { display: inline-block; margin: 0; padding: 6px 12px; border-radius: 999px; background: #e9f7ef; color: #176b3a; font-size: 13px; font-weight: 700; }
+    .heading { display: flex; align-items: center; gap: 12px; margin: 20px 0 12px; }
+    h2 { margin: 0; font-size: 19px; }
+    .advisory { margin-left: auto; color: #65748a; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+    .findings { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .finding { padding: 14px 16px; border: 1px solid #e4e8ef; border-left: 4px solid #b77813; border-radius: 8px; background: #fffaf0; }
+    .finding.review { border-left-color: #317a9d; background: #f5fafc; }
+    .severity { margin-right: 7px; color: #59677c; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .finding strong { display: inline; }
+    .finding p { margin: 7px 0 0; color: #4d5c71; font-size: 14px; line-height: 1.5; }
+    .finding p:last-child { color: #24334a; }
+    .note { margin: 16px 0 0; color: #65748a; font-size: 12px; line-height: 1.5; }
+    .metrics-title { margin: 24px 0 12px; font-size: 18px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .metric { padding: 13px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+    .metric span { display: block; color: #59677c; font-size: 12px; }
+    .metric strong { display: block; margin-top: 7px; font-size: 19px; }
+    @media (max-width: 620px) { main { margin: 18px auto; padding: 0 12px; } .card { padding: 16px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <img class="brand-icon" src="../../assets/orm-mark.svg" alt="">
+    <strong>Open Redis Manager</strong>
+    <span>cPanel · demo</span>
+  </header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="subtitle">Account-scoped status and guidance based on the current cache sample.</p>
+    <section class="card" aria-label="Synthetic ORM health guidance preview">
+      <p class="state">Running</p>
+      <section aria-labelledby="health-title" aria-live="polite">
+        <div class="heading"><h2 id="health-title">Health guidance</h2><span class="advisory">Advisory</span></div>
+        <ul class="findings">
+          <li class="finding">
+            <span class="severity">Warning</span><strong>Memory use is approaching the configured limit</strong>
+            <p>The current Redis used-memory counter is about 86% of the configured memory ceiling.</p>
+            <p><strong>Suggested next step:</strong> Review cache growth and eviction behavior. If the workload needs more capacity, ask your provider about the package limit before raising the setting.</p>
+          </li>
+          <li class="finding">
+            <span class="severity">Warning</span><strong>Connected clients are near the configured limit</strong>
+            <p>The current client count is at least 85% of the configured client ceiling.</p>
+            <p><strong>Suggested next step:</strong> Review application connection pooling and ask your provider before increasing the client ceiling.</p>
+          </li>
+          <li class="finding review">
+            <span class="severity">Review</span><strong>The cumulative cache hit ratio is below 50%</strong>
+            <p>Since the current cache process started, fewer than half of the counted key lookups were hits.</p>
+            <p><strong>Suggested next step:</strong> Review whether the application is storing and reusing the intended cache entries. This cumulative ratio resets when the service restarts.</p>
+          </li>
+        </ul>
+        <p class="note">Heuristic thresholds are advisory. Guidance does not test application connectivity or guarantee cache performance.</p>
+      </section>
+      <h2 class="metrics-title">Current sample</h2>
+      <div class="metrics">
+        <div class="metric"><span>Memory used</span><strong>27.5 MiB / 32 MiB</strong></div>
+        <div class="metric"><span>Connected clients</span><strong>35 / 40</strong></div>
+        <div class="metric"><span>Cumulative hit ratio</span><strong>42.0%</strong></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -29,3 +29,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-health-guidance
+        name: cPanel health guidance checks
+        entry: php tests/cpanel-health-guidance.php
+        language: system
+        pass_filenames: false
+        always_run: true

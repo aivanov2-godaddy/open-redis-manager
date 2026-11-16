@@ -8,6 +8,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
 $cpanel = new CPANEL();
@@ -188,6 +189,7 @@ $formatBytes = static function (int $bytes): string {
     return number_format($value, $unit === 0 ? 0 : 1) . ' ' . $units[$unit];
 };
 $hasLiveMetrics = is_array($liveMetrics) && ($liveMetrics['success'] ?? false) === true;
+$healthGuidance = \Orm\Cpanel\HealthGuidance::build($instanceStatus, $liveMetrics);
 $hitCount = $hasLiveMetrics ? $liveMetrics['keyspace_hits'] + $liveMetrics['keyspace_misses'] : 0;
 $hitRatio = $hasLiveMetrics && $hitCount > 0
     ? number_format(($liveMetrics['keyspace_hits'] / $hitCount) * 100, 1) . '%'
@@ -297,6 +299,16 @@ try {
         .orm-metric-value { display: block; margin-top: 8px; color: #172235; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
         .orm-metrics-note { color: #59677c; font-size: 13px; }
         .orm-metrics-note.is-stale { padding: 10px 12px; border-left: 3px solid #b77813; border-radius: 4px; background: #fff6e5; color: #714b0b; }
+        .orm-health { margin: 22px 0; }
+        .orm-health-list { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
+        .orm-health-item { padding: 13px 15px; border: 1px solid #dce3ed; border-left: 4px solid #317a9d; border-radius: 8px; background: var(--orm-surface); }
+        .orm-health-item.is-warning { border-left-color: #b77813; background: #fffaf0; }
+        .orm-health-item.is-review { border-left-color: #317a9d; }
+        .orm-health-item.is-info { border-left-color: #8795a8; }
+        .orm-health-item strong { display: block; }
+        .orm-health-item p { margin: 6px 0 0; }
+        .orm-health-severity { display: inline-block; margin-right: 6px; color: #59677c; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+        .orm-health-note { color: #59677c; font-size: 13px; }
         .orm-history { margin: 22px 0 18px; }
         .orm-history-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
         .orm-history-ranges { display: inline-flex; gap: 6px; }
@@ -408,6 +420,20 @@ try {
                   <p class="orm-note" role="status">The scan reached a safety limit. Results may be incomplete.</p>
                 <?php endif; ?>
               <?php endif; ?>
+            </section>
+            <section class="orm-health" aria-labelledby="orm-health-title" aria-live="polite">
+              <h3 id="orm-health-title">Health guidance <span class="orm-health-severity">Advisory</span></h3>
+              <ul class="orm-health-list">
+                <?php foreach ($healthGuidance['findings'] as $finding): ?>
+                  <li class="orm-health-item is-<?= htmlspecialchars($finding['severity'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <span class="orm-health-severity"><?= htmlspecialchars($finding['severity'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
+                    <strong><?= htmlspecialchars($finding['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>
+                    <p><?= htmlspecialchars($finding['detail'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+                    <p><strong>Suggested next step:</strong> <?= htmlspecialchars($finding['recommendation'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+              <p class="orm-health-note">Guidance uses current account metrics and fixed thresholds. It does not test application connectivity or guarantee cache performance.</p>
             </section>
             <?php if ($instanceStatus['state'] !== 'not_configured'): ?>
               <?php if ($developerExposure): ?>
