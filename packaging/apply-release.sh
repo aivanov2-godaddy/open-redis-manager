@@ -97,7 +97,7 @@ append_audit() {
     exec {audit_fd}>>"$audit_file" || return 1
     flock -x "$audit_fd" || { exec {audit_fd}>&-; return 1; }
     audit_size="$(stat -c '%s' -- "$audit_file")" || { exec {audit_fd}>&-; return 1; }
-    (( audit_size <= 1_048_000 )) || { exec {audit_fd}>&-; return 1; }
+    (( audit_size <= 1048000 )) || { exec {audit_fd}>&-; return 1; }
     record="$("$ORM_PERL" -MJSON::PP -e '
         my ($timestamp, $from, $to, $digest, $outcome) = @ARGV;
         print JSON::PP->new->canonical->encode({
