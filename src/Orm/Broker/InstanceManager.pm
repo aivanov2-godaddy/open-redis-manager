@@ -222,8 +222,10 @@ sub auth_status {
     my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
+    my ($auth_valid, $auth_secret) = $self->_read_auth_secret($account, $manifest);
+    return _failure('configuration_unavailable') if !$auth_valid;
     return {
-        auth_configured => $manifest->{auth_configured} ? JSON::PP::true : JSON::PP::false,
+        auth_configured => defined($auth_secret) ? JSON::PP::true : JSON::PP::false,
         success => JSON::PP::true,
         version => 1,
     };
@@ -2051,7 +2053,6 @@ sub _read_manifest {
     my ($settings, $auth_secret) = $self->_valid_config($account, $manifest);
     return undef if !$settings;
     $manifest->{settings} = $settings;
-    $manifest->{auth_configured} = defined($auth_secret) ? 1 : 0;
     return $manifest;
 }
 
