@@ -9,7 +9,7 @@ use Throwable;
 final class BrokerClient
 {
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
-    private const MAX_RESPONSE_BYTES = 40960;
+    private const MAX_RESPONSE_BYTES = 262144;
     private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
@@ -22,6 +22,8 @@ final class BrokerClient
         'backup.list',
         'backup.create',
         'backup.restore',
+        'provider.exposure',
+        'provider.resellers',
     ];
     private const MEMORY_POLICIES = [
         'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
@@ -36,7 +38,7 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
+    /** @return array{success:bool,version:int,state?:string,preset?:string,exposure?:string,resellers?:list<array{owner:string,account_count:int,active_instances:int,memory_mib:int,max_instances:int,max_memory_mib:int}>,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
     public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null, ?string $range = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
@@ -106,12 +108,56 @@ final class BrokerClient
             return null;
         }
 
+        $keys = array_keys($decoded);
+        sort($keys);
         if ($decoded['success']) {
+            if ($operation === 'provider.exposure') {
+                return $keys === ['exposure', 'success', 'version']
+                    && in_array($decoded['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
+                    ? $decoded : null;
+            }
+            if ($operation === 'provider.resellers') {
+                if ($keys !== ['resellers', 'success', 'version'] || !is_array($decoded['resellers'])
+                    || !array_is_list($decoded['resellers']) || count($decoded['resellers']) > 1000) {
+                    return null;
+                }
+                $previousOwner = '';
+                $resellers = [];
+                foreach ($decoded['resellers'] as $reseller) {
+                    if (!is_array($reseller)) {
+                        return null;
+                    }
+                    $resellerKeys = array_keys($reseller);
+                    sort($resellerKeys);
+                    if ($resellerKeys !== ['account_count', 'active_instances', 'max_instances', 'max_memory_mib', 'memory_mib', 'owner']
+                        || !is_string($reseller['owner']) || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $reseller['owner']) !== 1
+                        || strcmp($reseller['owner'], $previousOwner) <= 0) {
+                        return null;
+                    }
+                    foreach (['account_count' => 10000, 'active_instances' => 10000, 'max_instances' => 100000,
+                        'max_memory_mib' => 1000000, 'memory_mib' => 640000] as $field => $maximum) {
+                        if (!is_int($reseller[$field]) || $reseller[$field] < 0 || $reseller[$field] > $maximum) {
+                            return null;
+                        }
+                    }
+                    if ($reseller['active_instances'] > $reseller['account_count']) {
+                        return null;
+                    }
+                    $previousOwner = $reseller['owner'];
+                    $resellers[] = [
+                        'owner' => $reseller['owner'],
+                        'account_count' => $reseller['account_count'],
+                        'active_instances' => $reseller['active_instances'],
+                        'memory_mib' => $reseller['memory_mib'],
+                        'max_instances' => $reseller['max_instances'],
+                        'max_memory_mib' => $reseller['max_memory_mib'],
+                    ];
+                }
+                return ['resellers' => $resellers, 'success' => true, 'version' => 1];
+            }
             if ($operation === 'instance.configure' && !array_key_exists('config', $decoded)) {
                 return null;
             }
-            $keys = array_keys($decoded);
-            sort($keys);
             if ($operation === 'backup.list') {
                 if ($keys !== ['backups', 'success', 'version'] || !is_array($decoded['backups'])
                     || !array_is_list($decoded['backups']) || count($decoded['backups']) > 3) {
@@ -292,11 +338,14 @@ final class BrokerClient
 
     private static function validProviderPolicyWarnings(mixed $warnings): bool
     {
-        if (!is_array($warnings) || !array_is_list($warnings) || count($warnings) > 2) {
+        if (!is_array($warnings) || !array_is_list($warnings) || count($warnings) > 5) {
             return false;
         }
         foreach ($warnings as $warning) {
-            if (!is_string($warning) || !in_array($warning, ['package_disabled', 'memory_limit_exceeded'], true)) {
+            if (!is_string($warning) || !in_array($warning, [
+                'package_disabled', 'memory_limit_exceeded', 'reseller_instance_quota_exceeded',
+                'reseller_memory_quota_exceeded', 'reseller_usage_unavailable',
+            ], true)) {
                 return false;
             }
         }

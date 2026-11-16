@@ -14,6 +14,12 @@ $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
 $brokerVerified = $account !== null
     && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
 $instanceClient = new \Orm\Cpanel\BrokerClient();
+$providerExposureResult = $brokerVerified ? $instanceClient->request('provider.exposure') : null;
+$exposureLevel = is_array($providerExposureResult) && ($providerExposureResult['success'] ?? false) === true
+    && in_array($providerExposureResult['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
+    ? $providerExposureResult['exposure'] : 'simple';
+$developerExposure = in_array($exposureLevel, ['developer', 'advanced'], true);
+$advancedExposure = $exposureLevel === 'advanced';
 $actionResult = null;
 $action = $_POST['orm_action'] ?? null;
 if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
@@ -287,12 +293,23 @@ try {
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
       <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
-  <defs><linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#E5392D"/><stop offset="1" stop-color="#D92D20"/></linearGradient></defs>
+  <defs>
+    <linearGradient id="orm-red" x1="26" y1="18" x2="226" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#E94337"/><stop offset=".52" stop-color="#E2362B"/><stop offset="1" stop-color="#C92319"/></linearGradient>
+    <linearGradient id="orm-face" x1="76" y1="74" x2="179" y2="203" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F5F7FB"/></linearGradient>
+    <linearGradient id="orm-channel" x1="83" y1="120" x2="173" y2="184" gradientUnits="userSpaceOnUse"><stop stop-color="#F5A19A"/><stop offset="1" stop-color="#D92D20"/></linearGradient>
+  </defs>
   <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
-  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/><path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
-  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
-  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M69 165C47 139 59 103 89 78c28-23 66-32 97-21M187 91c23 27 13 61-17 86-27 22-63 33-94 25" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
+  <circle cx="76" cy="68" r="7" fill="#fff"/><circle cx="184" cy="191" r="7" fill="#fff"/>
+  <path d="m128 54 62 36-62 36-62-36 62-36Z" fill="url(#orm-face)"/>
+  <path d="m128 68 38 22-38 22-38-22 38-22Z" fill="url(#orm-red)"/>
+  <path d="m128 79 19 11-19 11-19-11 19-11Z" fill="#fff" fill-opacity=".95"/><circle cx="128" cy="90" r="4" fill="#D92D20"/>
+  <path d="m66 103 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+  <path d="m82 127 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+  <path d="m66 138 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+  <path d="m82 162 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+  <path d="M174 71c9 5 16 10 21 17" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5"/><circle cx="197" cy="93" r="5" fill="#fff"/>
 </svg>Open Redis Manager</h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
@@ -305,7 +322,7 @@ try {
           <?php elseif ($actionResult !== null && !$actionResult['success']): ?>
             <p role="alert"><?= htmlspecialchars($errorMessages[$actionResult['error'] ?? ''] ?? 'The action could not be completed. Contact your hosting provider.', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?php if (is_string($actionResult['safety_backup_id'] ?? null)): ?> Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was retained and is available in the backup list.<?php endif; ?></p>
           <?php elseif ($actionResult !== null): ?>
-            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?><?php if (in_array($action, ['provision', 'configure'], true) && is_array($actionResult['policy_warnings'] ?? null) && $actionResult['policy_warnings'] !== []): ?> Provider policy is in report-only mode. It flagged: <?php $warningText = ['package_disabled' => 'this package is marked unavailable', 'memory_limit_exceeded' => 'the selected profile exceeds its package memory ceiling']; ?><?= htmlspecialchars(implode('; ', array_map(static fn (string $warning): string => $warningText[$warning] ?? 'a provider policy condition', $actionResult['policy_warnings'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
+            <p role="status"><?php if ($action === 'configure'): ?>Configuration saved.<?php elseif ($action === 'backup.create' && is_array($actionResult['backup'] ?? null)): ?>Backup created: <?= htmlspecialchars($actionResult['backup']['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php elseif ($action === 'backup.restore'): ?>Restored snapshot <?= htmlspecialchars($actionResult['backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. Safety snapshot <?= htmlspecialchars($actionResult['safety_backup_id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> was created first; cache state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php else: ?>Action accepted.<?php endif; ?><?php if (isset($actionResult['state']) && $action !== 'backup.restore'): ?> Current state: <?= htmlspecialchars($actionResult['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?><?php if (in_array($action, ['provision', 'configure'], true) && is_array($actionResult['policy_warnings'] ?? null) && $actionResult['policy_warnings'] !== []): ?> Provider policy warning: <?php $warningText = ['package_disabled' => 'this package is marked unavailable', 'memory_limit_exceeded' => 'the requested memory exceeds a package ceiling', 'reseller_instance_quota_exceeded' => 'the reseller instance limit has been reached', 'reseller_memory_quota_exceeded' => 'the reseller memory limit has been reached', 'reseller_usage_unavailable' => 'the current reseller usage could not be verified']; ?><?= htmlspecialchars(implode('; ', array_map(static fn (string $warning): string => $warningText[$warning] ?? 'a provider policy condition', $actionResult['policy_warnings'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.<?php endif; ?></p>
           <?php endif; ?>
           <?php if ($downloadFailure): ?>
             <p role="alert">The requested backup is unavailable or failed file validation.</p>
@@ -319,6 +336,7 @@ try {
               <p class="orm-note">Setup preset: <strong><?= htmlspecialchars(ucfirst($instanceStatus['preset']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></p>
             <?php endif; ?>
             <?php if ($instanceStatus['state'] !== 'not_configured'): ?>
+              <?php if ($developerExposure): ?>
               <section aria-labelledby="orm-usage-title">
                 <h3 id="orm-usage-title">Usage metrics</h3>
                 <?php if ($hasLiveMetrics): ?>
@@ -364,6 +382,8 @@ try {
                   <p class="orm-metrics-note" role="status">No recent usage sample is available. ORM could not return live metrics or a saved sample.</p>
                 <?php endif; ?>
               </section>
+              <?php endif; ?>
+              <?php if ($advancedExposure): ?>
               <section aria-labelledby="orm-backups-title">
                 <h3 id="orm-backups-title">Backups</h3>
                 <p class="orm-note">Create an RDB snapshot while the cache stays online. Restoring briefly stops the cache and replaces its data with the selected snapshot; writes made after that snapshot may be lost. ORM creates a safety snapshot before restore. The transfer may use extra CPU and disk I/O. The hosting provider's retention limit is applied when you create a new snapshot.</p>
@@ -395,11 +415,16 @@ try {
                   <p class="orm-note" role="status">Backup inventory is temporarily unavailable.</p>
                 <?php endif; ?>
               </section>
+              <?php endif; ?>
             <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'not_configured'): ?>
-              <p>Choose a starting profile, then initialize a private Redis-compatible cache instance. Your hosting provider must first select the backend.</p>
+              <p>Initialize a private Redis-compatible cache instance. Your hosting provider must first select the backend.</p>
               <form method="post" class="orm-preset-form">
                 <input type="hidden" name="orm_action" value="provision">
+                <?php if (!$developerExposure): ?>
+                <input type="hidden" name="orm_preset" value="generic">
+                <p class="orm-preset-help">The standard profile uses a private socket, a 64 MiB memory cap, and no persistence.</p>
+                <?php else: ?>
                 <label for="orm-preset">Configuration preset</label>
                 <select id="orm-preset" name="orm_preset" required>
                   <option value="generic" selected>Generic — 64 MiB</option>
@@ -409,10 +434,11 @@ try {
                   <option value="session">Session cache — 32 MiB</option>
                 </select>
                 <p class="orm-preset-help">Each profile uses the same private socket, 16 databases, 100-client ceiling, and non-persistent cache policy. The hosting provider may disable provisioning or enforce a lower package memory ceiling.</p>
+                <?php endif; ?>
                 <button type="submit">Initialize cache</button>
               </form>
             <?php else: ?>
-              <?php if (in_array($instanceStatus['state'], ['running', 'stopped', 'failed'], true) && is_array($instanceStatus['config'] ?? null)): ?>
+              <?php if ($developerExposure && in_array($instanceStatus['state'], ['running', 'stopped', 'failed'], true) && is_array($instanceStatus['config'] ?? null)): ?>
                 <section aria-labelledby="orm-config-title">
                   <h3 id="orm-config-title">Configuration</h3>
                   <form method="post" class="orm-config-form">
@@ -441,7 +467,7 @@ try {
                     <button type="submit">Save configuration</button>
                   </form>
                 </section>
-              <?php elseif (in_array($instanceStatus['state'], ['starting', 'stopping'], true)): ?>
+              <?php elseif ($developerExposure && in_array($instanceStatus['state'], ['starting', 'stopping'], true)): ?>
                 <p class="orm-note">Configuration editing is unavailable while the cache is changing state.</p>
               <?php endif; ?>
               <div class="orm-actions">
@@ -471,6 +497,7 @@ try {
                     <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy PHP with PhpRedis example" data-copy-target="orm-example-php" data-copy-label="PHP with PhpRedis">Copy example</button></div>
                     <pre><code id="orm-example-php"><?= htmlspecialchars($connectionDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
                   </details>
+                  <?php if ($developerExposure): ?>
                   <details>
                     <summary>WordPress and WooCommerce · Redis Object Cache</summary>
                     <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy WordPress and WooCommerce example" data-copy-target="orm-example-wordpress" data-copy-label="WordPress and WooCommerce">Copy settings</button></div>
@@ -505,6 +532,7 @@ try {
                     <div class="orm-copy-actions"><button class="orm-copy-button" type="button" aria-label="Copy Python with redis-py example" data-copy-target="orm-example-python" data-copy-label="Python with redis-py">Copy example</button></div>
                     <pre><code id="orm-example-python"><?= htmlspecialchars($connectionDetails['python_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
                   </details>
+                  <?php endif; ?>
                   <p id="orm-copy-status" class="orm-note orm-copy-status" role="status" aria-live="polite"></p>
                   <script>
                     (() => {
@@ -534,6 +562,7 @@ try {
             </div>
           <?php endif; ?>
         </section>
+        <?php if ($developerExposure): ?>
         <section class="orm-card orm-diagnostics" aria-labelledby="orm-diagnostics-title">
           <div class="orm-diagnostics-head">
             <div class="orm-diagnostics-description">
@@ -548,6 +577,7 @@ try {
           </details>
           <a class="orm-diagnostics-download" href="?orm_diagnostics=download">Download diagnostics JSON</a>
         </section>
+        <?php endif; ?>
       <?php endif; ?>
     </main>
     <?php

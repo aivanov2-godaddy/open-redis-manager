@@ -38,7 +38,10 @@ sub run {
     die "ORM broker socket path already exists\n" if lstat($socket_path);
 
     my $resolver = Orm::Broker::AccountResolver->new(account_root => $account_root);
-    my $instance_manager = Orm::Broker::InstanceManager->new();
+    my $instance_manager = Orm::Broker::InstanceManager->new(
+        resolver => $resolver,
+        quota_lock_path => "$runtime_dir/reseller-quota.lock",
+    );
     my $fleet_inventory = Orm::Broker::FleetInventory->new(
         resolver => $resolver,
         instance_manager => $instance_manager,
@@ -130,7 +133,7 @@ sub run {
                 my $peer_uid = $clients{$fd}->{uid};
                 my $limit = $request->{operation} eq 'identity'
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
-                    : $request->{operation} eq 'fleet.list' ? 1
+                    : $request->{operation} eq 'fleet.list' || $request->{operation} eq 'provider.resellers' ? 1
                     : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                         || $request->{operation} eq 'fleet.control'
@@ -139,9 +142,12 @@ sub run {
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
                 my $rate_window = ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                     || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore') ? 60 : 1;
-                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control|fleet\.backup\.(?:create|restore))\z/ ? 1 : 0;
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.control|fleet\.backup\.(?:create|restore)|provider\.resellers)\z/ ? 1 : 0;
                 my $rate_bucket = $request->{operation} eq 'fleet.control'
                     ? 'fleet.control'
+                    : $request->{operation} eq 'fleet.list' ? 'fleet.list'
+                    : $request->{operation} eq 'provider.resellers' ? 'provider.resellers'
+                    : $request->{operation} eq 'provider.exposure' ? 'provider.exposure'
                     : $request->{operation} =~ /\Afleet\.backup\./
                         ? 'fleet.backup:' . $request->{username}
                         : $rate_window;
