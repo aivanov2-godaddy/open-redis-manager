@@ -17,7 +17,7 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 - [#5 — Add backup, restore and bounded monitoring](https://github.com/aivanov2-godaddy/open-redis-manager/issues/5) ([draft](issues/05-operations.md))
 - [#6 — Add package, reseller, policy and branding controls](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6) ([draft](issues/06-provider-controls.md))
 - [#7 — Build disposable cPanel integration environment and release gates](https://github.com/aivanov2-godaddy/open-redis-manager/issues/7) ([draft](issues/07-validation.md))
-- [#52 — Complete WHM fleet recovery and aggregate visibility](https://github.com/aivanov2-godaddy/open-redis-manager/issues/52) ([draft](issues/08-whm-recovery-aggregates.md))
+- [#52 — Complete WHM fleet recovery and aggregate visibility](https://github.com/aivanov2-godaddy/open-redis-manager/issues/52) — closed after the guarded recovery and page-scoped fleet-count implementation ([historical draft](issues/08-whm-recovery-aggregates.md))
 
 Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account lifecycle, live metrics, fixed setup presets and bounded configuration. PR #16 merged the initial lifecycle slice; live disposable cPanel validation is still required before production use.
 
@@ -25,13 +25,13 @@ Issue #2 now has read-only backend discovery, a WHM root-only backend choice for
 
 Open a feature branch and pull request for each coherent implementation increment after the corresponding issue is created. The first PR should deliver the prototype, docs, and UX screenshots; later PRs should ship one privileged boundary at a time. PRs require actual validation on the stated runtime and must disclose any screen that remains mock data.
 
-## Current status
+## Current status (2026-11-16)
 
-- Upstream repository: public; it was empty when this work started.
-- Local repository: `main` targets the upstream default branch; the active implementation is developed as stacked feature branches.
-- GitHub: milestone #1 and issues #1–#7 plus #52 are created. Issues #1, #2, #3, #5, #6, #7, and #52 are open; issue #4 is closed.
-- PRs #8–#51 have been merged to `main`; PR #53 is open for fixed WHM diagnostics and the current ORM mark redesign.
-- PR #16 added account-private Unix sockets, an account-owned systemd template, WHM backend selection, and cPanel provision/status/start/stop actions. Linux CI passes; live disposable-host lifecycle validation remains open.
-- Initial setup presets, live and stale metrics, hourly history with 24-hour and 7-day cPanel charts, bounded existing-instance configuration, account-scoped RDB backup creation/list/download/restore with safety snapshot and three-item retention, and root-only WHM per-account service and snapshot controls are implemented. Restore validates the selected RDB, verifies service state, and attempts rollback from its safety copy if startup fails. WHM snapshot requests return account-specific results. Migration, package/reseller controls, provider branding, exposure tiers, and fixed read-only account diagnostics have implementation slices; supported disposable-host validation remains open. Issues #1, #2, #3, #5, #6, #7, and #52 remain open for their outstanding acceptance criteria.
-- Issue #4 closed on GitHub after earlier WHM slices. Its local draft is retained as historical context; unfinished fleet aggregates, recovery scans, and safe repairs are tracked in issue #52. User-supplied Redis commands remain unsupported.
-- Application connection and update lifecycle documentation is available under `docs/guides/`; these guides do not imply ORM automatically configures applications or already provides an updater.
+- Upstream repository: public. `main` tracks the upstream default branch; implementation work is reviewed through feature branches and pull requests.
+- Milestone #1 and issues #1–#7 plus #52 exist on GitHub. Open issues are #1, #2, #3, #5, #6, and #7. Issues #4 and #52 are closed.
+- Recent merged work includes PR #53 (root-only diagnostics), #55 (guarded WHM recovery and page-scoped fleet counts), and #56 (ORM icon redesign). No pull request was open at the time of this update.
+- The repository includes a manual development installer, cPanel/WHM entry points, an account-bound broker, instance lifecycle/configuration, metrics, backups and restore, package/reseller policy, provider branding, application discovery, guarded migration, root-only diagnostics, and a fixed recovery scan/start action. The prototype UI uses sample data.
+- Linux CI and fixture tests cover important broker and packaging paths. The live cPanel smoke has verified account identity only. Fresh install, live lifecycle, ACLs across supported releases, restore, migration, recovery, uninstall, CloudLinux/CageFS and failure-injection behavior remain release gates. No ORM-supported production host matrix is established.
+- The [host compatibility and validation matrix](../docs/validation/compatibility-matrix.md), [sanitized validation record template](../docs/validation/record-template.md), and [unreleased release notes](../docs/release-notes.md) track the gap between implemented code and validated deployment support.
+- Issue #4 and #52 are closed; the remaining aggregate/management features are described in the [feature catalog](../docs/features/catalog.md). User-supplied Redis commands remain unsupported.
+- Application connection guides document values and examples; ORM does not configure application files. A general in-panel updater is not implemented; see the [update lifecycle guide](../docs/guides/update-lifecycle.md).
