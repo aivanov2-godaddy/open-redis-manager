@@ -165,7 +165,7 @@ expected_artifact="$(awk -F'|' '$1 == "artifact" { print $2 }' "$metadata")"
 expected_channel="$(awk -F'|' '$1 == "channel" { print $2 }' "$metadata")"
 expected_created_at="$(awk -F'|' '$1 == "created_at" { print $2 }' "$metadata")"
 expected_expires_at="$(awk -F'|' '$1 == "expires_at" { print $2 }' "$metadata")"
-expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 3))"
+expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 4))"
 after_preview="$(target_snapshot)"
 [[ "$before_preview" == "$after_preview" && -f "$retired_path" ]] \
     || { printf 'release preview changed an installed fixture.\n' >&2; exit 1; }
