@@ -338,6 +338,8 @@ EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 run_upgrade_expect_success
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'new install manifest did not validate.\n' >&2; exit 1; }
+[[ "$(orm_install_manifest_version "$ORM_INSTALL_MANIFEST")" == "$(cat "$ORM_VERSION_FILE")" ]] \
+    || { printf 'successful identity bridge did not record the package version.\n' >&2; exit 1; }
 [[ -S "$TEST_SOCKET" && -d "$ORM_INSTANCE_ROOT" && ! -L "$ORM_INSTANCE_ROOT" \
     && -d "$ORM_INSTANCE_DATA" && ! -L "$ORM_INSTANCE_DATA" \
     && "$(stat -c '%u:%a' "$ORM_INSTANCE_ROOT")" == 0:711 \

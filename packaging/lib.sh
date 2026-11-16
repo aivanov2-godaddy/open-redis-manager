@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ORM_PACKAGE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 ORM_REPO_ROOT="$(cd -- "$ORM_PACKAGE_ROOT/.." && pwd -P)"
+ORM_VERSION_FILE="$ORM_REPO_ROOT/VERSION"
 ORM_CPANEL_ROOT=/usr/local/cpanel
 ORM_CPanel_THEME=jupiter
 ORM_INSTALL_PLUGIN="$ORM_CPANEL_ROOT/scripts/install_plugin"
@@ -166,9 +167,10 @@ orm_validate_legacy_identity_v1() {
 }
 
 orm_write_install_manifest() {
-    local destination="$1" key source target mode digest owner temporary
+    local destination="$1" key source target mode digest owner temporary version
+    version="$(orm_read_package_version)" || orm_die 'the package version file is missing or invalid.'
     temporary="${destination}.tmp.$$"
-    (umask 077; printf 'orm-install-manifest-v1\n' >"$temporary") \
+    (umask 077; printf 'orm-install-manifest-v2\nversion|%s\n' "$version" >"$temporary") \
         || orm_die 'could not create the ORM install manifest.'
     while IFS='|' read -r key source target mode; do
         [[ -f "$target" && ! -L "$target" ]] || orm_die "cannot manifest an unsafe installed file: $target"
@@ -184,18 +186,27 @@ orm_write_install_manifest() {
 }
 
 orm_validate_install_manifest() {
-    local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner
+    local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner header version records_start
     local -A recorded=() expected=()
     [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
     owner="$(stat -c '%u' -- "$manifest")" || return 1
     manifest_mode="$(stat -c '%a' -- "$manifest")" || return 1
     [[ "$owner" == 0 && "$manifest_mode" == 600 ]] || return 1
-    [[ "$(head -n 1 -- "$manifest")" == orm-install-manifest-v1 ]] || return 1
+    header="$(head -n 1 -- "$manifest")"
+    case "$header" in
+        orm-install-manifest-v1) records_start=2 ;;
+        orm-install-manifest-v2)
+            IFS='|' read -r key version < <(sed -n '2p' -- "$manifest")
+            [[ "$key" == version ]] && orm_valid_version "$version" || return 1
+            records_start=3
+            ;;
+        *) return 1 ;;
+    esac
     while IFS='|' read -r key mode expected_digest; do
         [[ "$key" =~ ^[a-z_]+$ && "$mode" =~ ^[0-7]{3,4}$ && "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
         [[ -z "${recorded[$key]+present}" ]] || return 1
         recorded[$key]="$mode|$expected_digest"
-    done < <(tail -n +2 -- "$manifest")
+    done < <(tail -n +"$records_start" -- "$manifest")
     while IFS='|' read -r key source target mode; do
         expected[$key]=1
         orm_safe_target_parent_chain "$target" || return 1
@@ -209,6 +220,40 @@ orm_validate_install_manifest() {
         [[ "$actual_digest" == "$expected_digest" ]] || return 1
     done < <(orm_package_file_map)
     [[ "${#recorded[@]}" -eq "${#expected[@]}" ]]
+}
+
+orm_valid_version() {
+    local version="${1:-}"
+    "$ORM_PERL" -e '
+        my $version = shift // q{};
+        my $number = qr/(?:0|[1-9][0-9]*)/;
+        my $prerelease = qr/(?:$number|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)/;
+        exit($version =~ /\A$number\.$number\.$number(?:-$prerelease(?:\.$prerelease)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/ ? 0 : 1);
+    ' "$version"
+}
+
+orm_read_package_version() {
+    local version
+    [[ -f "$ORM_VERSION_FILE" && ! -L "$ORM_VERSION_FILE" ]] || return 1
+    IFS= read -r version <"$ORM_VERSION_FILE" || return 1
+    orm_valid_version "$version" || return 1
+    [[ "$(wc -l <"$ORM_VERSION_FILE" | tr -d '[:space:]')" == 1 ]] || return 1
+    printf '%s\n' "$version"
+}
+
+orm_install_manifest_version() {
+    local manifest="$1" header key version
+    [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
+    header="$(head -n 1 -- "$manifest")"
+    case "$header" in
+        orm-install-manifest-v1) return 0 ;;
+        orm-install-manifest-v2)
+            IFS='|' read -r key version < <(sed -n '2p' -- "$manifest")
+            [[ "$key" == version ]] && orm_valid_version "$version" || return 1
+            printf '%s\n' "$version"
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 orm_require_root_and_platform() {
