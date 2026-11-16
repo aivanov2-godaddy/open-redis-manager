@@ -269,7 +269,7 @@ run_upgrade_expect_success() {
 }
 
 prepare_empty_instance_roots() {
-    mkdir -m 0711 "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"
+    mkdir -p -m 0711 "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"
 }
 
 assert_current_install_restored() {
