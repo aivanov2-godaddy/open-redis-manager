@@ -506,10 +506,20 @@ my $migration_account = { name => 'ormmig', uid => $<, gid => $test_gid };
 my $migration_provisioned = $migration_manager->provision($migration_account, 'generic');
 ok($migration_provisioned->{success}, 'provision an isolated Redis fixture for migration tests');
 my @migration_exceptions;
-my $run_migration = sub {
-    local $SIG{__DIE__} = sub { push @migration_exceptions, $_[0]; };
-    return $migration_manager->migrate_to_valkey($migration_account);
-};
+my $migration_locked_method = \&Orm::Broker::InstanceManager::_migrate_to_valkey_locked;
+{
+    no warnings 'redefine';
+    local *Orm::Broker::InstanceManager::_migrate_to_valkey_locked = sub {
+        my $response = eval { $migration_locked_method->(@_) };
+        if ($@) {
+            push @migration_exceptions, $@;
+            die $@;
+        }
+        return $response;
+    };
+    my $run_migration = sub {
+        return $migration_manager->migrate_to_valkey($migration_account);
+    };
 my $migration_manifest_path = "$migration_etc/ormmig/manifest.json";
 my $legacy_manifest;
 {
@@ -554,6 +564,7 @@ is($migration_manager->backend($migration_account), 'valkey', 'persist the Valke
 is($migration_manager->_read_manifest($migration_account)->{version}, 2,
     'write a version-two manifest when the Valkey backend is committed');
 is($migration_unit_state, 'active', 'leave the verified Valkey service running');
+}
 
 my $backup_root_path = "$data_instances/.orm-backups";
 my $account_backup_path = "$backup_root_path/ormtest";
