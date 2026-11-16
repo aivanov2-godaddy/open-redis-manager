@@ -12,7 +12,7 @@ Use understandable sub-signals: service availability, memory pressure, connectio
 
 ## Application preflight
 
-Check service initialization, running status, authentication and PHP client availability. Discovery may inspect safe marker files for common frameworks, but should not read source secrets or edit application files.
+The installed cPanel page reports whether the instance is initialized, whether its service is running, and whether account-scoped connection details are available. It labels application connectivity unverified because ORM does not inspect app configuration or test the site's selected PHP runtime or client extension. The optional application scan uses bounded, fixed marker paths from authenticated cPanel domain metadata. It reports only supported app names, reads no file contents, and makes no application changes. A marker is not proof that a site is configured to use the cache.
 
 ## Exportable diagnostics
 

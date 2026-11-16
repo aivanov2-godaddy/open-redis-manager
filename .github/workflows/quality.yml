@@ -40,6 +40,8 @@ jobs:
         run: php tests/cpanel-connection-details.php
       - name: Check cPanel diagnostic report
         run: php tests/cpanel-diagnostic-report.php
+      - name: Check cPanel application discovery
+        run: php tests/cpanel-application-discovery.php
       - name: Check provider package policy storage
         run: php tests/provider-policy-store.php
       - name: Check provider package policy UI guards

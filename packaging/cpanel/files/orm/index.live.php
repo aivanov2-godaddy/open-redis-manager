@@ -6,6 +6,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccount
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
@@ -88,6 +89,14 @@ $diagnosticReport = $brokerVerified
 $diagnosticJson = $diagnosticReport !== null
     ? json_encode($diagnosticReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
     : null;
+$applicationScan = $brokerVerified
+    && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET'
+    && ($_GET['orm_app_scan'] ?? null) === 'run'
+    ? \Orm\Cpanel\ApplicationDiscovery::fromLiveApi($cpanel, $account->username())
+    : null;
+if ($applicationScan !== null) {
+    header('Cache-Control: no-store, private');
+}
 if ($brokerVerified && ($_SERVER['REQUEST_METHOD'] ?? null) === 'GET'
     && ($_GET['orm_diagnostics'] ?? null) === 'download') {
     $filenameTimestamp = gmdate('Ymd-His', $diagnosticGeneratedAt);
@@ -246,6 +255,7 @@ try {
         .orm-entry a { color: var(--orm-secondary); }
         .orm-brand-footer { margin: 18px 0 0; color: #59677c; font-size: 13px; }
         .orm-card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: var(--orm-surface); box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+        .orm-preflight-list { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
         .orm-diagnostics { margin-top: 20px; }
         .orm-diagnostics-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
         .orm-diagnostics-description { max-width: 640px; }
@@ -341,6 +351,40 @@ try {
             <?php if (!empty($instanceStatus['preset'])): ?>
               <p class="orm-note">Setup preset: <strong><?= htmlspecialchars(ucfirst($instanceStatus['preset']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></p>
             <?php endif; ?>
+            <section aria-labelledby="orm-preflight-title">
+              <h3 id="orm-preflight-title">Setup preflight</h3>
+              <ul class="orm-preflight-list">
+                <li><strong>Cache instance:</strong> <?= $instanceStatus['state'] === 'not_configured' ? 'Not initialized — initialize it before connecting an application.' : 'Initialized.' ?></li>
+                <li><strong>Cache service:</strong> <?= match ($instanceStatus['state']) {
+                    'running' => 'Running.',
+                    'starting' => 'Starting.',
+                    'stopping' => 'Stopping.',
+                    'stopped' => 'Stopped — start it before connecting an application.',
+                    'failed' => 'Failed — check the service status before connecting an application.',
+                    default => 'Not configured — initialize the cache before connecting an application.',
+                } ?></li>
+                <li><strong>Connection details:</strong> <?= $connectionDetails !== null ? 'Available for this cPanel account.' : 'Available after the cache is initialized.' ?></li>
+                <li><strong>Application connection:</strong> Not verified. ORM does not read application configuration or test an application runtime.</li>
+              </ul>
+              <h4>Application discovery</h4>
+              <p class="orm-note">On demand, ORM checks fixed marker paths in your cPanel domain roots. It does not read file contents, configuration, secrets, or change application files. Results identify possible applications only; they do not confirm an active Redis integration.</p>
+              <p><a href="?orm_app_scan=run">Scan for common applications</a></p>
+              <?php if ($applicationScan !== null): ?>
+                <?php if (!$applicationScan['available']): ?>
+                  <p role="status">Application discovery is unavailable in this cPanel runtime. No files were scanned.</p>
+                <?php elseif ($applicationScan['roots_inspected'] === 0): ?>
+                  <p role="status">No safe domain roots were available to scan.</p>
+                <?php elseif ($applicationScan['applications'] === []): ?>
+                  <p role="status">Scan complete. No supported application markers were found in the inspected domain roots.</p>
+                <?php else: ?>
+                  <p role="status">Possible applications found. Their connection status remains unverified:</p>
+                  <ul><?php foreach ($applicationScan['applications'] as $application): ?><li><?= htmlspecialchars($application, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li><?php endforeach; ?></ul>
+                <?php endif; ?>
+                <?php if ($applicationScan['truncated']): ?>
+                  <p class="orm-note" role="status">The scan reached a safety limit. Results may be incomplete.</p>
+                <?php endif; ?>
+              <?php endif; ?>
+            </section>
             <?php if ($instanceStatus['state'] !== 'not_configured'): ?>
               <?php if ($developerExposure): ?>
               <section aria-labelledby="orm-usage-title">
