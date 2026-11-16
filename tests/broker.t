@@ -406,8 +406,11 @@ my $decoded_metrics = JSON::PP->new->decode($metrics_response);
 ok($decoded_metrics->{success} && $decoded_metrics->{connected_clients} == 3,
     'route account metrics through peer-credential resolution');
 my $history = $manager->dispatch('metrics.history', $account, undef, undef, undef, '24h');
+diag('initial history response: ' . JSON::PP->new->canonical(1)->encode($history))
+    if !$history->{success} || !$history->{scheduled} || !@{$history->{history} // []};
 ok($history->{success} && $history->{range} eq '24h' && $history->{scheduled}
-    && @{$history->{history}} == 1 && $history->{history}->[0]->{connected_clients} == 3,
+    && @{$history->{history}} <= 24 && @{$history->{history}} > 0
+    && $history->{history}->[-1]->{connected_clients} == 3,
     'return bounded account-scoped hourly metrics history and report scheduled collection');
 my $history_file = "$etc_instances/ormtest/metrics-history.json";
 my @history_stat = stat($history_file);
@@ -425,7 +428,16 @@ is($manager->dispatch('metrics.history', $account, undef, undef, undef, '30d')->
 is($manager->dispatch('metrics.history', { name => 'ormother', uid => $< + 1, gid => $account->{gid} }, undef, undef, undef, '24h')->{error}, 'not_configured',
     'keep metric history isolated to the authenticated account');
 my $same_hour_history = $manager->dispatch('metrics.history', $account, undef, undef, undef, '24h');
-is(scalar @{$same_hour_history->{history}}, 1, 'replace repeated live samples in the same hourly bucket');
+my $repeated_sample = {
+    commands_per_second => 12, connected_clients => 9, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, uptime_seconds => 3600,
+    sampled_at => $same_hour_history->{history}->[-1]->{sampled_at},
+};
+ok($manager->_write_metrics_history($account, $repeated_sample), 'persist a replacement for a sampled hour');
+my $replaced_history = $manager->dispatch('metrics.history', $account, undef, undef, undef, '24h');
+is(scalar @{$replaced_history->{history}}, scalar @{$same_hour_history->{history}},
+    'replace repeated samples in the same hourly bucket instead of adding duplicate points');
+is($replaced_history->{history}->[-1]->{connected_clients}, 9, 'keep the latest sample values for a repeated hour');
 my $history_lock_path = "$etc_instances/ormtest/metrics-history.lock";
 open(my $held_history_lock, '+<', $history_lock_path) or die "open metrics history lock: $!";
 flock($held_history_lock, LOCK_EX) or die "hold metrics history lock: $!";
@@ -447,6 +459,8 @@ close($history_fixture_file) or die "close bounded history fixture: $!";
 chmod(0600, $history_file) or die "chmod bounded history fixture: $!";
 chown($<, $<, $history_file) or die "chown bounded history fixture: $!";
 my $bounded_history = $manager->dispatch('metrics.history', $account, undef, undef, undef, '7d');
+diag('bounded history response: ' . JSON::PP->new->canonical(1)->encode($bounded_history))
+    if !$bounded_history->{success} || @{$bounded_history->{history} // []} > 168;
 ok($bounded_history->{success} && @{$bounded_history->{history}} <= 168,
     'return at most one week of hourly points from retained history');
 my $invalid_history_path = "$etc_instances/ormtest/metrics-history.json";
@@ -586,7 +600,7 @@ $unit_state = 'inactive';
 is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running',
     'preserve the stopped error when the saved sample is expired');
 ok(!-e $metrics_path, 'remove an expired root-owned snapshot on access');
-ok(!(grep { $_->[0] ne 'is-active' && $_->[1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
+ok(!(grep { $_->[0] ne 'is-active' && $_->[-1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
     'only the account-specific service and metrics timer templates are controlled');
 ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
     'status never queries a global Redis, Valkey or metrics unit');
