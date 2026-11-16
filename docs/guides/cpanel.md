@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, and explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Credential management and WHM fleet backups remain unimplemented; disposable-host validation is still required.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention, and a previewable credential-redacted diagnostics report. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Credential management and WHM fleet backups remain unimplemented; disposable-host validation is still required.
 
 ## Overview
 
@@ -20,6 +20,8 @@ Use the [configuration and presets guide](configuration-presets.md). The page of
 ## Backups and diagnostics
 
 Create account-scoped snapshots within provider retention. Before restore, explain impact and capture a safety snapshot. Diagnostics must be previewable and omit credentials, sessions and unrelated account content.
+
+The installed **Support diagnostics** section previews the exact JSON that the account can download. The report includes bounded state, configuration and latest metrics, and omits account names, hostnames, filesystem paths, credentials, keys, values, application payloads, sessions, logs and raw command output. It is generated in memory and not retained by ORM. See the [monitoring and diagnostics guide](monitoring-diagnostics.md) for its schema and limits.
 
 ## Account boundary
 

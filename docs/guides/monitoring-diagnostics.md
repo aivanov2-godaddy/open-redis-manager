@@ -16,4 +16,6 @@ Check service initialization, running status, authentication and PHP client avai
 
 ## Exportable diagnostics
 
-Provide a preview that lists included fields. Redact credentials and tokens; exclude application payload, session identifiers, private keys and unrelated files. Record export events without recording the bundle's sensitive contents. Diagnostics export remains unimplemented.
+The authenticated cPanel page provides a **Support diagnostics** section with a collapsed JSON preview and an explicit download link. It runs only after cPanel LiveAPI identity matches the local broker's peer identity. The export contains a schema version, UTC generation time, normalized instance state, allowlisted workload preset and bounded configuration, fixed connection-mode flags, and the latest bounded metric sample with its stale/retained flags. A missing or failed broker response becomes `unavailable` or `null`; raw errors are never exported.
+
+The report is assembled in memory for the current page request. ORM does not save the report or create a separate export log. It excludes account names, hostnames, socket/filesystem paths, credentials, tokens, Redis keys and values, application payloads and sessions, logs, and raw command output. The download uses a fixed UTC timestamp filename, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. It accepts only the exact `GET ?orm_diagnostics=download` route. The report builder copies only allowlisted fields from the broker response and rejects out-of-range settings or metric shapes.

@@ -25,4 +25,4 @@ Package and reseller limits should gate new provisioning and configuration incre
 
 ## Incident diagnostics
 
-Export version, backend, service state, bounded configuration, sample health and redacted logs. Exclude passwords, keys, application payloads, license secrets, and unrelated account files. Let the operator preview the bundle contents before download.
+The installed cPanel page offers a preview and explicit download for a minimal JSON report containing schema/generation metadata, normalized instance state, allowlisted preset and bounded configuration, fixed connection-mode flags, and the latest numeric metric sample with stale/retention status. It includes no backend executable output, account name, hostname, socket path, logs, passwords, tokens, keys, values, application payloads, sessions, license data or unrelated files. The report is assembled in memory and not stored by ORM. See the [monitoring and diagnostics guide](guides/monitoring-diagnostics.md).

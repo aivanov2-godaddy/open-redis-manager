@@ -6,6 +6,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccount
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
 $cpanel = new CPANEL();
@@ -60,6 +61,25 @@ $canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceS
 $liveMetrics = $canRequestMetrics
     ? $instanceClient->request('instance.metrics')
     : null;
+$diagnosticGeneratedAt = time();
+$diagnosticReport = $brokerVerified
+    ? \Orm\Cpanel\DiagnosticReport::build($instanceStatus, $liveMetrics, $diagnosticGeneratedAt)
+    : null;
+$diagnosticJson = $diagnosticReport !== null
+    ? json_encode($diagnosticReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)
+    : null;
+if ($brokerVerified && ($_SERVER['REQUEST_METHOD'] ?? null) === 'GET'
+    && ($_GET['orm_diagnostics'] ?? null) === 'download') {
+    $filenameTimestamp = gmdate('Ymd-His', $diagnosticGeneratedAt);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Disposition: attachment; filename="orm-diagnostics-' . $filenameTimestamp . '.json"');
+    header('Cache-Control: no-store, private');
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Length: ' . strlen($diagnosticJson));
+    echo $diagnosticJson;
+    $cpanel->end();
+    return;
+}
 $historyRange = is_string($_GET['orm_metrics_range'] ?? null) && in_array($_GET['orm_metrics_range'], ['24h', '7d'], true)
     ? $_GET['orm_metrics_range']
     : '24h';
@@ -202,6 +222,14 @@ try {
         .orm-entry h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; font-size: 28px; }
         .orm-brand-icon { width: 34px; height: 34px; }
         .orm-card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+        .orm-diagnostics { margin-top: 20px; }
+        .orm-diagnostics-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+        .orm-diagnostics-description { max-width: 640px; }
+        .orm-diagnostics-privacy { flex: 0 1 250px; padding: 13px 15px; border: 1px solid #f3d0cc; border-radius: 9px; background: #fff9f8; color: #8f251d; font-size: 12px; line-height: 1.5; }
+        .orm-diagnostics-privacy strong { display: block; margin-bottom: 3px; font-size: 13px; }
+        .orm-diagnostics pre { max-height: 360px; overflow: auto; padding: 14px; border-radius: 8px; background: #f2f5f9; font-size: 13px; }
+        .orm-diagnostics summary { cursor: pointer; font-weight: 700; }
+        .orm-diagnostics-download { display: inline-block; margin-top: 14px; padding: 10px 14px; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; text-decoration: none; }
         .orm-state { display: inline-block; margin: 0 0 18px; padding: 6px 12px; border-radius: 999px; background: #e9f7ef; color: #176b3a; font-weight: 700; text-transform: capitalize; }
         .orm-state.is-pending { background: #fff3d9; color: #895a00; }
         .orm-state.is-failed { background: #fde9e9; color: #a42828; }
@@ -254,7 +282,7 @@ try {
         .orm-connection .orm-copy-button { padding: 7px 11px; border: 1px solid #cbd5e1; background: #fff; color: #263b57; font-size: 13px; }
         .orm-copy-status:empty { display: none; }
         .orm-copy-status { color: #176b3a; }
-        @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } }
+        @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
       <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 128 128" aria-hidden="true">
   <defs>
@@ -505,6 +533,20 @@ try {
             <?php endif; ?>
             </div>
           <?php endif; ?>
+        </section>
+        <section class="orm-card orm-diagnostics" aria-labelledby="orm-diagnostics-title">
+          <div class="orm-diagnostics-head">
+            <div class="orm-diagnostics-description">
+              <h2 id="orm-diagnostics-title">Support diagnostics</h2>
+              <p class="orm-note">Preview or download a small JSON report of this account's ORM instance. It is generated in memory and is not stored by ORM.</p>
+            </div>
+            <aside class="orm-diagnostics-privacy"><strong>Privacy built in</strong>No account names, paths, credentials, keys, values, app content, sessions, logs, or command output.</aside>
+          </div>
+          <details>
+            <summary>Preview diagnostics JSON</summary>
+            <pre><?= htmlspecialchars($diagnosticJson, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></pre>
+          </details>
+          <a class="orm-diagnostics-download" href="?orm_diagnostics=download">Download diagnostics JSON</a>
         </section>
       <?php endif; ?>
     </main>

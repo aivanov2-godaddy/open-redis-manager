@@ -10,8 +10,8 @@ Build account-safe backups and useful operational visibility.
 - Metrics include memory, peak, connections, uptime, operations and hit/miss ratio.
 - Hourly history can be viewed over 24 hours and 7 days with bounded retention.
 - Last-known metrics remain visible with a stale marker when sampling fails.
-- Exported diagnostics are previewable and credential-redacted.
+- Exported diagnostics are previewable and credential-redacted, and the account can explicitly download the report.
 
 ## Progress
 
-- The installed cPanel page requests bounded metrics for every configured account. The broker returns the fixed numeric allowlist, capture time and stale marker; it atomically retains the latest root-owned `0600` sample and hourly history for up to 30 days, with 24-hour and 7-day cPanel charts. Account-scoped RDB snapshot creation, listing, download, three-snapshot retention, and restore with a validated safety snapshot and startup rollback attempt are implemented. Diagnostics export, WHM fleet backup/restore, and disposable-host validation remain open.
+- The installed cPanel page requests bounded metrics for every configured account. The broker returns the fixed numeric allowlist, capture time and stale marker; it atomically retains the latest root-owned `0600` sample and hourly history for up to 30 days, with 24-hour and 7-day cPanel charts. Account-scoped RDB snapshot creation, listing, download, three-snapshot retention, and restore with a validated safety snapshot and startup rollback attempt are implemented. The authenticated cPanel page also previews and downloads a minimal in-memory diagnostics JSON report that excludes identity, paths, credentials, key/value data, app payloads, sessions, logs, and command output. WHM fleet backup/restore and disposable-host validation remain open.
