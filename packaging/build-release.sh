@@ -125,7 +125,7 @@ metadata_path="$work_directory/release.metadata"
 chmod 0644 -- "$metadata_path"
 
 private_bits="$(openssl rsa -in "$private_key_real" -check -noout -text 2>/dev/null \
-    | sed -nE '1s/.*\(([0-9]+) bit\).*/\1/p')" || orm_die 'private key is not a valid RSA key.'
+    | sed -nE '1s/.*\(([0-9]+) bit([,)]).*/\1/p')" || orm_die 'private key is not a valid RSA key.'
 [[ "$private_bits" =~ ^[0-9]+$ ]] && (( private_bits >= 3072 )) \
     || orm_die 'private RSA signing key must be at least 3072 bits.'
 public_key_path="$work_directory/$key_id.pem"
