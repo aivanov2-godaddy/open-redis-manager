@@ -3,83 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Open Redis Manager · WHM package policy preview</title>
+  <title>Open Redis Manager · WHM provider policy</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; color: #202938; background: #f2f4f7; font: 15px/1.45 Inter, "Segoe UI", sans-serif; }
-    .top { display: flex; align-items: center; gap: 16px; height: 64px; padding: 0 34px; color: #fff; background: #172235; }
-    .top img { width: 34px; height: 34px; }
-    .top strong { font-size: 17px; }
-    .crumb { margin-left: auto; color: #c9d2df; font-size: 13px; }
-    main { width: min(100% - 48px, 1080px); margin: 34px auto; }
-    .kicker { margin: 0 0 5px; color: #647084; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-    h1 { margin: 0; font-size: 28px; letter-spacing: -.03em; }
-    .intro { margin: 7px 0 22px; color: #59677c; }
-    .status { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid #f2d08a; border-radius: 999px; color: #77500b; background: #fff7e6; font-size: 13px; font-weight: 700; }
-    .status i { width: 8px; height: 8px; border-radius: 50%; background: #d99216; }
-    .card { margin-top: 16px; padding: 22px 24px; border: 1px solid #d9e0e9; border-radius: 10px; background: #fff; box-shadow: 0 2px 5px #1722350a; }
-    h2 { margin: 0 0 7px; font-size: 19px; }
-    h3 { margin: 22px 0 8px; font-size: 16px; }
-    p { margin: 7px 0 15px; color: #59677c; }
-    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; align-items: end; }
-    label { display: block; margin-bottom: 6px; color: #344054; font-size: 13px; font-weight: 650; }
-    input, select { width: 100%; height: 38px; padding: 7px 10px; border: 1px solid #b9c3d0; border-radius: 6px; background: #fff; color: #202938; font: inherit; }
-    .check { display: flex; align-items: center; gap: 8px; padding: 0 0 9px; }
-    .check input { width: 16px; height: 16px; margin: 0; accent-color: #d92d20; }
-    button { min-height: 38px; padding: 8px 14px; border: 0; border-radius: 6px; color: #fff; background: #c92a20; font: inherit; font-weight: 700; }
-    table { width: 100%; margin-top: 12px; border-collapse: collapse; }
-    th, td { padding: 12px 10px; border-bottom: 1px solid #e4e8ee; text-align: left; }
-    th { color: #536176; font-size: 12px; font-weight: 700; }
-    td { color: #253144; }
-    .tag { padding: 4px 8px; border-radius: 999px; color: #176b3a; background: #e9f7ef; font-size: 12px; font-weight: 700; }
-    .tag.off { color: #8f251d; background: #fde9e9; }
-    .foot { margin-top: 20px; padding: 13px 15px; border-left: 3px solid #c9d2df; background: #f8fafc; color: #647084; font-size: 12px; }
-    .mock { margin: 18px 0; color: #8893a3; text-align: center; font-size: 12px; }
-    @media (max-width: 700px) { .top { padding: 0 18px; } .crumb { display: none; } main { width: min(100% - 28px, 1080px); margin-top: 22px; } .grid { grid-template-columns: 1fr; gap: 12px; } .card { padding: 18px; overflow-x: auto; } table { min-width: 620px; } }
+    body { margin: 0; color: #202938; background: #f2f4f7; font: 14px/1.45 Inter, "Segoe UI", sans-serif; }
+    .top { display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 10px 34px; color: #fff; background: #172235; }
+    .top img { width: 38px; height: 38px; }.top strong { font-size: 17px; }.crumb { margin-left: auto; color: #c9d2df; font-size: 12px; }
+    main { width: min(100% - 48px, 1080px); margin: 28px auto; }.eyebrow { margin: 0 0 5px; color: #647084; font-size: 11px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: 27px; letter-spacing: -.03em; }.intro { margin: 7px 0 15px; color: #59677c; }.status { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #cde7d5; border-radius: 999px; color: #176b3a; background: #effaf3; font-size: 12px; font-weight: 750; }.status i { width: 7px; height: 7px; border-radius: 50%; background: #199350; }
+    .card { margin-top: 14px; padding: 18px 21px; border: 1px solid #d9e0e9; border-radius: 10px; background: #fff; box-shadow: 0 2px 5px #1722350a; }
+    h2 { margin: 0 0 6px; font-size: 18px; }h3 { margin: 20px 0 8px; font-size: 15px; }p { margin: 6px 0 12px; color: #59677c; }
+    .grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; align-items: end; }.grid.two { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    label { display: block; margin-bottom: 5px; color: #344054; font-size: 12px; font-weight: 650; }
+    input,select { width: 100%; height: 35px; padding: 6px 9px; border: 1px solid #b9c3d0; border-radius: 6px; background: #fff; color: #202938; font: inherit; }
+    .check { display: flex; align-items: center; gap: 8px; padding: 0 0 8px; color: #344054; font-size: 12px; }.check input { width: 15px; height: 15px; margin: 0; accent-color: #d92d20; }
+    button { min-height: 34px; padding: 7px 12px; border: 0; border-radius: 6px; color: #fff; background: #c92a20; font: inherit; font-size: 12px; font-weight: 700; }
+    table { width: 100%; margin-top: 10px; border-collapse: collapse; }th,td { padding: 9px 9px; border-bottom: 1px solid #e4e8ee; text-align: left; }th { color: #536176; font-size: 11px; font-weight: 750; }td { color: #253144; font-size: 12px; }.badge { padding: 3px 7px; border-radius: 999px; color: #176b3a; background: #e9f7ef; font-size: 10px; font-weight: 750; }.badge.off { color: #8f251d; background: #fde9e9; }
+    .foot { margin-top: 13px; padding: 10px 12px; border-left: 3px solid #c9d2df; background: #f8fafc; color: #647084; font-size: 11px; }.mock { margin-top: 15px; color: #8893a3; text-align: center; font-size: 11px; }
+    @media(max-width:700px){.top{padding:10px 18px}.crumb{display:none}main{width:calc(100% - 28px);margin-top:20px}.grid,.grid.two{grid-template-columns:1fr;gap:9px}.card{padding:16px;overflow-x:auto}table{min-width:690px}}
   </style>
 </head>
 <body>
-  <header class="top">
-    <img src="../../assets/orm-mark.svg" alt="">
-    <strong>Open Redis Manager</strong>
-    <span class="crumb">WHM&nbsp; / &nbsp;Plugins&nbsp; / &nbsp;Open Redis Manager</span>
-  </header>
+  <header class="top"><img src="../../assets/orm-mark.svg" alt=""><strong>Open Redis Manager</strong><span class="crumb">WHM&nbsp; / &nbsp;Plugins&nbsp; / &nbsp;Open Redis Manager</span></header>
   <main>
-    <p class="kicker">Provider controls</p>
-    <h1>Package resource policy</h1>
-    <p class="intro">Set provisioning availability, memory ceilings, and snapshot retention for cPanel packages.</p>
-    <span class="status"><i></i>Report-only mode</span>
-    <section class="card" aria-labelledby="default-title">
-      <h2 id="default-title">Default package rule</h2>
-      <p>Packages without a specific rule use these values. Report-only records policy violations without blocking account requests.</p>
+    <p class="eyebrow">Root provider controls</p>
+    <h1>Package and reseller policy</h1>
+    <p class="intro">Set provisioning, resource ceilings, user exposure, and reseller quotas. Existing instances are grandfathered.</p>
+    <span class="status"><i></i>Report-only · logged, not blocking</span>
+    <section class="card" aria-labelledby="defaults-title">
+      <h2 id="defaults-title">Global defaults</h2>
+      <p>New policy starts in report-only mode. Warn allows changes with a fixed cPanel notice; Enforce blocks applicable quota violations.</p>
       <div class="grid">
-        <div><label>Policy mode</label><select><option>Report-only</option><option>Enforce</option></select></div>
-        <div><label>Default memory ceiling</label><input value="64 MiB" readonly></div>
-        <div><label>Default snapshot retention</label><input value="3 snapshots" readonly></div>
+        <div><label>Policy mode</label><select><option>Report-only</option><option>Warn</option><option>Enforce</option></select></div>
+        <div><label>cPanel exposure</label><select><option>Simple · basic controls and PHP</option><option>Developer · metrics, settings and helpers</option><option>Advanced · includes backup and restore</option></select></div>
+        <div><label>Default package memory ceiling</label><input value="64 MiB" readonly></div>
       </div>
-      <p class="check"><input type="checkbox" checked><label style="margin:0">Allow new instances for packages without a specific rule</label></p>
+      <div class="grid two" style="margin-top:12px">
+        <div><label>Snapshot retention</label><input value="3 snapshots" readonly></div>
+        <label class="check"><input type="checkbox" checked>Allow new instances without a package-specific rule</label>
+      </div>
+      <p class="foot">Exposure controls which sections cPanel renders. It does not change account authorization or broker permissions.</p>
       <button type="button">Save default policy</button>
-      <h3>Package-specific rule</h3>
-      <div class="grid">
-        <div><label>cPanel package</label><input value="starter" readonly></div>
-        <div><label>Memory ceiling</label><input value="24 MiB" readonly></div>
-        <div><label>Snapshot retention</label><input value="2 snapshots" readonly></div>
-      </div>
-      <p class="check"><input type="checkbox" checked><label style="margin:0">Allow new instances for this package</label></p>
+      <h3>Package-specific rules</h3>
+      <table>
+        <thead><tr><th>Package</th><th>Provisioning</th><th>Memory cap</th><th>Snapshot retention</th><th>Action</th></tr></thead>
+        <tbody><tr><th>starter</th><td><span class="badge">Allowed</span></td><td>24 MiB</td><td>2</td><td><button type="button">Remove</button></td></tr><tr><th>legacy-no-cache</th><td><span class="badge off">Disabled</span></td><td>8 MiB</td><td>2</td><td><button type="button">Remove</button></td></tr></tbody>
+      </table>
+      <div class="grid" style="margin-top:12px"><div><label>cPanel package name</label><input value="growth" readonly></div><div><label>Memory ceiling</label><input value="48 MiB" readonly></div><div><label>Snapshot retention</label><input value="3 snapshots" readonly></div></div>
+      <p class="check" style="margin-top:8px"><input type="checkbox" checked><label style="margin:0">Allow new instances for this package</label></p>
       <button type="button">Save package rule</button>
     </section>
-    <section class="card" aria-labelledby="rules-title">
-      <h2 id="rules-title">Configured package rules</h2>
+    <section class="card" aria-labelledby="reseller-title">
+      <h2 id="reseller-title">Reseller quotas</h2>
+      <p>Limits use the trusted cPanel <code>OWNER</code>. Configured instances count while stopped. Enter zero for unlimited; quotas gate new provisioning only.</p>
+      <div class="grid">
+        <div><label>Reseller OWNER</label><input value="reseller1" readonly></div><div><label>Maximum configured instances</label><input value="5" readonly></div><div><label>Maximum aggregate memory</label><input value="128 MiB" readonly></div>
+      </div>
+      <button type="button" style="margin-top:12px">Save reseller quota</button>
       <table>
-        <thead><tr><th>Package</th><th>New instances</th><th>Memory ceiling</th><th>Snapshot retention</th><th>Action</th></tr></thead>
-        <tbody>
-          <tr><th>starter</th><td><span class="tag">Allowed</span></td><td>24 MiB</td><td>2</td><td><button type="button">Remove rule</button></td></tr>
-          <tr><th>legacy-no-cache</th><td><span class="tag off">Disabled</span></td><td>8 MiB</td><td>2</td><td><button type="button">Remove rule</button></td></tr>
-        </tbody>
+        <thead><tr><th>Reseller OWNER</th><th>Configured instances</th><th>Active instances</th><th>Memory in use</th><th>Instance cap</th><th>Memory cap</th><th>Action</th></tr></thead>
+        <tbody><tr><th>reseller1</th><td>4</td><td>3</td><td>96 MiB</td><td>5</td><td>128 MiB</td><td><button type="button">Remove quota</button></td></tr><tr><th>reseller2</th><td>2</td><td>1</td><td>32 MiB</td><td>Unlimited</td><td>Unlimited</td><td>—</td></tr></tbody>
       </table>
-      <div class="foot">Enforcement affects new provisions, later memory changes, and future snapshot retention. Existing ORM instances are not rewritten. Reseller quotas and exposure levels are planned separately.</div>
+      <p class="foot">Usage comes from verified account records and root-owned instance manifests. If the inventory cannot be verified, the summary is unavailable rather than partial.</p>
     </section>
-    <p class="mock">Static UI preview · sample package names and values · not connected to a live WHM server</p>
+    <p class="mock">Static UI preview · synthetic names and values · not connected to a live WHM server</p>
   </main>
 </body>
 </html>

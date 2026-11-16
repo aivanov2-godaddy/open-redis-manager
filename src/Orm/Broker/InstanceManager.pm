@@ -60,6 +60,9 @@ sub new {
         data_root => $args{data_root} // '/var/lib/orm-instances',
         policy => $args{policy} // Orm::Broker::BackendPolicy->new(),
         provider_policy => $args{provider_policy} // Orm::Broker::ProviderPolicy->new(),
+        resolver => $args{resolver},
+        quota_lock_path => $args{quota_lock_path}
+            // File::Spec->catfile($args{etc_root} // '/etc/orm-instances', '.orm-reseller-quota.lock'),
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
         systemctl => $args{systemctl} // '/usr/bin/systemctl',
         systemctl_call => $args{systemctl_call},
@@ -87,6 +90,7 @@ sub dispatch {
     return $self->status($account) if $operation eq 'instance.status';
     return $self->metrics($account) if $operation eq 'instance.metrics';
     return $self->metrics_history($account, $metrics_range) if $operation eq 'metrics.history';
+    return $self->provider_exposure() if $operation eq 'provider.exposure';
     return $self->backups($account) if $operation eq 'backup.list';
     return $self->create_backup($account) if $operation eq 'backup.create';
     return $self->restore_backup($account, $backup_id) if $operation eq 'backup.restore';
@@ -95,6 +99,84 @@ sub dispatch {
     return $self->start($account) if $operation eq 'instance.start';
     return $self->stop($account) if $operation eq 'instance.stop';
     return _failure('invalid_request');
+}
+
+sub provider_exposure {
+    my ($self) = @_;
+    my $exposure = $self->{provider_policy}->exposure_mode();
+    return _failure('provider_policy_unavailable') if !defined($exposure);
+    return { exposure => $exposure, success => JSON::PP::true, version => 1 };
+}
+
+sub reseller_summary {
+    my ($self) = @_;
+    my $rules = $self->{provider_policy}->reseller_rules();
+    my $usage = $self->reseller_usage(undef, 1);
+    return _failure('provider_policy_unavailable') if ref($rules) ne 'HASH' || ref($usage) ne 'HASH';
+    my %owners = map { $_ => 1 } (keys %{$rules}, keys %{$usage});
+    return _failure('operation_failed') if scalar(keys %owners) > 1000;
+    my @resellers;
+    for my $owner (sort keys %owners) {
+        return _failure('operation_failed') if $owner !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+        my $rule = $rules->{$owner} // { max_instances => 0, max_memory_mib => 0 };
+        my $row = $usage->{$owner} // { instances => 0, active_instances => 0, memory_mib => 0 };
+        push @resellers, {
+            owner => $owner,
+            account_count => 0 + $row->{instances},
+            active_instances => 0 + $row->{active_instances},
+            memory_mib => 0 + $row->{memory_mib},
+            max_instances => 0 + $rule->{max_instances},
+            max_memory_mib => 0 + $rule->{max_memory_mib},
+        };
+    }
+    return { resellers => \@resellers, success => JSON::PP::true, version => 1 };
+}
+
+sub reseller_usage {
+    my ($self, $owner_filter, $include_active) = @_;
+    return undef if defined($owner_filter) && (ref($owner_filter)
+        || $owner_filter !~ /\A[a-zA-Z0-9_-]{1,16}\z/);
+    my $resolver = $self->{resolver};
+    return undef if ref($resolver) ne 'HASH' && !eval { $resolver->can('resolve_name') };
+    return undef if !$self->_trusted_directory($self->{etc_root});
+    opendir(my $root, $self->{etc_root}) or return undef;
+    my @names = readdir($root);
+    my $closed = closedir($root);
+    return undef if !$closed || @names > 10002;
+
+    my %usage;
+    $usage{$owner_filter} = { instances => 0, active_instances => 0, memory_mib => 0 }
+        if defined($owner_filter);
+    for my $name (@names) {
+        next if $name eq '.' || $name eq '..';
+        if ($name eq '.orm-reseller-quota.lock' || $name eq 'reseller-quota.lock') {
+            next;
+        }
+        return undef if $name !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+        my $directory = File::Spec->catdir($self->{etc_root}, $name);
+        my @directory_stat = lstat($directory);
+        return undef if !@directory_stat || !S_ISDIR($directory_stat[2])
+            || $directory_stat[4] != $self->{expected_owner_uid}
+            || ($directory_stat[2] & 0027) != 0;
+        my $account = eval { $resolver->resolve_name($name) };
+        return undef if ref($account) ne 'HASH' || ($account->{name} // '') ne $name
+            || !defined($account->{owner}) || ref($account->{owner})
+            || $account->{owner} !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+        next if defined($owner_filter) && $account->{owner} ne $owner_filter;
+        my $manifest = $self->_read_manifest($account);
+        return undef if ref($manifest) ne 'HASH' || ref($manifest->{settings}) ne 'HASH'
+            || !_is_integer($manifest->{settings}->{memory_mib});
+        my $row = $usage{$account->{owner}} //= { instances => 0, active_instances => 0, memory_mib => 0 };
+        ++$row->{instances};
+        $row->{memory_mib} += 0 + $manifest->{settings}->{memory_mib};
+        if ($include_active) {
+            my ($ok, $state) = $self->_systemctl('is-active', $self->_unit_name($name));
+            return undef if !defined($state) || $state !~ /\A(?:active|inactive|failed|activating|deactivating|reloading)\z/;
+            ++$row->{active_instances} if $ok && $state eq 'active';
+        }
+        return undef if scalar(keys %usage) > 1000;
+    }
+    return \%usage;
 }
 
 sub status {
@@ -122,14 +204,24 @@ sub provision {
     my ($self, $account, $preset) = @_;
     $preset = 'generic' if !defined($preset);
     return _failure('invalid_request') if ref($preset) || !exists($PRESET_MEMORY_BYTES{$preset});
+    return _failure('storage_unavailable') if !$self->_trusted_directory($self->{etc_root})
+        || !$self->_trusted_directory($self->{data_root});
+    my $quota_lock = $self->_acquire_reseller_quota_lock();
+    return _failure('provider_policy_unavailable') if !defined($quota_lock);
+    my $response = eval { $self->_provision_locked($account, $preset) };
+    my $closed = close($quota_lock);
+    return _failure('provider_policy_unavailable') if !$closed;
+    return ref($response) eq 'HASH' ? $response : _failure('operation_failed');
+}
+
+sub _provision_locked {
+    my ($self, $account, $preset) = @_;
     return _failure('instance_exists') if -e $self->_manifest_path($account->{name})
         || -l $self->_manifest_path($account->{name})
         || -e $self->_account_config_dir($account->{name})
         || -l $self->_account_config_dir($account->{name})
         || -e $self->_account_data_dir($account->{name})
         || -l $self->_account_data_dir($account->{name});
-    return _failure('storage_unavailable') if !$self->_trusted_directory($self->{etc_root})
-        || !$self->_trusted_directory($self->{data_root});
 
     my $backend = $self->{policy}->selected_backend();
     return _failure('backend_policy_required') if !defined($backend);
@@ -138,7 +230,19 @@ sub provision {
     my $settings = _preset_settings($preset);
     my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
-    my $provider_decision = $self->{provider_policy}->provision_decision($account, $settings->{memory_mib});
+    my $provider_decision = $self->{provider_policy}->provision_decision(
+        $account,
+        $settings->{memory_mib},
+        sub {
+            my ($owner) = @_;
+            my $usage = $self->reseller_usage($owner, 0);
+            return undef if ref($usage) ne 'HASH' || ref($usage->{$owner}) ne 'HASH';
+            return {
+                instances => $usage->{$owner}->{instances},
+                memory_mib => $usage->{$owner}->{memory_mib},
+            };
+        },
+    );
     return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
     return _failure('provider_policy_denied') if !$provider_decision->{allowed};
 
@@ -191,7 +295,7 @@ sub provision {
     my $current = $self->status($account);
     if ($current->{success} && ($current->{state} eq 'running' || $current->{state} eq 'starting')) {
         $current->{policy_warnings} = $provider_decision->{violations}
-            if $provider_decision->{mode} eq 'report-only' && @{$provider_decision->{violations}};
+            if $provider_decision->{mode} eq 'warn' && @{$provider_decision->{violations}};
         return $current;
     }
     $self->_systemctl('stop', '--no-block', $unit);
@@ -283,7 +387,7 @@ sub configure {
     my $result_state = $state eq 'active' ? 'running' : $state eq 'failed' ? 'failed' : 'stopped';
     my $result = _state($result_state, $manifest);
     $result->{policy_warnings} = $provider_decision->{violations}
-        if $provider_decision->{mode} eq 'report-only' && @{$provider_decision->{violations}};
+        if $provider_decision->{mode} eq 'warn' && @{$provider_decision->{violations}};
     return $result;
 }
 
@@ -1397,6 +1501,28 @@ sub _trusted_directory {
     return 1;
 }
 
+sub _acquire_reseller_quota_lock {
+    my ($self) = @_;
+    my $path = $self->{quota_lock_path};
+    return undef if !defined($path) || ref($path) || $path !~ m{\A/}
+        || $path !~ m{\A(/.*)/[^/]+\z};
+    my $directory = $1;
+    return undef if !$self->_trusted_directory($directory);
+    my $handle;
+    return undef if !sysopen($handle, $path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
+    my @file_stat = stat($handle);
+    my @path_stat = lstat($path);
+    if (!@file_stat || !@path_stat || !S_ISREG($file_stat[2])
+        || $file_stat[0] != $path_stat[0] || $file_stat[1] != $path_stat[1]
+        || $file_stat[4] != $self->{expected_owner_uid} || $file_stat[3] != 1
+        || ($file_stat[2] & 0777) != 0600 || ($path_stat[2] & 0777) != 0600
+        || !flock($handle, LOCK_EX)) {
+        close($handle);
+        return undef;
+    }
+    return $handle;
+}
+
 sub _unit_name { return 'orm-instance@' . $_[1] . '.service'; }
 sub _manifest_path { return File::Spec->catfile($_[0]->{etc_root}, $_[1], 'manifest.json'); }
 sub _account_config_dir { return File::Spec->catdir($_[0]->{etc_root}, $_[1]); }
@@ -1425,6 +1551,11 @@ sub _valid_settings {
     return 0 if !defined($settings->{maxmemory_policy}) || ref($settings->{maxmemory_policy})
         || !exists($MAXMEMORY_POLICIES{$settings->{maxmemory_policy}});
     return 1;
+}
+
+sub _is_integer {
+    my ($value) = @_;
+    return defined($value) && !ref($value) && $value =~ /\A(?:0|[1-9][0-9]*)\z/;
 }
 
 sub _valid_metrics {

@@ -22,6 +22,7 @@ $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' 
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
+$resellerSummary = null;
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
 $controlRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
@@ -151,6 +152,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     && ($_POST['orm_action'] ?? null) === 'provider.policy.update') {
     $providerAction = $_POST['provider_rule_action'] ?? null;
     $submittedMode = $_POST['provider_mode'] ?? null;
+    $submittedExposure = $_POST['provider_exposure'] ?? ($providerPolicy['exposure'] ?? 'simple');
     $readPolicyInteger = static function (string $key, int $minimum, int $maximum): ?int {
         $raw = $_POST[$key] ?? null;
         if (!is_string($raw) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', $raw) !== 1) {
@@ -162,14 +164,19 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     $packageName = $_POST['package_name'] ?? '';
     $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
     $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
-    if ($providerPolicy === null || !in_array($providerAction, ['default', 'save-package', 'remove-package'], true)
-        || !in_array($submittedMode, ['report-only', 'enforce'], true)
+    if ($providerPolicy === null || !in_array($providerAction, [
+        'default', 'save-package', 'remove-package', 'save-reseller', 'remove-reseller',
+    ], true)
+        || !in_array($submittedMode, ['report-only', 'warn', 'enforce'], true)
+        || ($providerAction === 'default' && !in_array($submittedExposure, ['simple', 'developer', 'advanced'], true))
         || $defaultMemory === null || $defaultRetention === null) {
         $providerPolicyMessage = 'The provider policy is unavailable or contains invalid values. No changes were saved.';
     } else {
         $updatedProviderPolicy = $providerPolicy;
         $updatedProviderPolicy['mode'] = $providerAction === 'default'
             ? $submittedMode : $providerPolicy['mode'];
+        $updatedProviderPolicy['exposure'] = $providerAction === 'default'
+            ? $submittedExposure : $providerPolicy['exposure'];
         $updatedProviderPolicy['default'] = [
             'enabled' => ($_POST['default_enabled'] ?? null) === '1',
             'max_memory_mib' => $defaultMemory,
@@ -195,6 +202,26 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
             } else {
                 unset($updatedProviderPolicy['packages'][$packageName]);
             }
+        } elseif ($providerAction === 'save-reseller') {
+            $resellerOwner = $_POST['reseller_owner'] ?? null;
+            $maxInstances = $readPolicyInteger('reseller_max_instances', 0, 100000);
+            $maxMemory = $readPolicyInteger('reseller_max_memory_mib', 0, 1000000);
+            if (!is_string($resellerOwner) || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $resellerOwner) !== 1
+                || $maxInstances === null || $maxMemory === null) {
+                $providerPolicyMessage = 'Enter a valid trusted OWNER name and non-negative quota values. No changes were saved.';
+            } else {
+                $updatedProviderPolicy['resellers'][$resellerOwner] = [
+                    'max_instances' => $maxInstances,
+                    'max_memory_mib' => $maxMemory,
+                ];
+            }
+        } elseif ($providerAction === 'remove-reseller') {
+            $resellerOwner = $_POST['reseller_owner'] ?? null;
+            if (!is_string($resellerOwner) || !array_key_exists($resellerOwner, $updatedProviderPolicy['resellers'])) {
+                $providerPolicyMessage = 'The requested reseller rule was not found. No changes were saved.';
+            } else {
+                unset($updatedProviderPolicy['resellers'][$resellerOwner]);
+            }
         }
 
         if ($providerPolicyMessage === null) {
@@ -202,7 +229,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                 $providerPolicy = $providerPolicyStore->load();
                 $providerPolicyMessage = $providerPolicy === null
                     ? 'The policy was written, but could not be re-read safely. Check the root-owned policy file.'
-                    : 'Provider policy saved. Enforced changes affect new provisions, later memory changes, and future backup retention; existing instances were not rewritten.';
+                    : 'Provider policy saved. Reseller quotas gate new provisions only; existing instances were not rewritten.';
                 error_log('ORM provider policy changed through root WHM; action=' . $providerAction);
             } else {
                 $providerPolicyMessage = 'The provider policy could not be saved safely. No changes were applied.';
@@ -210,6 +237,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         }
     }
 }
+$resellerSummary = $rootAuthorized ? $fleetClient->request('provider.resellers') : null;
 
 if (!$authorized) {
     http_response_code(403);
@@ -220,12 +248,23 @@ WHM::header('Open Redis Manager', 0, 0);
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
-  <defs><linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse"><stop stop-color="#E5392D"/><stop offset="1" stop-color="#D92D20"/></linearGradient></defs>
+  <defs>
+    <linearGradient id="orm-red" x1="26" y1="18" x2="226" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#E94337"/><stop offset=".52" stop-color="#E2362B"/><stop offset="1" stop-color="#C92319"/></linearGradient>
+    <linearGradient id="orm-face" x1="76" y1="74" x2="179" y2="203" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F5F7FB"/></linearGradient>
+    <linearGradient id="orm-channel" x1="83" y1="120" x2="173" y2="184" gradientUnits="userSpaceOnUse"><stop stop-color="#F5A19A"/><stop offset="1" stop-color="#D92D20"/></linearGradient>
+  </defs>
   <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
-  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/><path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
-  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
-  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/><path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
+  <path d="M69 165C47 139 59 103 89 78c28-23 66-32 97-21M187 91c23 27 13 61-17 86-27 22-63 33-94 25" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
+  <circle cx="76" cy="68" r="7" fill="#fff"/><circle cx="184" cy="191" r="7" fill="#fff"/>
+  <path d="m128 54 62 36-62 36-62-36 62-36Z" fill="url(#orm-face)"/>
+  <path d="m128 68 38 22-38 22-38-22 38-22Z" fill="url(#orm-red)"/>
+  <path d="m128 79 19 11-19 11-19-11 19-11Z" fill="#fff" fill-opacity=".95"/><circle cx="128" cy="90" r="4" fill="#D92D20"/>
+  <path d="m66 103 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+  <path d="m82 127 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+  <path d="m66 138 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
+  <path d="m82 162 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
+  <path d="M174 71c9 5 16 10 21 17" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5"/><circle cx="197" cy="93" r="5" fill="#fff"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
@@ -381,7 +420,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <p role="alert">The root-owned provider policy could not be verified. No provider limits are being changed.</p>
       <?php else: ?>
         <?php if ($providerPolicyMessage !== null): ?><p role="status"><?= htmlspecialchars($providerPolicyMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
-        <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only records violations without blocking; enforce rejects new provisions and memory changes over the selected package cap. Existing instances are not rewritten.</p>
+        <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only logs policy violations without blocking. Warn allows the operation and shows a fixed notice in cPanel. Enforce blocks new provisions that exceed package or reseller limits and memory changes above package caps. Existing instances are grandfathered and are never rewritten by a policy change.</p>
         <h3>Default package rule</h3>
         <form method="post">
           <input type="hidden" name="orm_action" value="provider.policy.update">
@@ -389,8 +428,16 @@ WHM::header('Open Redis Manager', 0, 0);
           <label for="orm-provider-mode">Policy mode</label>
           <select id="orm-provider-mode" name="provider_mode" required>
             <option value="report-only"<?= $providerPolicy['mode'] === 'report-only' ? ' selected' : '' ?>>Report-only</option>
+            <option value="warn"<?= $providerPolicy['mode'] === 'warn' ? ' selected' : '' ?>>Warn</option>
             <option value="enforce"<?= $providerPolicy['mode'] === 'enforce' ? ' selected' : '' ?>>Enforce</option>
           </select>
+          <label for="orm-provider-exposure">cPanel feature exposure</label>
+          <select id="orm-provider-exposure" name="provider_exposure" required>
+            <option value="simple"<?= $providerPolicy['exposure'] === 'simple' ? ' selected' : '' ?>>Simple · status, setup, lifecycle, endpoint and PHP</option>
+            <option value="developer"<?= $providerPolicy['exposure'] === 'developer' ? ' selected' : '' ?>>Developer · metrics, presets, configuration, app helpers and diagnostics</option>
+            <option value="advanced"<?= $providerPolicy['exposure'] === 'advanced' ? ' selected' : '' ?>>Advanced · developer features plus backups and restore</option>
+          </select>
+          <p>Exposure only changes which controls are shown. It does not grant access or change broker permissions. If the exposure setting cannot be verified, cPanel uses Simple.</p>
           <label><input type="checkbox" name="default_enabled" value="1"<?= $providerPolicy['default']['enabled'] ? ' checked' : '' ?>> Allow new instances for packages without a specific rule</label>
           <label for="orm-provider-default-memory">Default memory ceiling (MiB)</label>
           <input id="orm-provider-default-memory" name="default_memory_mib" type="number" min="8" max="64" step="1" required value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
@@ -446,7 +493,61 @@ WHM::header('Open Redis Manager', 0, 0);
         <?php else: ?>
           <p>No package-specific rules are configured.</p>
         <?php endif; ?>
-        <p>Provider policy is stored in a private root-owned file. Changes are recorded in the server log. Reseller instance quotas and exposure levels are not implemented yet.</p>
+        <h3>Reseller quotas</h3>
+        <p>Set maximum configured instances and aggregate configured memory for a trusted cPanel <code>OWNER</code>. Stopped instances count. Enter <code>0</code> for no cap. Quotas apply to new provisioning only; existing accounts remain unchanged.</p>
+        <form method="post">
+          <input type="hidden" name="orm_action" value="provider.policy.update">
+          <input type="hidden" name="provider_rule_action" value="save-reseller">
+          <input type="hidden" name="provider_mode" value="<?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="default_memory_mib" value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+          <input type="hidden" name="default_backup_retention" value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+          <?php if ($providerPolicy['default']['enabled']): ?><input type="hidden" name="default_enabled" value="1"><?php endif; ?>
+          <label for="orm-provider-reseller-owner">Trusted reseller OWNER name</label>
+          <input id="orm-provider-reseller-owner" name="reseller_owner" type="text" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" autocomplete="off" required>
+          <label for="orm-provider-reseller-instances">Maximum configured instances</label>
+          <input id="orm-provider-reseller-instances" name="reseller_max_instances" type="number" min="0" max="100000" step="1" required value="0">
+          <label for="orm-provider-reseller-memory">Maximum aggregate memory (MiB)</label>
+          <input id="orm-provider-reseller-memory" name="reseller_max_memory_mib" type="number" min="0" max="1000000" step="1" required value="0">
+          <button type="submit">Save reseller quota</button>
+        </form>
+        <?php if (!is_array($resellerSummary) || ($resellerSummary['success'] ?? false) !== true): ?>
+          <p role="status">Current reseller usage is unavailable. Quota changes still apply only when the broker can verify usage safely.</p>
+        <?php elseif ($resellerSummary['resellers'] === []): ?>
+          <p>No managed reseller accounts or reseller quota rules are currently present.</p>
+        <?php else: ?>
+          <table>
+            <thead><tr><th scope="col">Reseller OWNER</th><th scope="col">Configured instances</th><th scope="col">Active instances</th><th scope="col">Memory in use</th><th scope="col">Instance cap</th><th scope="col">Memory cap</th><th scope="col">Action</th></tr></thead>
+            <tbody>
+              <?php foreach ($resellerSummary['resellers'] as $reseller): ?>
+                <tr>
+                  <th scope="row"><code><?= htmlspecialchars($reseller['owner'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></th>
+                  <td><?= (int) $reseller['account_count'] ?></td>
+                  <td><?= (int) $reseller['active_instances'] ?></td>
+                  <td><?= (int) $reseller['memory_mib'] ?> MiB</td>
+                  <td><?= (int) $reseller['max_instances'] === 0 ? 'Unlimited' : (int) $reseller['max_instances'] ?></td>
+                  <td><?= (int) $reseller['max_memory_mib'] === 0 ? 'Unlimited' : (int) $reseller['max_memory_mib'] . ' MiB' ?></td>
+                  <td>
+                    <?php if (isset($providerPolicy['resellers'][$reseller['owner']])): ?>
+                      <form method="post">
+                        <input type="hidden" name="orm_action" value="provider.policy.update">
+                        <input type="hidden" name="provider_rule_action" value="remove-reseller">
+                        <input type="hidden" name="provider_mode" value="<?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                        <input type="hidden" name="reseller_owner" value="<?= htmlspecialchars($reseller['owner'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                        <input type="hidden" name="default_memory_mib" value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+                        <input type="hidden" name="default_backup_retention" value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+                        <?php if ($providerPolicy['default']['enabled']): ?><input type="hidden" name="default_enabled" value="1"><?php endif; ?>
+                        <button type="submit">Remove quota</button>
+                      </form>
+                    <?php else: ?>
+                      <span>—</span>
+                    <?php endif; ?>
+                  </td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        <?php endif; ?>
+        <p>Provider policy is stored in a private root-owned file. Changes are recorded in the server log. Reseller identity and usage come from trusted account records and root-owned instance manifests; no account list or provider limits are sent to cPanel users.</p>
       <?php endif; ?>
     </section>
   <?php endif; ?>

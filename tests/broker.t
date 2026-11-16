@@ -17,7 +17,7 @@ use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
 
 my $request = '{"operation":"identity","version":1}' . "\n";
 is(parse_request($request)->{operation}, 'identity', 'accept the one canonical identity request');
-for my $operation (qw(instance.status instance.provision instance.start instance.stop)) {
+for my $operation (qw(instance.status instance.provision instance.start instance.stop provider.exposure provider.resellers)) {
     my $frame = '{"operation":"' . $operation . '","version":1}' . "\n";
     is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
 }
@@ -71,7 +71,7 @@ for my $invalid (
 }
 like(encode_response({ success => JSON::PP::true, version => 1 }), qr/\n\z/, 'responses end in one line feed');
 ok(!encode_response([]), 'response encoder rejects non-object payloads');
-ok(!encode_response({ payload => 'x' x 40960 }), 'response encoder rejects oversized history frames');
+ok(!encode_response({ payload => 'x' x 262144 }), 'response encoder rejects oversized broker frames');
 
 my $tmp = tempdir(CLEANUP => 1);
 my $account_root = "$tmp/accounts";
@@ -138,6 +138,10 @@ my $denied = Orm::Broker::Handler->handle_frame($request, 0, $resolver);
 like($denied, qr/"success":false/, 'handler denies root peer identity');
 my $invalid = Orm::Broker::Handler->handle_frame('{}' . "\n", 43210, $resolver);
 like($invalid, qr/"error":"invalid_request"/, 'handler returns a generic invalid-request response');
+my $reseller_denied = Orm::Broker::Handler->handle_frame(
+    '{"operation":"provider.resellers","version":1}' . "\n", 43210, $resolver,
+);
+like($reseller_denied, qr/"error":"not_authorized"/, 'reseller usage summary is root-only at the broker boundary');
 
 my $etc_instances = "$tmp/etc/instances";
 my $data_instances = "$tmp/var/lib/instances";
@@ -193,7 +197,53 @@ close($provider_policy_file) or die "close report-only provider policy: $!";
 chmod(0600, $provider_policy_path) or die "chmod report-only provider policy: $!";
 my $reported_only = $provider_policy->provision_decision({%{$policy_account}, plan => 'blocked'}, 32);
 ok($reported_only && $reported_only->{allowed} && @{$reported_only->{violations}} == 2
-    && @policy_audit == 4, 'report-only violations are logged without blocking package provisioning');
+    && $reported_only->{mode} eq 'warn' && @policy_audit == 4,
+    'migrate version-one report-only policy to compatible warnings without blocking package provisioning');
+$enforced_package_policy->{version} = 2;
+$enforced_package_policy->{mode} = 'enforce';
+$enforced_package_policy->{exposure} = 'developer';
+$enforced_package_policy->{resellers} = {
+    reseller1 => { max_instances => 2, max_memory_mib => 64 },
+};
+$enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 64;
+open($provider_policy_file, '>', $provider_policy_path) or die "write reseller provider policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close reseller provider policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod reseller provider policy: $!";
+is($provider_policy->exposure_mode(), 'developer', 'read the validated provider exposure tier');
+is_deeply($provider_policy->reseller_rules(), { reseller1 => { max_instances => 2, max_memory_mib => 64 } },
+    'read exact reseller limits for the root WHM summary');
+my $quota_at_boundary = $provider_policy->provision_decision($policy_account, 16,
+    sub { return { instances => 1, memory_mib => 48 }; });
+ok($quota_at_boundary && $quota_at_boundary->{allowed},
+    'allow a new instance at the exact aggregate memory boundary and below the instance cap');
+my $quota_memory_exceeded = $provider_policy->provision_decision($policy_account, 17,
+    sub { return { instances => 1, memory_mib => 48 }; });
+ok($quota_memory_exceeded && !$quota_memory_exceeded->{allowed}
+    && $quota_memory_exceeded->{violations}->[0] eq 'reseller_memory_quota_exceeded',
+    'enforce the aggregate reseller memory ceiling for new provisioning');
+my $quota_instances_exceeded = $provider_policy->provision_decision($policy_account, 8,
+    sub { return { instances => 2, memory_mib => 48 }; });
+ok($quota_instances_exceeded && !$quota_instances_exceeded->{allowed}
+    && $quota_instances_exceeded->{violations}->[0] eq 'reseller_instance_quota_exceeded',
+    'enforce the reseller instance ceiling at its exact boundary');
+my $quota_usage_unavailable = $provider_policy->provision_decision($policy_account, 8, sub { return undef; });
+ok($quota_usage_unavailable && !$quota_usage_unavailable->{allowed}
+    && $quota_usage_unavailable->{violations}->[0] eq 'reseller_usage_unavailable',
+    'fail closed when enforced reseller usage cannot be established');
+my $existing_memory_change = $provider_policy->memory_decision($policy_account, 64);
+ok($existing_memory_change && $existing_memory_change->{allowed},
+    'do not apply new-instance reseller quotas to existing instance configuration changes');
+$enforced_package_policy->{mode} = 'warn';
+open($provider_policy_file, '>', $provider_policy_path) or die "write warning-mode policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close warning-mode policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod warning-mode policy: $!";
+my $warn_quota = $provider_policy->provision_decision($policy_account, 8,
+    sub { return { instances => 2, memory_mib => 48 }; });
+ok($warn_quota && $warn_quota->{allowed}
+    && $warn_quota->{violations}->[0] eq 'reseller_instance_quota_exceeded',
+    'allow a reseller quota violation with a fixed warning in warn mode');
 $enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 65;
 open($provider_policy_file, '>', $provider_policy_path) or die "rewrite invalid provider policy: $!";
 print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
@@ -692,6 +742,15 @@ ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.1, 1, 1, 1, 1),
     'keep root inventory reads available after a fleet control action');
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.2, 1, 1, 1, 'fleet.control'),
     'rate-limit repeated fleet control actions independently');
+my %root_read_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10, 1, 1, 1, 'fleet.list'),
+    'allow the fleet page read in its operation-specific bucket');
+ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10, 1, 1, 1, 'provider.resellers'),
+    'allow reseller usage on the same WHM page without colliding with fleet inventory');
+ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 43210, 10, 2, 0, 1, 'provider.exposure'),
+    'allow the account exposure lookup independently of ordinary status and metrics reads');
+ok(!Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10.1, 1, 1, 1, 'provider.resellers'),
+    'rate-limit repeated reseller summaries in their own bucket');
 my %backup_rates;
 ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 100, 1, 0, 60, 60),
     'allow one account backup operation in its sixty-second window');

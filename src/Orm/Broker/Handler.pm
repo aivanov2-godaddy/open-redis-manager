@@ -16,6 +16,17 @@ sub handle_frame {
     if (!$request) {
         $response = { error => 'invalid_request', success => JSON::PP::false, version => 1 };
     } else {
+        if ($request->{operation} eq 'provider.resellers') {
+            if ($peer_uid != 0) {
+                $response = _not_authorized();
+            } elsif (!defined($instance_manager)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $summary = eval { $instance_manager->reseller_summary() };
+                $response = ref($summary) eq 'HASH' ? $summary
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
         if ($request->{operation} eq 'fleet.list') {
             if ($peer_uid != 0) {
                 $response = _not_authorized();

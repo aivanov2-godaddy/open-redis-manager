@@ -13,5 +13,5 @@ Give hosting providers bounded, reversible controls over new Redis provisioning.
 
 ## Progress
 
-- The current implementation adds root-only WHM package rules for provisioning availability, memory ceilings, and snapshot retention. The broker reads the cPanel account plan from its trusted account record; policy defaults to report-only and explicit enforcement does not rewrite existing instances. Fixed policy warnings/denials are reflected in cPanel without returning rule details.
-- Reseller quotas and Simple/Developer/Advanced exposure levels remain open acceptance criteria.
+- The current implementation adds root-only WHM package rules for provisioning availability, memory ceilings, and snapshot retention. The broker reads package and OWNER identity from trusted account records; report-only, warn, and enforce behavior is explicit and existing instances are not rewritten. cPanel receives only fixed warnings or denials, not provider limits.
+- Reseller quotas count configured instances and aggregate memory, including stopped instances, and gate new provisioning only. Simple/Developer/Advanced exposure changes rendered controls without changing broker authorization. Live validation on a supported disposable cPanel/WHM matrix remains a release gate.

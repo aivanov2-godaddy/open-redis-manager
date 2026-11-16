@@ -1,27 +1,43 @@
-# Provider package policy
+# Provider policy and reseller quotas
 
-ORM supports a root-only WHM policy for package-level provisioning and resource limits. The initial mode is **report-only**. In that mode, policy violations are recorded and shown to the cPanel user after provisioning or a memory change, but they do not block the request. Select **Enforce** in WHM to apply the configured rules.
+ORM keeps provider policy in `/etc/orm-provider-policy.json`, a root-owned mode `0600` file. The WHM controls are root-only. Invalid or unsafe policy files fail closed; WHM does not replace them with defaults. Changes are written atomically and the page records the change in the server log without logging account names or quota values.
+
+## Policy modes
+
+- **Report-only** is the default for new policy files. Violations are logged and operations continue without a cPanel warning.
+- **Warn** allows the operation and returns fixed warning codes that cPanel turns into generic user-facing notices. No reseller name, quota value, package name or provider setting is returned.
+- **Enforce** blocks new provisions that violate package or reseller rules and blocks configuration memory changes above the package memory cap.
+
+Version-one policy files are migrated in memory to version two. A version-one report-only setting maps to **Warn** so existing installations keep their previous user-facing warning behavior. Saving in WHM writes the normalized version-two form. Policy changes never rewrite, stop, or remove existing instances.
 
 ## Package rules
 
-The policy matches the exact cPanel package name from the trusted account record. Accounts without a package-specific rule use the default rule. Each rule controls:
+Package identity comes from the trusted cPanel account record. Accounts without a package-specific rule use the default rule. Each package rule controls whether new ORM instances may be created, the maximum memory setting (8–64 MiB), and snapshot retention (two or three snapshots). The two-snapshot minimum lets a selected restore point and its safety snapshot coexist during recovery. Package memory enforcement applies during provisioning and later configuration requests; package enablement gates new provisioning.
 
-- Whether new ORM instances may be provisioned for that package.
-- The maximum memory setting, from 8 to 64 MiB.
-- Snapshot retention, from two to three snapshots. The two-snapshot minimum allows a selected restore point and its safety snapshot to coexist during recovery.
+## Reseller quotas
 
-The broker checks the policy independently of the WHM or cPanel form. Enforced memory ceilings apply during provisioning and later configuration requests. A policy change never rewrites existing instance configuration or stops a running service. A new snapshot is validated before older snapshots are removed to meet a reduced retention limit.
+Reseller identity comes from the trusted cPanel account `OWNER` value. Root WHM can set a maximum configured instance count and aggregate configured memory in MiB for each OWNER. A value of `0` means unlimited. Quotas gate new provisioning only; already configured accounts remain grandfathered. Configured instances count whether their service is running or stopped. The broker serializes quota check and provisioning with a private root-owned lock so concurrent requests cannot both consume the same remaining capacity.
+
+The WHM summary contains only the OWNER name, configured instance count, active instance count, total configured memory, and quota ceilings. It reads instance details from root-owned managed-instance manifests and resolves ownership from the trusted cPanel account records. If any relevant inventory entry cannot be verified, the summary fails closed and shows unavailable rather than partial usage. cPanel receives only a fixed warning or denial, never reseller inventory or quota values.
+
+## cPanel exposure
+
+The root administrator can select one global exposure level. Exposure changes which page sections are rendered and does not change authorization or broker operations. A failed or invalid exposure response falls back to Simple.
+
+| Tier | Visible cPanel features |
+|---|---|
+| Simple | Basic status and setup, start/stop lifecycle, endpoint details, and the PhpRedis connection helper |
+| Developer | Simple plus workload presets, live and historical metrics, bounded configuration, all application helpers, and diagnostics |
+| Advanced | Developer plus snapshot creation, download, and restore |
+
+The mapping is ORM's product choice; the reference site names these tiers but does not specify exact section boundaries. Existing session, account, CSRF, and broker checks continue to apply. Hiding a section is not a new access-control boundary.
 
 ## Configure in WHM
 
-Open **WHM → Open Redis Manager → Package resource policy**. Root can change the default rule, add or remove package-specific rules, and select report-only or enforce mode. Changes are written atomically to `/etc/orm-provider-policy.json`, which must remain root-owned and mode `0600`. The WHM page rejects unsafe or malformed policy files and does not replace them with defaults.
+Open **WHM → Open Redis Manager → Package resource policy**. Root can edit the default rule, save or remove package-specific rules, choose report-only/warn/enforce, choose the cPanel exposure tier, and save or remove reseller quotas. Quota fields accept zero as unlimited. Names must match the trusted cPanel `OWNER` value exactly.
 
-See the [static WHM UI preview](../../screenshots/whm-package-policy.png) for the layout; its package names and values are synthetic.
-
-The policy update event is written to the cPanel server error log without package names, account names, or policy values. cPanel users see only a generic denial or a fixed report-only warning; provider policy details remain in WHM.
-
-Package rules do not set reseller quotas, provider branding, or Simple/Developer/Advanced exposure. Reseller quotas and exposure levels remain planned work under [issue #6](https://github.com/aivanov2-godaddy/open-redis-manager/issues/6).
+See the [WHM policy and reseller preview](../../screenshots/whm-package-policy.png) and the [cPanel exposure tiers preview](../../screenshots/cpanel-exposure-tiers.png). Both use synthetic names and values; they are not connected to a live WHM server.
 
 ## Validation status
 
-The provider policy parser, root-owned file store, package metadata resolution, report-only behavior, enforcement, and account-facing response validation are covered by automated tests. Live validation on the documented supported cPanel/WHM matrix remains a separate release gate; see [the validation guide](../validation/cpanel-smoke.md).
+Schema migration, atomic root-owned storage, package enforcement, reseller quota checks, stopped-instance accounting, quota serialization, root-only reseller summaries, cPanel response validation, and exposure allowlisting are covered by automated tests and repository CI. Live validation on supported disposable cPanel/WHM hosts remains a release gate; see [the validation guide](../validation/cpanel-smoke.md).

@@ -21,6 +21,35 @@ $client = new BrokerClient(static function (string $request) use (&$requests): s
 $status = $client->request('instance.status');
 $assert($status === ['success' => true, 'state' => 'running', 'version' => 1], 'Parse a valid instance status response.');
 $assert($requests[0] === "{\"operation\":\"instance.status\",\"version\":1}\n", 'Send a canonical operation with no account-supplied identity.');
+$exposureRequests = [];
+$exposureClient = new BrokerClient(static function (string $request) use (&$exposureRequests): string {
+    $exposureRequests[] = $request;
+    return "{\"exposure\":\"developer\",\"success\":true,\"version\":1}\n";
+});
+$assert($exposureClient->request('provider.exposure') === [
+    'exposure' => 'developer', 'success' => true, 'version' => 1,
+], 'Accept only the fixed provider exposure tier response.');
+$assert($exposureRequests[0] === "{\"operation\":\"provider.exposure\",\"version\":1}\n",
+    'Exposure queries contain no account or reseller identity.');
+$badExposure = new BrokerClient(static fn (string $request): string =>
+    "{\"exposure\":\"secret\",\"success\":true,\"version\":1}\n"
+);
+$assert($badExposure->request('provider.exposure') === null, 'Reject an unknown exposure enum.');
+$summaryRow = [
+    'owner' => 'reseller1', 'account_count' => 2, 'active_instances' => 1, 'memory_mib' => 48,
+    'max_instances' => 5, 'max_memory_mib' => 128,
+];
+$resellerClient = new BrokerClient(static fn (string $request): string =>
+    "{\"resellers\":[{\"account_count\":2,\"active_instances\":1,\"max_instances\":5,\"max_memory_mib\":128,\"memory_mib\":48,\"owner\":\"reseller1\"}],\"success\":true,\"version\":1}\n"
+);
+$resellerSummary = $resellerClient->request('provider.resellers');
+$assert(($resellerSummary['resellers'][0] ?? null) === $summaryRow,
+    'Parse a bounded root-side reseller usage summary.');
+$unsafeResellerSummary = new BrokerClient(static fn (string $request): string =>
+    "{\"resellers\":[{\"account_count\":2,\"active_instances\":1,\"max_instances\":5,\"max_memory_mib\":128,\"memory_mib\":48,\"owner\":\"../root\"}],\"success\":true,\"version\":1}\n"
+);
+$assert($unsafeResellerSummary->request('provider.resellers') === null,
+    'Reject unsafe owner names from the root-only reseller summary.');
 $assert($client->request('instance.provision') === $status, 'Allow the fixed provision operation.');
 $assert($requests[1] === "{\"operation\":\"instance.provision\",\"version\":1}\n", 'Provision requests contain no paths, settings, or usernames.');
 $presetRequests = [];

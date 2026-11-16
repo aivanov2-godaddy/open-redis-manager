@@ -7,7 +7,7 @@ namespace Orm\Backend;
 final class ProviderPolicyStore
 {
     private const PATH = '/etc/orm-provider-policy.json';
-    private const MAX_BYTES = 32768;
+    private const MAX_BYTES = 131072;
 
     public function __construct(
         private readonly string $path = self::PATH,
@@ -15,7 +15,7 @@ final class ProviderPolicyStore
     ) {
     }
 
-    /** @return array{version:int,mode:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>}|null */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>}|null */
     public function load(): ?array
     {
         if (!$this->authorized()) {
@@ -105,14 +105,16 @@ final class ProviderPolicyStore
         }
     }
 
-    /** @return array{version:int,mode:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array{}} */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array{},resellers:array{}} */
     public static function defaults(): array
     {
         return [
-            'version' => 1,
+            'version' => 2,
             'mode' => 'report-only',
+            'exposure' => 'simple',
             'default' => ['enabled' => true, 'max_memory_mib' => 64, 'backup_retention' => 3],
             'packages' => [],
+            'resellers' => [],
         ];
     }
 
@@ -124,8 +126,15 @@ final class ProviderPolicyStore
         }
         $keys = array_keys($policy);
         sort($keys);
-        if ($keys !== ['default', 'mode', 'packages', 'version'] || $policy['version'] !== 1
-            || !in_array($policy['mode'], ['report-only', 'enforce'], true)
+        if (!in_array($policy['version'] ?? null, [1, 2], true)
+            || ($policy['version'] === 1 && $keys !== ['default', 'mode', 'packages', 'version'])
+            || ($policy['version'] === 2 && $keys !== ['default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
+            || ($policy['version'] === 1 && !in_array($policy['mode'] ?? null, ['report-only', 'enforce'], true))
+            || ($policy['version'] === 2 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
+                || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
+                || !is_array($policy['resellers'] ?? null)
+                || array_is_list($policy['resellers']) && $policy['resellers'] !== []
+                || count($policy['resellers']) > 1000))
             || !is_array($policy['packages']) || array_is_list($policy['packages']) && $policy['packages'] !== []
             || count($policy['packages']) > 1000) {
             return null;
@@ -147,7 +156,35 @@ final class ProviderPolicyStore
             $packages[$name] = $normalizedLimits;
         }
         ksort($packages, SORT_STRING);
-        return ['version' => 1, 'mode' => $policy['mode'], 'default' => $default, 'packages' => $packages];
+        $resellers = [];
+        if ($policy['version'] === 2) {
+            foreach ($policy['resellers'] as $owner => $limits) {
+                if (!is_string($owner) || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $owner) !== 1
+                    || !is_array($limits) || array_is_list($limits)) {
+                    return null;
+                }
+                $ruleKeys = array_keys($limits);
+                sort($ruleKeys);
+                if ($ruleKeys !== ['max_instances', 'max_memory_mib']
+                    || !is_int($limits['max_instances']) || $limits['max_instances'] < 0 || $limits['max_instances'] > 100000
+                    || !is_int($limits['max_memory_mib']) || $limits['max_memory_mib'] < 0 || $limits['max_memory_mib'] > 1000000) {
+                    return null;
+                }
+                $resellers[$owner] = [
+                    'max_instances' => $limits['max_instances'],
+                    'max_memory_mib' => $limits['max_memory_mib'],
+                ];
+            }
+        }
+        ksort($resellers, SORT_STRING);
+        return [
+            'version' => 2,
+            'mode' => $policy['version'] === 1 && $policy['mode'] === 'report-only' ? 'warn' : $policy['mode'],
+            'exposure' => $policy['version'] === 2 ? $policy['exposure'] : 'simple',
+            'default' => $default,
+            'packages' => $packages,
+            'resellers' => $resellers,
+        ];
     }
 
     /** @param mixed $limits */

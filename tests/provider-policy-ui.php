@@ -11,10 +11,18 @@ $assertions = [
     is_string($whmPage) && str_contains($whmPage, 'if (!$rootAuthorized)')
         && str_contains($whmPage, 'Package resource policy'),
     is_string($whmPage) && str_contains($whmPage, "error_log('ORM provider policy changed through root WHM"),
+    is_string($whmPage) && str_contains($whmPage, 'name="provider_exposure"')
+        && str_contains($whmPage, 'value="warn"') && str_contains($whmPage, 'Reseller quotas'),
+    is_string($whmPage) && str_contains($whmPage, "request('provider.resellers')")
+        && str_contains($whmPage, 'max_memory_mib') && str_contains($whmPage, 'active_instances'),
     is_string($cpanelPage) && str_contains($cpanelPage, "'provider_policy_denied'")
         && str_contains($cpanelPage, "'provider_policy_unavailable'"),
     is_string($cpanelPage) && str_contains($cpanelPage, "'package_disabled' => 'this package is marked unavailable'")
-        && str_contains($cpanelPage, "'memory_limit_exceeded' => 'the selected profile exceeds its package memory ceiling'"),
+        && str_contains($cpanelPage, "'memory_limit_exceeded' => 'the requested memory exceeds a package ceiling'")
+        && str_contains($cpanelPage, "'reseller_memory_quota_exceeded' => 'the reseller memory limit has been reached'"),
+    is_string($cpanelPage) && str_contains($cpanelPage, '$developerExposure')
+        && str_contains($cpanelPage, '$advancedExposure') && str_contains($cpanelPage, "request('provider.exposure')")
+        && str_contains($cpanelPage, ": 'simple';") && !str_contains($cpanelPage, "request('provider.resellers')"),
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
         && str_contains($packageMap, 'ProviderPolicy.pm'),
 ];

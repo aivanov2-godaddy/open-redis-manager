@@ -22,7 +22,7 @@ Step-by-step connection examples are collected in the [application guides](guide
 | EasyApache | PHP extension packages | Match extension packages to enabled PHP versions |
 | cPanel UAPI | Account-safe user operations | Planned account-scoped API adapter |
 | WHM API | Privileged administration | Planned WHM ACL-protected adapter |
-| Hosting package system | Package eligibility and limits | Root WHM can set package availability, memory ceilings, and snapshot retention. Reseller quotas remain planned. |
+| Hosting package and reseller policy | Package eligibility, memory/retention ceilings, reseller quotas, user exposure | Root WHM can set package availability, memory ceilings, snapshot retention, per-OWNER instance and aggregate-memory quotas, policy mode, and cPanel exposure. |
 | WHMCS | Billing lifecycle events | Future, optional adapter; must remain decoupled from core |
 | Provider hook events | Billing/automation reactions | Future signed, replay-safe event interface |
 
