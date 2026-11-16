@@ -25,6 +25,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [cPanel user guide](guides/cpanel.md)
 - [Account instance lifecycle](guides/instance-lifecycle.md)
 - [WHM administrator guide](guides/whm.md)
+- [WHM audit viewer and export](guides/audit-log.md)
 - [Configuration and presets](guides/configuration-presets.md)
 - [cPanel health guidance](guides/health-guidance.md)
 - [Backups and recovery](guides/backups-recovery.md)

@@ -18,6 +18,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Broker-backed Redis/Valkey per-account provisioning, status, bounded configuration, lifecycle controls, metrics, and hourly history.
 - Account backups, restore with safety snapshot and rollback attempt, Redis-to-Valkey migration, root-only WHM diagnostics, provider policy controls, and guarded recovery scan/start.
 - Advisory cPanel health guidance for service state, configured memory/client limits, and cumulative hit ratio; metric findings pause for missing or stale samples.
+- Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
 
 ## Experimental
 

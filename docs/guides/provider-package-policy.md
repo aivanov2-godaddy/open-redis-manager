@@ -1,6 +1,6 @@
 # Provider policy and reseller quotas
 
-ORM keeps provider policy in `/etc/orm-provider-policy.json`, a root-owned mode `0600` file. The WHM controls are root-only. Invalid or unsafe policy files fail closed; WHM does not replace them with defaults. Changes are written atomically and the page records the change in the server log without logging account names or quota values.
+ORM keeps provider policy in `/etc/orm-provider-policy.json`, a root-owned mode `0600` file. The WHM controls are root-only. Invalid or unsafe policy files fail closed; WHM does not replace them with defaults. Changes are written atomically and recorded as fixed `orm-whm` authpriv audit events without account names, package names, logo data, support URLs, or quota values.
 
 ## Policy modes
 

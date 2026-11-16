@@ -50,6 +50,8 @@ jobs:
         run: php tests/provider-policy-store.php
       - name: Check provider package policy UI guards
         run: php tests/provider-policy-ui.php
+      - name: Check WHM audit log normalization and export
+        run: php tests/whm-audit-log.php
       - name: Check cPanel and WHM session mutation guard
         run: php tests/session-request-guard.php
       - name: Stage instance launcher for systemd unit verification

@@ -105,7 +105,7 @@ sub provision_decision {
                 && $usage->{memory_mib} + $memory_mib > $effective->{reseller_max_memory_mib};
         }
     }
-    return $self->_decision($effective, \@violations);
+    return $self->_decision($effective, \@violations, $account);
 }
 
 sub memory_decision {
@@ -115,17 +115,26 @@ sub memory_decision {
     return undef if ref($effective) ne 'HASH';
     my @violations;
     push @violations, 'memory_limit_exceeded' if $memory_mib > $effective->{max_memory_mib};
-    return $self->_decision($effective, \@violations);
+    return $self->_decision($effective, \@violations, $account);
 }
 
 sub _decision {
-    my ($self, $effective, $violations) = @_;
+    my ($self, $effective, $violations, $account) = @_;
     if (@{$violations}) {
-        my $message = 'ORM provider policy ' . $effective->{mode} . ' violation: ' . join(',', @{$violations});
+        my $actor_uid = ref($account) eq 'HASH' && defined($account->{uid}) && !ref($account->{uid})
+            && $account->{uid} =~ /\A[0-9]{1,10}\z/ ? $account->{uid} : 'unknown';
+        my $account_name = ref($account) eq 'HASH' && defined($account->{name}) && !ref($account->{name})
+            && $account->{name} =~ /\A[a-zA-Z0-9_-]{1,16}\z/ ? $account->{name} : 'invalid';
+        my $message = 'provider_policy actor_uid=' . $actor_uid . ' account=' . $account_name
+            . ' action=policy.violation result=' . $effective->{mode} . ' state=' . join(',', @{$violations});
         if (ref($self->{audit}) eq 'CODE') {
             eval { $self->{audit}->($message) };
         } else {
-            syslog(LOG_NOTICE, '%s', $message);
+            eval {
+                openlog('orm-broker', 'pid', 'authpriv');
+                syslog(LOG_NOTICE, '%s', $message);
+                closelog();
+            };
         }
     }
     return {
