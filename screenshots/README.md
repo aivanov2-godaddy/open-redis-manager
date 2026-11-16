@@ -4,7 +4,7 @@ Screenshots below were captured from the local PHP prototype using sample data a
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo redesign](orm-logo.png) | Red isometric cache-stack and control-dial mark, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
+| [ORM logo redesign](orm-logo.png) | Red cache-prism mark with integrated controls, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel setup presets](cpanel-presets.png) | Initial cache setup with five account-safe workload profiles | 1440 × 1000 |
 | [cPanel configuration](cpanel-configuration.png) | Bounded memory, eviction, client and timeout controls with a cache eviction warning | 1440 × 1100 |
