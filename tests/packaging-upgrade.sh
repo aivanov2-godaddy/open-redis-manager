@@ -162,6 +162,7 @@ MOCK
     cat >"$test_root/bin/ss" <<'MOCK'
 #!/usr/bin/env bash
 if [[ "$*" == *'state established'* ]]; then
+    printf 'u_str ESTAB 0 0 * 2917516 * 2913697 users:(("perl",pid=4242,fd=1),("perl",pid=4242,fd=2))\n'
     if [[ -e "$TEST_ROOT/busy-connection" ]]; then
         : >"$TEST_ROOT/busy-connection-observed"
         printf 'u_str ESTAB 0 0 %s users:(("perl",pid=4242,fd=4))\n' "$TEST_SOCKET"

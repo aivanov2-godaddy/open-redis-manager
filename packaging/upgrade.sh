@@ -150,6 +150,7 @@ rollback_upgrade() {
 
 cleanup_upgrade() {
     local status=$?
+    trap - INT TERM
     if [[ "$status" -ne 0 && "$upgrade_succeeded" -eq 0 ]]; then
         if ! rollback_upgrade; then
             status=1
@@ -165,6 +166,8 @@ cleanup_upgrade() {
     exit "$status"
 }
 trap cleanup_upgrade EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 orm_make_cpanel_archive "$current_archive"
 orm_make_legacy_identity_v1_cpanel_archive "$legacy_archive"
@@ -185,8 +188,23 @@ if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
     # Keep the listener alive past that deadline after unlinking the public socket path.
     sleep 2
     stable_idle=0
-    for ((attempt = 0; attempt < 1200; attempt++)); do
-        active_connections="$(ss -xapn state established 2>/dev/null | awk -v token="pid=${broker_pid}," 'index($0, token) { count++ } END { print count + 0 }')" \
+    drain_started="$SECONDS"
+    while (( SECONDS - drain_started < 120 )); do
+        active_connections="$(ss -xapn state established 2>/dev/null | awk -v token="pid=${broker_pid}," '
+            function has_client_fd(line, field, fd) {
+                while (match(line, /pid=[0-9]+,fd=[0-9]+/)) {
+                    field = substr(line, RSTART, RLENGTH)
+                    sub(/^.*fd=/, "", field)
+                    sub(/[^0-9].*$/, "", field)
+                    fd = field + 0
+                    if (fd > 2) return 1
+                    line = substr(line, RSTART + RLENGTH)
+                }
+                return 0
+            }
+            index($0, token) && has_client_fd($0) { count++ }
+            END { print count + 0 }
+        ')" \
             || orm_die 'could not inspect broker connections; the socket remains quarantined.'
         queued_connections="$(ss -xlpH 2>/dev/null | awk -v token="pid=${broker_pid}," 'index($0, token) && $2 == "LISTEN" { count += $3 } END { print count + 0 }')" \
             || orm_die 'could not inspect the broker accept queue; the socket remains quarantined.'
