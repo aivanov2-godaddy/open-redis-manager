@@ -6,6 +6,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 |---|---|---|
 | [ORM logo redesign](orm-logo.png) | Open white data ring with three flowing data lines on a Redis-red tile, shown at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
+| [cPanel application discovery](cpanel-application-discovery.png) | On-demand app marker results and honest connection preflight | Static sample-data preview; [HTML source](previews/cpanel-application-discovery.html) |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |
 | [cPanel setup presets](cpanel-presets.png) | Initial cache setup with five account-safe workload profiles | 1440 × 1000 |
 | [cPanel configuration](cpanel-configuration.png) | Bounded memory, eviction, client and timeout controls with a cache eviction warning | 1440 × 1100 |

@@ -23,3 +23,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-application-discovery
+        name: cPanel application discovery checks
+        entry: php tests/cpanel-application-discovery.php
+        language: system
+        pass_filenames: false
+        always_run: true
