@@ -51,6 +51,25 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.recovery.scan'
+            || $request->{operation} eq 'fleet.recovery.repair') {
+            my $action = $request->{operation} eq 'fleet.recovery.scan' ? 'recovery.scan' : 'recovery.start';
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $action) }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $recovery_response = eval {
+                    $request->{operation} eq 'fleet.recovery.scan'
+                        ? $fleet_inventory->recovery_scan($request->{username})
+                        : $fleet_inventory->recovery_repair($request->{username}, $request->{repair})
+                };
+                $response = ref($recovery_response) eq 'HASH' ? $recovery_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
         if ($request->{operation} eq 'fleet.control') {
             if ($peer_uid != 0) {
                 eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $request->{action}) }

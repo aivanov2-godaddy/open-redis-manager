@@ -430,10 +430,17 @@ is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', '
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
+my $start_calls_before_healthy_recovery = scalar grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' } @systemctl_calls;
+is($manager->recovery_start_if_stopped($account)->{error}, 'repair_not_applicable',
+    'do not offer a start repair when the manifest is verified and service is already running');
+is(scalar(grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' } @systemctl_calls), $start_calls_before_healthy_recovery,
+    'avoid a systemd start call for a healthy running instance');
 my $held_instance_lock = $manager->_acquire_instance_lock($account);
 ok(defined($held_instance_lock), 'acquire the root-owned per-account operation lock');
 is($manager->start($account)->{error}, 'operation_in_progress',
     'serialize service lifecycle requests against migrations and restore operations');
+is($manager->recovery_start_if_stopped($account)->{error}, 'operation_in_progress',
+    'serialize fixed recovery repairs against concurrent per-instance operations');
 close($held_instance_lock) or die "close held instance lock: $!";
 my $restarted = $manager->restart($account);
 ok($restarted->{success} && $restarted->{state} eq 'running', 'restart a validated instance through its fixed systemd unit');
@@ -445,7 +452,11 @@ my $restart_calls_before_stopped = scalar grep { $_->[0] eq 'restart' } @systemc
 is($manager->restart($account)->{error}, 'instance_unavailable', 'refuse restart when the instance is not running');
 is(scalar(grep { $_->[0] eq 'restart' } @systemctl_calls), $restart_calls_before_stopped,
     'do not invoke systemd restart for a stopped instance');
-ok($manager->start($account)->{success}, 'start the test instance again after the restart guard check');
+my $recovered_start = $manager->recovery_start_if_stopped($account);
+ok($recovered_start->{success} && $recovered_start->{state} eq 'running',
+    'start a verified stopped instance through the fixed recovery repair');
+ok((grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-instance@ormtest.service' } @systemctl_calls),
+    'recovery repair uses only the server-generated unit and fixed start invocation');
 {
     my @diagnostics_commands;
     local $manager->{redis_cli_call} = sub {
@@ -464,6 +475,18 @@ ok($manager->start($account)->{success}, 'start the test instance again after th
         return "42\n" if @arguments == 1 && $arguments[0] eq 'DBSIZE';
         return undef;
     };
+    my $recovery_health = $manager->recovery_health_check($account);
+    ok($recovery_health->{success}, 'run one bounded fixed PING in the read-only recovery health check');
+    is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [['PING']],
+        'recovery health checks never issue commands beyond PING');
+    @diagnostics_commands = ();
+    {
+        local $manager->{redis_cli_call} = sub { return "raw private error\n"; };
+        my $failed_health = $manager->recovery_health_check($account);
+        is($failed_health->{error}, 'health_probe_failed', 'map probe failures to a fixed safe result');
+        is_deeply([sort keys %{$failed_health}], [qw(error success version)],
+            'never return raw command output from recovery health checks');
+    }
     my $diagnostics = $manager->read_diagnostics($account);
     ok($diagnostics->{success} && $diagnostics->{state} eq 'running',
         'collect safe read-only diagnostics only for a running instance');
@@ -1013,6 +1036,19 @@ ok(!Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 21, 1, 1, 5
     'rate-limit repeated diagnostics for one account within five seconds');
 ok(Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 25, 1, 1, 5, 'fleet.diagnostics:acct01'),
     'allow diagnostics again when the five-second window expires');
+my %fleet_recovery_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 30, 1, 1, 15, 'fleet.recovery.scan:acct01'),
+    'allow one read-only recovery scan per account in its bounded window');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 30, 1, 1, 15, 'fleet.recovery.scan:acct02'),
+    'keep recovery scan limits independent between accounts');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 44, 1, 1, 15, 'fleet.recovery.scan:acct01'),
+    'rate-limit repeated scans for the same account within fifteen seconds');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 45, 1, 1, 15, 'fleet.recovery.scan:acct01'),
+    'allow a recovery scan when its per-account window expires');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 30, 1, 1, 60, 'fleet.recovery.repair:acct01'),
+    'allow a fixed recovery repair in its per-account slow-operation bucket');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_recovery_rates, 0, 89, 1, 1, 60, 'fleet.recovery.repair:acct01'),
+    'rate-limit repeated recovery repairs within sixty seconds');
 my %backup_rates;
 ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 100, 1, 0, 60, 60),
     'allow one account backup operation in its sixty-second window');

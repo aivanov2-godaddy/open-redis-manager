@@ -21,6 +21,12 @@ sub parse_request {
     if ($frame =~ /\A\{"operation":"fleet\.diagnostics","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.diagnostics', username => $1, version => 1 };
     }
+    if ($frame =~ /\A\{"operation":"fleet\.recovery\.scan","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
+        return { operation => 'fleet.recovery.scan', username => $1, version => 1 };
+    }
+    if ($frame =~ /\A\{"operation":"fleet\.recovery\.repair","repair":"(start)","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
+        return { operation => 'fleet.recovery.repair', repair => $1, username => $2, version => 1 };
+    }
     if ($frame =~ /\A\{"action":"(start|stop|restart)","operation":"fleet\.control","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { action => $1, operation => 'fleet.control', username => $2, version => 1 };
     }

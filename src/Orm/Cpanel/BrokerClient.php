@@ -602,6 +602,149 @@ final class BrokerClient
         ];
     }
 
+    /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,finding?:string,state?:string,repair?:string,error?:string}|null */
+    public function scanFleetRecovery(string $username): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1) {
+            return null;
+        }
+        $request = json_encode(
+            ['operation' => 'fleet.recovery.scan', 'username' => $username, 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        ) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, 30)
+            : ($this->exchange)($request);
+        $decoded = self::decodeSingleBrokerResponse($response);
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($decoded['success']) {
+            $baseKeys = ['action', 'audit_logged', 'finding', 'state', 'success', 'username', 'version'];
+            $withRepairKeys = [...$baseKeys, 'repair'];
+            sort($withRepairKeys);
+            if (($keys !== $baseKeys && $keys !== $withRepairKeys)
+                || ($decoded['action'] ?? null) !== 'recovery.scan'
+                || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null)
+                || !in_array($decoded['finding'] ?? null, [
+                    'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
+                    'service_stopped', 'service_transitioning',
+                ], true)
+                || !in_array($decoded['state'] ?? null, [
+                    'failed', 'not_configured', 'running', 'starting', 'stopped', 'stopping',
+                ], true)) {
+                return null;
+            }
+            $expected = match ($decoded['finding']) {
+                'service_stopped' => ['stopped', 'start'],
+                'service_failed' => ['failed', 'start'],
+                'service_transitioning' => [in_array($decoded['state'], ['starting', 'stopping'], true) ? $decoded['state'] : '', null],
+                'service_healthy', 'health_probe_failed' => ['running', null],
+                'not_configured' => ['not_configured', null],
+            };
+            if ($decoded['state'] !== $expected[0]
+                || (isset($decoded['repair']) ? $decoded['repair'] !== $expected[1] : $expected[1] !== null)) {
+                return null;
+            }
+            return $decoded;
+        }
+        $allowedKeySets = [
+            ['error', 'success', 'version'],
+            ['action', 'audit_logged', 'error', 'success', 'username', 'version'],
+        ];
+        if (!in_array($keys, $allowedKeySets, true)
+            || !in_array($decoded['error'] ?? null, [
+                'account_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'operation_failed', 'rate_limited',
+            ], true)) {
+            return null;
+        }
+        if (isset($decoded['action']) && ($decoded['action'] !== 'recovery.scan'
+            || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null))) {
+            return null;
+        }
+        return [
+            'success' => false,
+            'error' => $decoded['error'],
+            'version' => 1,
+            ...(isset($decoded['action']) ? [
+                'action' => 'recovery.scan',
+                'username' => $username,
+                'audit_logged' => $decoded['audit_logged'],
+            ] : []),
+        ];
+    }
+
+    /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,state?:string,error?:string}|null */
+    public function repairFleetAccount(string $username, string $repair): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1 || $repair !== 'start') {
+            return null;
+        }
+        $request = json_encode(
+            ['repair' => $repair, 'operation' => 'fleet.recovery.repair', 'username' => $username, 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        ) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, 30)
+            : ($this->exchange)($request);
+        $decoded = self::decodeSingleBrokerResponse($response);
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($decoded['success']) {
+            if ($keys !== ['action', 'audit_logged', 'state', 'success', 'username', 'version']
+                || ($decoded['action'] ?? null) !== 'recovery.start' || ($decoded['username'] ?? null) !== $username
+                || !is_bool($decoded['audit_logged'] ?? null)
+                || !in_array($decoded['state'] ?? null, ['running', 'starting'], true)) {
+                return null;
+            }
+            return $decoded;
+        }
+        $allowedKeySets = [
+            ['error', 'success', 'version'],
+            ['action', 'audit_logged', 'error', 'success', 'username', 'version'],
+        ];
+        if (!in_array($keys, $allowedKeySets, true)
+            || !in_array($decoded['error'] ?? null, [
+                'account_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'not_configured',
+                'operation_in_progress', 'rate_limited', 'repair_not_applicable', 'scan_failed', 'service_failed',
+            ], true)) {
+            return null;
+        }
+        if (isset($decoded['action']) && ($decoded['action'] !== 'recovery.start'
+            || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null))) {
+            return null;
+        }
+        return [
+            'success' => false,
+            'error' => $decoded['error'],
+            'version' => 1,
+            ...(isset($decoded['action']) ? [
+                'action' => 'recovery.start',
+                'username' => $username,
+                'audit_logged' => $decoded['audit_logged'],
+            ] : []),
+        ];
+    }
+
+    private static function decodeSingleBrokerResponse(?string $response): ?array
+    {
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 8, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        return is_array($decoded) ? $decoded : null;
+    }
+
     private static function validFleetDiagnostics(mixed $diagnostics): bool
     {
         if (!is_array($diagnostics)) {

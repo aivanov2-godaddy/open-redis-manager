@@ -33,6 +33,9 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our %BACKUPS;
     our @MIGRATION_CALLS;
     our @DIAGNOSTICS_CALLS;
+    our @RECOVERY_HEALTH_CALLS;
+    our @RECOVERY_CALLS;
+    our %RECOVERY_ERRORS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -47,6 +50,17 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     sub start { return _control($_[0], $_[1], 'start', 'running'); }
     sub stop { return _control($_[0], $_[1], 'stop', 'stopped'); }
     sub restart { return _control($_[0], $_[1], 'restart', 'starting'); }
+    sub recovery_start_if_stopped {
+        my ($self, $account) = @_;
+        push @RECOVERY_CALLS, $account->{name};
+        return { success => 0, error => $RECOVERY_ERRORS{$account->{name}} }
+            if exists $RECOVERY_ERRORS{$account->{name}};
+        my $state = $CONTROL_STATES{$account->{name}} // ($account->{name} eq 'acct01' ? 'running' : 'stopped');
+        return { success => 0, error => 'repair_not_applicable' }
+            if $state ne 'stopped' && $state ne 'failed';
+        $CONTROL_STATES{$account->{name}} = 'starting';
+        return { success => 1, state => 'starting' };
+    }
     sub backups {
         my ($self, $account) = @_;
         return { success => 1, backups => $BACKUPS{$account->{name}} // [] };
@@ -75,6 +89,11 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
                 keyspace_misses => 10, expired_keys => 4, evicted_keys => 2,
             },
         };
+    }
+    sub recovery_health_check {
+        my ($self, $account) = @_;
+        push @RECOVERY_HEALTH_CALLS, $account->{name};
+        return { success => $account->{name} eq 'acct01' ? 1 : 0 };
     }
     sub create_backup {
         my ($self, $account) = @_;
@@ -194,6 +213,79 @@ is_deeply($audit[-1], [10001, 'acct01', 'diagnostics.read', 'not_authorized', 'u
     'record denied diagnostic attempts using the kernel peer UID');
 my $rootDiagnostics = Orm::Broker::Handler->handle_frame($diagnostics_request, 0, undef, undef, $inventory);
 like($rootDiagnostics, qr/"success":true/, 'allow root peers to request bounded read-only diagnostics');
+
+my $recoveryScanRequest = '{"operation":"fleet.recovery.scan","username":"acct02","version":1}' . "\n";
+my $recoveryRepairRequest = '{"repair":"start","operation":"fleet.recovery.repair","username":"acct02","version":1}' . "\n";
+is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
+is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
+ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n"),
+    'reject arbitrary commands from recovery requests');
+ok(!parse_request('{"operation":"fleet.recovery.repair","repair":"chmod","username":"acct02","version":1}' . "\n"),
+    'reject recovery actions outside the fixed start repair');
+my $control_calls_before_recovery_scan = scalar @Local::FleetManager::CONTROL_CALLS;
+my $stoppedScan = $inventory->recovery_scan('acct02');
+ok($stoppedScan->{success} && $stoppedScan->{finding} eq 'service_stopped'
+    && $stoppedScan->{repair} eq 'start' && $stoppedScan->{state} eq 'stopped',
+    'scan a verified stopped instance and offer only the fixed start repair');
+is(scalar @Local::FleetManager::CONTROL_CALLS, $control_calls_before_recovery_scan,
+    'recovery scans are read-only');
+is_deeply($audit[-1], [0, 'acct02', 'recovery.scan', 'success', 'stopped'],
+    'audit recovery findings without storing command output');
+$Local::FleetManager::CONTROL_STATES{acct03} = 'failed';
+my $failedScan = $inventory->recovery_scan('acct03');
+ok($failedScan->{success} && $failedScan->{finding} eq 'service_failed' && $failedScan->{repair} eq 'start',
+    'offer the fixed start repair for a verified failed service');
+my $healthyScan = $inventory->recovery_scan('acct01');
+ok($healthyScan->{success} && $healthyScan->{finding} eq 'service_healthy' && !exists($healthyScan->{repair}),
+    'confirm running instances with the existing fixed read-only probes');
+$Local::FleetManager::CONTROL_STATES{acct06} = 'running';
+my $probeFailureScan = $inventory->recovery_scan('acct06');
+ok($probeFailureScan->{success} && $probeFailureScan->{finding} eq 'health_probe_failed'
+    && !exists($probeFailureScan->{repair}), 'do not offer a repair when the fixed health probe fails');
+is_deeply($audit[-1], [0, 'acct06', 'recovery.scan', 'health_probe_failed', 'running'],
+    'record failed health-probe outcomes distinctly from successful scans');
+$Local::FleetManager::CONTROL_STATES{acct04} = 'stopping';
+my $transitionScan = $inventory->recovery_scan('acct04');
+ok($transitionScan->{success} && $transitionScan->{finding} eq 'service_transitioning' && !exists($transitionScan->{repair}),
+    'avoid offering repairs during service transitions');
+is($inventory->recovery_scan('acct32')->{finding}, 'not_configured',
+    'report an account without a verified instance as not configured');
+is($inventory->recovery_scan('acct31')->{error}, 'instance_unavailable',
+    'collapse broken manifest or ownership state into a safe recovery error');
+$Local::FleetManager::CONTROL_STATES{acct05} = { unexpected => 'state' };
+is($inventory->recovery_scan('acct05')->{error}, 'instance_unavailable',
+    'reject non-scalar service states from the status provider');
+is($inventory->recovery_scan('../root')->{error}, 'invalid_request',
+    'reject malformed recovery targets before lookup');
+my $recoveryResult = $inventory->recovery_repair('acct02', 'start');
+ok($recoveryResult->{success} && $recoveryResult->{action} eq 'recovery.start'
+    && $recoveryResult->{state} eq 'starting', 'start only the selected account after a fresh scan');
+is_deeply($Local::FleetManager::RECOVERY_CALLS[-1], 'acct02', 'scope recovery repairs to one selected account');
+my $calls_before_inapplicable_repair = scalar @Local::FleetManager::RECOVERY_CALLS;
+is($inventory->recovery_repair('acct01', 'start')->{error}, 'repair_not_applicable',
+    'refuse a start repair after a fresh scan finds a healthy service');
+is(scalar @Local::FleetManager::RECOVERY_CALLS, $calls_before_inapplicable_repair,
+    'do not call the repair method when a fresh scan has no repair finding');
+my $calls_before_recovery_denial = scalar @Local::FleetManager::RECOVERY_CALLS;
+my $nonRootRecoveryScan = Orm::Broker::Handler->handle_frame($recoveryScanRequest, 10001, undef, undef, $inventory);
+like($nonRootRecoveryScan, qr/"error":"not_authorized"/, 'deny non-root recovery scans');
+is_deeply($audit[-1], [10001, 'acct02', 'recovery.scan', 'not_authorized', 'unavailable'],
+    'audit denied scans with the kernel peer UID');
+my $nonRootRecoveryRepair = Orm::Broker::Handler->handle_frame($recoveryRepairRequest, 10001, undef, undef, $inventory);
+like($nonRootRecoveryRepair, qr/"error":"not_authorized"/, 'deny non-root recovery repairs');
+is_deeply($audit[-1], [10001, 'acct02', 'recovery.start', 'not_authorized', 'unavailable'],
+    'audit denied repairs with the kernel peer UID');
+ok($inventory->audit_rate_limited(10001, 'acct02', 'recovery.scan'),
+    'record recovery requests rejected by the broker rate limiter');
+is_deeply($audit[-1], [10001, 'acct02', 'recovery.scan', 'rate_limited', 'unavailable'],
+    'rate-limit audit contains only actor, account, fixed action and outcome');
+is(scalar @Local::FleetManager::RECOVERY_CALLS, $calls_before_recovery_denial,
+    'non-root recovery requests never reach the repair method');
+$Local::FleetManager::CONTROL_STATES{acct02} = 'stopped';
+my $rootRecoveryScan = Orm::Broker::Handler->handle_frame($recoveryScanRequest, 0, undef, undef, $inventory);
+like($rootRecoveryScan, qr/"finding":"service_stopped"/, 'allow root peers to scan one selected account');
+my $rootRecoveryRepair = Orm::Broker::Handler->handle_frame($recoveryRepairRequest, 0, undef, undef, $inventory);
+like($rootRecoveryRepair, qr/"action":"recovery.start"/, 'allow root peers to invoke the fixed recovery repair');
 
 my $controlRequest = '{"action":"start","operation":"fleet.control","username":"acct01","version":1}' . "\n";
 is(parse_request($controlRequest)->{operation}, 'fleet.control', 'accept the fixed root fleet-control request');

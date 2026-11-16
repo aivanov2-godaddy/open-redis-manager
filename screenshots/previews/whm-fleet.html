@@ -21,6 +21,9 @@
     .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 21px 24px; border-bottom: 1px solid #e5eaf0; }
     h2 { margin: 0; font-size: 18px; }
     .count { color: #68788d; font-size: 14px; margin-top: 4px; }
+    .state-summary { padding: 14px 24px; background: #fbfcfe; border-bottom: 1px solid #e5eaf0; color: #4e5e73; font-size: 13px; line-height: 1.8; }
+    .scan-result { margin: 10px 0 0; padding: 10px 12px; border: 1px solid #ead49d; border-radius: 8px; background: #fff9e9; color: #715313; font-size: 13px; line-height: 1.5; }
+    .scan-result strong { display: block; margin-bottom: 3px; }
     .scope { background: #e8f6f2; color: #08745e; border: 1px solid #bce6d8; border-radius: 999px; padding: 7px 11px; font-size: 13px; font-weight: 700; white-space: nowrap; }
     .filters { display: flex; flex-wrap: wrap; gap: 13px; padding: 17px 24px; border-bottom: 1px solid #e5eaf0; }
     input, select { border: 1px solid #c8d2df; background: #fff; border-radius: 7px; height: 40px; padding: 0 12px; color: #243247; font: inherit; }
@@ -41,10 +44,14 @@
     .actions button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cbd5e1; background: #fff; color: #34465d; border-radius: 7px; padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 650; }
     .actions .primary { background: #e8f6f2; color: #08745e; border-color: #bce6d8; }
     .actions .danger { color: #8e3030; }
-    .backup-cell { min-width: 360px; }
+    .backup-cell { min-width: 300px; }
     .backup-list { display: flex; flex-direction: column; gap: 8px; }
     .backup-list small { color: #68788d; }
     .backup-list button { border: 1px solid #e0b8b5; background: #fff8f7; color: #962a23; border-radius: 7px; padding: 7px 10px; font: inherit; font-size: 13px; font-weight: 700; }
+    .recovery-cell { min-width: 210px; }
+    .recovery-cell button { border: 1px solid #cbd5e1; background: #fff; color: #34465d; border-radius: 7px; padding: 7px 9px; font: inherit; font-size: 13px; font-weight: 650; }
+    .recovery-cell .repair { margin-top: 7px; border-color: #d92d20; background: #d92d20; color: #fff; }
+    .recovery-cell small { display: block; margin-top: 7px; color: #68788d; line-height: 1.45; }
     .snapshot { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
     .pagination { display: flex; justify-content: space-between; padding: 17px 24px; color: #68788d; font-size: 14px; }
     .page-button { border: 1px solid #cbd5e1; background: #fff; color: #35475e; border-radius: 7px; padding: 8px 12px; font-weight: 650; }
@@ -58,22 +65,23 @@
     <p class="eyebrow">WHM / Open Redis Manager</p>
     <h1>Managed instances</h1>
     <p class="intro">Root-only service and recovery controls for ORM-managed cPanel accounts.</p>
-    <div class="notice">Each request targets one account and returns that account’s result. Restore can briefly interrupt the cache and discard writes newer than the selected snapshot; ORM creates a safety snapshot first.</div>
+    <div class="notice">Each request targets one account. A recovery scan is read-only; ORM offers a fixed Start service action only after it verifies a stopped or failed instance, then checks again under the account operation lock.</div>
     <section class="panel" aria-labelledby="fleet-title">
-      <div class="panel-head"><div><h2 id="fleet-title">Account fleet</h2><div class="count">4 configured or unhealthy accounts · Page 1</div></div><div class="scope">● Root-only inventory</div></div>
+      <div class="panel-head"><div><h2 id="fleet-title">Account fleet</h2><div class="count">17 verified configured accounts · Page 1 of 5</div></div><div class="scope">● Root-only inventory</div></div>
       <div class="filters"><input aria-label="Search this page" placeholder="Search account name…"><select aria-label="Filter by state"><option>All states</option><option>Running</option><option>Stopped</option><option>Starting</option><option>Unhealthy</option></select></div>
+      <div class="state-summary"><strong>State counts on this page only</strong> · Running 2 · Stopped 1 · Starting 0 · Stopping 0 · Failed 0 · Unverifiable 1<br>Unverifiable means ORM could not confirm the manifest, ownership, or service state. It is not treated as a failed or stopped service.</div>
       <table>
-        <thead><tr><th>cPanel account</th><th>Instance state</th><th>Service actions</th><th>Snapshots &amp; restore</th></tr></thead>
+        <thead><tr><th>cPanel account</th><th>Instance state</th><th>Service actions</th><th>Recovery scan</th><th>Snapshots &amp; restore</th></tr></thead>
         <tbody>
-          <tr><th><span class="account"><span class="avatar">DE</span>demo</span></th><td><span class="state running"><i class="dot"></i>Running</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>2 of 3 retained</small></div><div class="snapshot"><select aria-label="Select demo snapshot"><option>2026-11-16 12:42 UTC · 4.0 KiB</option><option>2026-11-15 08:17 UTC · 3.8 KiB</option></select><button>Restore selected</button></div></div></td></tr>
-          <tr><th><span class="account"><span class="avatar">SH</span>shopuser</span></th><td><span class="state stopped"><i class="dot"></i>Stopped</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable while stopped</small></div><small>No retained snapshots for this account.</small></div></td></tr>
-          <tr><th><span class="account"><span class="avatar">WE</span>webstore</span></th><td><span class="state starting"><i class="dot"></i>Starting</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable while starting</small></div><small>Snapshot list unavailable.</small></div></td></tr>
-          <tr><th><span class="account"><span class="avatar">AP</span>appcache</span></th><td><span class="state unhealthy"><i class="dot"></i>Unhealthy</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable until running</small></div><small>Snapshot list unavailable.</small></div></td></tr>
+          <tr><th><span class="account"><span class="avatar">DE</span>demo</span></th><td><span class="state running"><i class="dot"></i>Running</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="recovery-cell"><button>Read-only scan</button><small>Service is running and passed the fixed PING check.</small></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>2 of 3 retained</small></div><div class="snapshot"><select aria-label="Select demo snapshot"><option>2026-11-16 12:42 UTC · 4.0 KiB</option><option>2026-11-15 08:17 UTC · 3.8 KiB</option></select><button>Restore selected</button></div></div></td></tr>
+          <tr><th><span class="account"><span class="avatar">SH</span>shopuser</span></th><td><span class="state stopped"><i class="dot"></i>Stopped</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="recovery-cell"><button>Read-only scan</button><div class="scan-result"><strong>Verified stopped · manifest valid</strong>Only the fixed service start is available.<br><button class="repair">Start service</button></div></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable while stopped</small></div><small>No retained snapshots for this account.</small></div></td></tr>
+          <tr><th><span class="account"><span class="avatar">WE</span>webstore</span></th><td><span class="state starting"><i class="dot"></i>Starting</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="recovery-cell"><button>Read-only scan</button><small>Wait for the service transition to finish; no repair is offered.</small></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable while starting</small></div><small>Snapshot list unavailable.</small></div></td></tr>
+          <tr><th><span class="account"><span class="avatar">AP</span>appcache</span></th><td><span class="state unhealthy"><i class="dot"></i>Unverifiable</span></td><td><div class="actions"><button class="primary">▶ Start</button><button class="danger">■ Stop</button><button>↻ Restart</button></div></td><td class="recovery-cell"><button>Read-only scan</button><small>Manifest, ownership, or service state could not be verified. No repair is offered.</small></td><td class="backup-cell"><div class="backup-list"><div class="snapshot"><button>＋ Create snapshot</button><small>Unavailable until verified and running</small></div><small>Snapshot list unavailable.</small></div></td></tr>
         </tbody>
       </table>
-      <div class="pagination"><span>Showing 1–4 of 4</span><button class="page-button" disabled>Previous　 Next</button></div>
+      <div class="pagination"><span>Showing 1–4 of 17</span><button class="page-button" disabled>Previous　 Next</button></div>
     </section>
-    <p class="foot">Preview uses synthetic account names, snapshot metadata, and states. No cPanel host or service is connected; button actions are illustrative only. Each action is individual; there is no all-fleet batch.</p>
+    <p class="foot">Preview uses synthetic accounts, snapshot metadata, and state results. No cPanel host or service is connected; button actions are illustrative only. State totals apply to the current page. Each operation is individual; there is no all-fleet batch.</p>
   </main>
 </body>
 </html>
