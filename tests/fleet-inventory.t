@@ -7,6 +7,7 @@ use lib 'src';
 use Orm::Broker::FleetInventory;
 use Orm::Broker::Handler;
 use Orm::Broker::Protocol qw(parse_request);
+use Orm::Broker::Server;
 
 plan skip_all => 'fleet inventory filesystem permission tests require Linux mode semantics' if $^O ne 'linux';
 
@@ -31,6 +32,7 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our @BACKUP_CALLS;
     our %BACKUPS;
     our @MIGRATION_CALLS;
+    our @DIAGNOSTICS_CALLS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -56,6 +58,22 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         return {
             success => 1, backup_id => 'snapshot-1794760000-a1b2c3d4.rdb',
             source_backend => 'redis', target_backend => 'valkey', state => 'running',
+        };
+    }
+    sub read_diagnostics {
+        my ($self, $account) = @_;
+        push @DIAGNOSTICS_CALLS, $account->{name};
+        return { success => 0, error => 'not_running' } if $account->{name} ne 'acct01';
+        return {
+            success => 1,
+            state => 'running',
+            diagnostics => {
+                backend => 'redis', server_version => '7.2.4', uptime_seconds => 3600,
+                memory_used_bytes => 1048576, memory_peak_bytes => 2097152, maxmemory_bytes => 67108864,
+                connected_clients => 3, blocked_clients => 0, maxclients => 100,
+                commands_per_second => 12, database_keys => 42, keyspace_hits => 90,
+                keyspace_misses => 10, expired_keys => 4, evicted_keys => 2,
+            },
         };
     }
     sub create_backup {
@@ -143,6 +161,39 @@ my $root_response = Orm::Broker::Handler->handle_frame($request, 0, undef, undef
 like($root_response, qr/"success":true/, 'allow root peers to read the scoped fleet inventory');
 my $account_response = Orm::Broker::Handler->handle_frame($request, 10001, undef, undef, $inventory);
 like($account_response, qr/"error":"not_authorized"/, 'deny non-root peers from reading the fleet inventory');
+
+my $diagnostics_request = '{"operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
+is(parse_request($diagnostics_request)->{operation}, 'fleet.diagnostics', 'parse the fixed read-only diagnostics request');
+ok(!parse_request('{"command":"INFO","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n"),
+    'reject caller-provided commands at the broker protocol boundary');
+my $diagnostics = $inventory->diagnostics('acct01');
+ok($diagnostics->{success} && $diagnostics->{diagnostics}->{database_keys} == 42
+    && $diagnostics->{diagnostics}->{server_version} eq '7.2.4',
+    'return only validated diagnostic metrics for the selected running account');
+my %diagnostics_at_numeric_boundary = %{$diagnostics->{diagnostics}};
+$diagnostics_at_numeric_boundary{database_keys} = 9_000_000_000_000_000;
+ok(Orm::Broker::FleetInventory::_valid_diagnostics(\%diagnostics_at_numeric_boundary),
+    'accept diagnostics integers within the shared PHP-safe boundary');
+$diagnostics_at_numeric_boundary{database_keys}++;
+ok(!Orm::Broker::FleetInventory::_valid_diagnostics(\%diagnostics_at_numeric_boundary),
+    'reject diagnostics integers above the shared PHP-safe boundary');
+is_deeply($Local::FleetManager::DIAGNOSTICS_CALLS[-1], 'acct01', 'route diagnostics only to the trusted selected account');
+is_deeply($audit[-1], [0, 'acct01', 'diagnostics.read', 'success', 'running'],
+    'audit diagnostic reads without storing command output or values');
+is($inventory->diagnostics('acct02')->{error}, 'not_running', 'require a running instance for diagnostics');
+is($inventory->diagnostics('../root')->{error}, 'invalid_request', 'reject malformed diagnostics targets');
+my $calls_before_diagnostics_denial = scalar @Local::FleetManager::DIAGNOSTICS_CALLS;
+my %non_root_diagnostics_rate;
+ok(Orm::Broker::Server::_rate_allowed(\%non_root_diagnostics_rate, 10001, 10, 1, 1, 5, 'fleet.diagnostics:acct01'),
+    'let the broker authorization handler inspect the first non-root diagnostics request');
+my $nonRootDiagnostics = Orm::Broker::Handler->handle_frame($diagnostics_request, 10001, undef, undef, $inventory);
+like($nonRootDiagnostics, qr/"error":"not_authorized"/, 'deny non-root peers before diagnostic probes');
+is(scalar @Local::FleetManager::DIAGNOSTICS_CALLS, $calls_before_diagnostics_denial,
+    'non-root diagnostic requests never reach the instance manager');
+is_deeply($audit[-1], [10001, 'acct01', 'diagnostics.read', 'not_authorized', 'unavailable'],
+    'record denied diagnostic attempts using the kernel peer UID');
+my $rootDiagnostics = Orm::Broker::Handler->handle_frame($diagnostics_request, 0, undef, undef, $inventory);
+like($rootDiagnostics, qr/"success":true/, 'allow root peers to request bounded read-only diagnostics');
 
 my $controlRequest = '{"action":"start","operation":"fleet.control","username":"acct01","version":1}' . "\n";
 is(parse_request($controlRequest)->{operation}, 'fleet.control', 'accept the fixed root fleet-control request');

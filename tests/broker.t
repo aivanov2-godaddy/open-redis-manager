@@ -30,6 +30,9 @@ for my $operation (qw(backup.list backup.create)) {
 }
 is(parse_request('{"operation":"fleet.backup.create","username":"acct01","version":1}' . "\n")->
     { operation }, 'fleet.backup.create', 'accept a canonical root fleet backup request');
+my $fleet_diagnostics_request = '{"operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
+is(parse_request($fleet_diagnostics_request)->{operation}, 'fleet.diagnostics',
+    'accept a canonical root read-only diagnostics request');
 my $fleet_restore = parse_request('{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n");
 ok($fleet_restore && $fleet_restore->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb'
     && $fleet_restore->{username} eq 'acct01', 'accept a canonical account-scoped fleet restore request');
@@ -67,6 +70,7 @@ for my $invalid (
     '{"operation":"instance.configure","maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"timeout":0,"version":1}' . "\n",
     '{"backup_id":"../other.rdb","operation":"backup.restore","version":1}' . "\n",
     '{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n",
+    '{"command":"CONFIG SET dir /tmp","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n",
     '{"backup_id":"../x.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n",
     '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",
     '{"operation":"fleet.migrate","target_backend":"redis","username":"acct01","version":1,"writes_quiesced":true}' . "\n",
@@ -442,6 +446,95 @@ is($manager->restart($account)->{error}, 'instance_unavailable', 'refuse restart
 is(scalar(grep { $_->[0] eq 'restart' } @systemctl_calls), $restart_calls_before_stopped,
     'do not invoke systemd restart for a stopped instance');
 ok($manager->start($account)->{success}, 'start the test instance again after the restart guard check');
+{
+    my @diagnostics_commands;
+    local $manager->{redis_cli_call} = sub {
+        my ($backend, $socket, @arguments) = @_;
+        push @diagnostics_commands, [$backend, $socket, @arguments];
+        return "PONG\n" if @arguments == 1 && $arguments[0] eq 'PING';
+        if (@arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'server') {
+            my $version_fields = $backend eq 'valkey'
+                ? "redis_version:7.2.4\r\nvalkey_version:8.1.3\r\n"
+                : "redis_version:7.2.4\r\n";
+            return "# Server\r\n${version_fields}uptime_in_seconds:3600\r\n";
+        }
+        return "# Memory\r\nused_memory:1048576\r\nused_memory_peak:2097152\r\nmaxmemory:67108864\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'memory';
+        return "# Clients\r\nconnected_clients:3\r\nblocked_clients:0\r\nmaxclients:100\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'clients';
+        return "# Stats\r\ninstantaneous_ops_per_sec:12\r\nkeyspace_hits:90\r\nkeyspace_misses:10\r\nexpired_keys:4\r\nevicted_keys:2\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'stats';
+        return "42\n" if @arguments == 1 && $arguments[0] eq 'DBSIZE';
+        return undef;
+    };
+    my $diagnostics = $manager->read_diagnostics($account);
+    ok($diagnostics->{success} && $diagnostics->{state} eq 'running',
+        'collect safe read-only diagnostics only for a running instance');
+    is_deeply([sort keys %{$diagnostics->{diagnostics}}], [sort qw(
+        backend blocked_clients commands_per_second connected_clients database_keys evicted_keys expired_keys
+        keyspace_hits keyspace_misses maxclients maxmemory_bytes memory_peak_bytes memory_used_bytes server_version uptime_seconds
+    )], 'return only the fixed diagnostics field allowlist');
+    is_deeply([@{$diagnostics->{diagnostics}}{qw(backend server_version memory_used_bytes database_keys)}],
+        ['redis', '7.2.4', 1048576, 42], 'parse bounded values without returning raw INFO output');
+    is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [
+        ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'], ['DBSIZE'],
+    ], 'run only the fixed read-only Redis command and INFO section allowlist');
+    is(Orm::Broker::InstanceManager::_parse_info_fields("counter:9000000000000001\n", { counter => 'integer' }), undef,
+        'reject counters above the numeric response boundary shared with PHP');
+    my $valkey_info = Orm::Broker::InstanceManager::_parse_info_fields(
+        "valkey_version:8.1.3\nuptime_in_seconds:3600\n",
+        { valkey_version => 'version', uptime_in_seconds => 'integer' },
+    );
+    is($valkey_info->{valkey_version}, '8.1.3', 'parse Valkey version independently from Redis compatibility version');
+    my $manifest_path = $manager->_manifest_path($account->{name});
+    my $manifest;
+    {
+        local $/;
+        open(my $manifest_handle, '<', $manifest_path) or die "read diagnostics manifest fixture: $!";
+        $manifest = JSON::PP->new->decode(<$manifest_handle>);
+        close($manifest_handle) or die "close diagnostics manifest fixture: $!";
+    }
+    my $redis_manifest_json = JSON::PP->new->canonical(1)->encode($manifest) . "\n";
+    $manifest->{backend} = 'valkey';
+    open(my $valkey_manifest_handle, '>', $manifest_path) or die "write Valkey diagnostics manifest fixture: $!";
+    print {$valkey_manifest_handle} JSON::PP->new->canonical(1)->encode($manifest) . "\n";
+    close($valkey_manifest_handle) or die "close Valkey diagnostics manifest fixture: $!";
+    my $valkey_diagnostics = $manager->read_diagnostics($account);
+    my $valkey_version = ref($valkey_diagnostics->{diagnostics}) eq 'HASH'
+        ? [@{$valkey_diagnostics->{diagnostics}}{qw(backend server_version)}]
+        : undef;
+    is_deeply($valkey_version, ['valkey', '8.1.3'],
+        'report the actual Valkey version while keeping its Redis compatibility version private');
+    open(my $redis_manifest_handle, '>', $manifest_path) or die "restore Redis diagnostics manifest fixture: $!";
+    print {$redis_manifest_handle} $redis_manifest_json;
+    close($redis_manifest_handle) or die "close restored diagnostics manifest fixture: $!";
+    {
+        local $manager->{redis_cli_call} = sub { return 'x' x 2048; };
+        is(length(Orm::Broker::InstanceManager::_run_redis_cli(
+            $manager, 'redis', '/var/lib/orm-instances/acct01/redis.sock', 'INFO', 'stats',
+        )), 2048, 'accept INFO sections above 1 KiB within the fixed 32 KiB cap');
+        local $manager->{redis_cli_call} = sub { return 'x' x 32769; };
+        ok(!defined(Orm::Broker::InstanceManager::_run_redis_cli(
+            $manager, 'redis', '/var/lib/orm-instances/acct01/redis.sock', 'INFO', 'stats',
+        )), 'reject INFO output above its fixed 32 KiB cap');
+    }
+    my $bad_diagnostics = Orm::Broker::InstanceManager->new(
+        etc_root => $etc_instances,
+        data_root => $data_instances,
+        policy => $policy,
+        expected_owner_uid => $<,
+        systemctl_call => sub { return (1, 'active'); },
+        redis_cli_call => sub {
+            my ($backend, $socket, @arguments) = @_;
+            return "PONG\n" if $arguments[0] eq 'PING';
+            return "redis_version:7.2.4\nuptime_in_seconds:1\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'server';
+            return "used_memory:2097152\nused_memory_peak:1048576\nmaxmemory:67108864\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'memory';
+            return "connected_clients:3\nblocked_clients:0\nmaxclients:100\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'clients';
+            return "instantaneous_ops_per_sec:1\nkeyspace_hits:1\nkeyspace_misses:0\nexpired_keys:0\nevicted_keys:0\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'stats';
+            return "42\n" if $arguments[0] eq 'DBSIZE';
+            return undef;
+        },
+    );
+    is($bad_diagnostics->read_diagnostics($account)->{error}, 'diagnostics_unavailable',
+        'reject contradictory or incomplete Redis diagnostics');
+}
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
     'return validated saved settings in the instance status');
 
@@ -908,6 +1001,15 @@ ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 43210, 10, 2, 0, 1, 'pr
     'allow the account exposure lookup independently of ordinary status and metrics reads');
 ok(!Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10.1, 1, 1, 1, 'provider.resellers'),
     'rate-limit repeated reseller summaries in their own bucket');
+my %fleet_diagnostics_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 20, 1, 1, 5, 'fleet.diagnostics:acct01'),
+    'allow one root diagnostics request per account');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 20, 1, 1, 5, 'fleet.diagnostics:acct02'),
+    'keep diagnostics rate limits independent between accounts');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 21, 1, 1, 5, 'fleet.diagnostics:acct01'),
+    'rate-limit repeated diagnostics for one account within five seconds');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_diagnostics_rates, 0, 25, 1, 1, 5, 'fleet.diagnostics:acct01'),
+    'allow diagnostics again when the five-second window expires');
 my %backup_rates;
 ok(Orm::Broker::Server::_rate_allowed(\%backup_rates, 43210, 100, 1, 0, 60, 60),
     'allow one account backup operation in its sixty-second window');

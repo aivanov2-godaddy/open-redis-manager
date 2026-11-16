@@ -138,6 +138,48 @@ sub backup {
     return _fleet_failure($error, $username, $action, $audited, $safety_id);
 }
 
+sub diagnostics {
+    my ($self, $username) = @_;
+    my $action = 'diagnostics.read';
+    return _fleet_failure('invalid_request', $username, $action, 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || $account->{name} ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+
+    my $result = eval { $self->{instance_manager}->read_diagnostics($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('read_diagnostics') };
+    if (ref($result) ne 'HASH') {
+        my $audited = _audit_event($self, 0, $username, $action, 'diagnostics_unavailable', 'unavailable');
+        return _fleet_failure('diagnostics_unavailable', $username, $action, $audited);
+    }
+    if ($result->{success}) {
+        if (($result->{state} // '') ne 'running' || !_valid_diagnostics($result->{diagnostics})) {
+            my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+            return _fleet_failure('operation_failed', $username, $action, $audited);
+        }
+        my $audited = _audit_event($self, 0, $username, $action, 'success', 'running');
+        return {
+            action => $action,
+            audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+            diagnostics => $result->{diagnostics},
+            state => 'running',
+            success => JSON::PP::true,
+            username => $username,
+            version => 1,
+        };
+    }
+
+    my $error = defined($result->{error}) && !ref($result->{error})
+        && $result->{error} =~ /\A(?:not_configured|not_running|diagnostics_unavailable|rate_limited)\z/
+        ? $result->{error} : 'operation_failed';
+    my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
+    return _fleet_failure($error, $username, $action, $audited);
+}
+
 sub migrate {
     my ($self, $username, $target_backend, $writes_quiesced) = @_;
     my $action = 'migration.to-valkey';
@@ -363,8 +405,32 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey|diagnostics\.read)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
+}
+
+sub _valid_diagnostics {
+    my ($diagnostics) = @_;
+    my $max_integer = 9_000_000_000_000_000;
+    return 0 if ref($diagnostics) ne 'HASH';
+    my @expected = qw(
+        backend blocked_clients commands_per_second connected_clients database_keys
+        evicted_keys expired_keys keyspace_hits keyspace_misses maxclients maxmemory_bytes
+        memory_peak_bytes memory_used_bytes server_version uptime_seconds
+    );
+    return 0 if join(',', sort keys %{$diagnostics}) ne join(',', @expected);
+    return 0 if !defined($diagnostics->{backend}) || $diagnostics->{backend} !~ /\A(?:redis|valkey)\z/;
+    return 0 if !defined($diagnostics->{server_version}) || $diagnostics->{server_version} !~ /\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/;
+    for my $field (@expected) {
+        next if $field eq 'backend' || $field eq 'server_version';
+        return 0 if !defined($diagnostics->{$field}) || ref($diagnostics->{$field})
+            || $diagnostics->{$field} !~ /\A(?:0|[1-9][0-9]{0,15})\z/
+            || $diagnostics->{$field} > $max_integer;
+    }
+    return 0 if $diagnostics->{memory_peak_bytes} < $diagnostics->{memory_used_bytes}
+        || $diagnostics->{connected_clients} > $diagnostics->{maxclients}
+        || $diagnostics->{maxclients} > 100000;
+    return 1;
 }
 
 1;

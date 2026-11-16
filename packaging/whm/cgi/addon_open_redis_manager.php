@@ -23,6 +23,39 @@ $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
 $resellerSummary = null;
+$fleetDiagnosticsMessage = null;
+$fleetDiagnosticsResult = null;
+$fleetDiagnosticsRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.diagnostics';
+if ($fleetDiagnosticsRequest) {
+    $username = $_POST['username'] ?? null;
+    $result = is_string($username) ? $fleetClient->diagnoseFleetAccount($username) : null;
+    if ($result === null) {
+        $fleetDiagnosticsMessage = ['type' => 'error', 'text' => 'The diagnostic request could not be verified. Refresh the page and try again.'];
+    } elseif ($result['success']) {
+        $fleetDiagnosticsResult = $result;
+        $fleetDiagnosticsMessage = [
+            'type' => 'success',
+            'text' => 'Read-only diagnostics completed for ' . $result['username'] . '.'
+                . ($result['audit_logged'] ? ' The action was recorded in the system authentication log.'
+                    : ' Warning: the result is available, but its audit record could not be confirmed.'),
+        ];
+    } else {
+        $diagnosticMessages = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'not_configured' => 'The selected account does not have an ORM instance.',
+            'not_running' => 'Start the selected cache before requesting diagnostics.',
+            'rate_limited' => 'Wait a few seconds before requesting diagnostics for this account again.',
+            'diagnostics_unavailable' => 'The fixed read-only probes could not produce a complete, validated result.',
+        ];
+        $fleetDiagnosticsMessage = [
+            'type' => 'error',
+            'text' => ($diagnosticMessages[$result['error'] ?? ''] ?? 'The diagnostic request was rejected.')
+                . (array_key_exists('audit_logged', $result) && !$result['audit_logged']
+                    ? ' The denial could not be confirmed in the audit log.' : ''),
+        ];
+    }
+}
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
 $fleetMigrationMessage = null;
@@ -352,9 +385,9 @@ WHM::header('Open Redis Manager', 0, 0);
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
   <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
-  <path d="M75 205V53h66c35 0 55 18 55 48s-20 48-55 48H75m62 0 60 56" fill="none" stroke="#FFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M116 87h24c10 0 16 5 16 14s-6 14-16 14h-24" fill="none" stroke="#FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="116" cy="87" r="6" fill="#FFF"/><circle cx="140" cy="101" r="6" fill="#FFF"/><circle cx="116" cy="115" r="6" fill="#FFF"/>
+  <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round"/>
+  <path d="M91 105h60M98 128h46M105 151h32M163 128h24" fill="none" stroke="#FFF" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="193" cy="128" r="12" fill="#FFF"/><circle cx="193" cy="128" r="4" fill="#D92D20"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
@@ -373,6 +406,29 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php endif; ?>
       <?php if ($fleetMigrationMessage !== null): ?>
         <p role="<?= $fleetMigrationMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetMigrationMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
+      <?php if ($fleetDiagnosticsMessage !== null): ?>
+        <p role="<?= $fleetDiagnosticsMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetDiagnosticsMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
+      <?php if ($fleetDiagnosticsResult !== null): ?>
+        <?php $diagnosticLabels = [
+            'backend' => 'Backend', 'server_version' => 'Server version', 'uptime_seconds' => 'Uptime (seconds)',
+            'memory_used_bytes' => 'Memory used (bytes)', 'memory_peak_bytes' => 'Memory peak (bytes)',
+            'maxmemory_bytes' => 'Configured memory limit (bytes)', 'connected_clients' => 'Connected clients',
+            'blocked_clients' => 'Blocked clients', 'maxclients' => 'Client limit', 'commands_per_second' => 'Commands per second',
+            'database_keys' => 'Keys in database 0', 'keyspace_hits' => 'Keyspace hits',
+            'keyspace_misses' => 'Keyspace misses', 'expired_keys' => 'Expired keys', 'evicted_keys' => 'Evicted keys',
+        ]; ?>
+        <h3>Read-only diagnostics for <code><?= htmlspecialchars($fleetDiagnosticsResult['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></h3>
+        <table><tbody>
+          <?php foreach ($diagnosticLabels as $field => $label): ?>
+            <tr><th scope="row"><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
+              <td><?= htmlspecialchars(is_int($fleetDiagnosticsResult['diagnostics'][$field])
+                    ? number_format($fleetDiagnosticsResult['diagnostics'][$field])
+                    : (string) $fleetDiagnosticsResult['diagnostics'][$field], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td></tr>
+          <?php endforeach; ?>
+        </tbody></table>
+        <p>Only fixed, read-only Redis/Valkey probes are used. This report contains counters and configuration metrics; it does not return keys, values, credentials, or raw command output.</p>
       <?php endif; ?>
       <?php if ($fleetPage === null): ?>
         <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
@@ -393,7 +449,7 @@ WHM::header('Open Redis Manager', 0, 0);
         </select>
         <p>Each row shows snapshots retained for that account. Migration is available for running Redis instances only. Stop all application writers before using it; service connections will be interrupted while the snapshot is validated and the backend is switched.</p>
         <table>
-          <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
+           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
@@ -407,6 +463,13 @@ WHM::header('Open Redis Manager', 0, 0);
                     <button type="submit" name="fleet_action" value="start"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M5 3.5v13l11-6.5z" fill="currentColor"/></svg> Start</button>
                     <button type="submit" name="fleet_action" value="stop" onclick="return confirm('Stop the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may fail until it is started again.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><rect x="4.5" y="4.5" width="11" height="11" rx="1" fill="currentColor"/></svg> Stop</button>
                     <button type="submit" name="fleet_action" value="restart" onclick="return confirm('Restart the cache for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? Connected applications may briefly lose access.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M15.7 7.5A6 6 0 0 0 5.3 5.7L3.5 7.5M3.5 4v3.5H7M4.3 12.5a6 6 0 0 0 10.4 1.8l1.8-1.8m0 3.5v-3.5H13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Restart</button>
+                  </form>
+                </td>
+                <td>
+                  <form method="post" class="orm-fleet-actions">
+                    <input type="hidden" name="orm_action" value="fleet.diagnostics">
+                    <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>>Run diagnostics</button>
                   </form>
                 </td>
                 <td>
@@ -472,7 +535,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <p>No ORM-managed instances have been initialized.</p>
         <?php endif; ?>
       <?php endif; ?>
-      <p>This root-only view lists account names, normalized states, and each account's bounded snapshot metadata. Every service and backup action is validated against the trusted cPanel account by the broker; restore uses that account's safety snapshot and rollback path. Actions are audited and do not expose service paths, configuration, credentials, or Redis data.</p>
+      <p>This root-only view lists account names, normalized states, and each account's bounded snapshot metadata. Every service and backup action is validated against the trusted cPanel account by the broker; restore uses that account's safety snapshot and rollback path. Diagnostic probes are fixed, read-only operations and return validated counters only. Actions are audited and do not expose service paths, credentials, Redis keys, or values.</p>
     </section>
     <?php endif; ?>
     <section aria-labelledby="orm-backends-title">
