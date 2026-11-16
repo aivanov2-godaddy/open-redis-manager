@@ -156,7 +156,8 @@ unset TEST_INSTALL_COUNT TEST_REAL_INSTALL
     exit 1
 }
 grep -q '"outcome":"rolled_back"' "$target_root/var/cpanel/orm/updates/update-audit.jsonl" || {
-    printf 'rollback outcome was not recorded in the updater audit log.\n' >&2
+    printf 'rollback outcome was not recorded in the updater audit log; current contents follow:\n' >&2
+    cat "$target_root/var/cpanel/orm/updates/update-audit.jsonl" >&2
     exit 1
 }
 

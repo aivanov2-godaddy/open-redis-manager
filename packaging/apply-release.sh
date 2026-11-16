@@ -189,9 +189,9 @@ cleanup_release() {
     if [[ "$status" -ne 0 && "$transaction_succeeded" -eq 0 && "$mutated" -eq 1 ]]; then
         write_journal rolling_back || true
         if rollback_release; then
-            append_audit rolled_back || status=1
+            append_audit rolled_back || { printf 'ORM updater: rollback completed but its audit record could not be written.\n' >&2; status=1; }
         else
-            append_audit recovery_required || true
+            append_audit recovery_required || printf 'ORM updater: recovery is required, but its audit record could not be written.\n' >&2
             status=1
         fi
     elif [[ "$status" -ne 0 && "$transaction_succeeded" -eq 0 && -n "$candidate_version" ]]; then
