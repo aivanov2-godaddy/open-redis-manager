@@ -310,15 +310,13 @@ try {
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#ED493C"/><stop offset="1" stop-color="#C92319"/></linearGradient>
-    <linearGradient id="orm-core" x1="93" y1="91" x2="163" y2="168" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F1F4F8"/></linearGradient>
+    <linearGradient id="orm-red" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#E83B2E"/><stop offset="1" stop-color="#C92218"/></linearGradient>
   </defs>
-  <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
-  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2"/>
-  <path d="M166 63C154 55 141 51 128 51 85.5 51 51 85.5 51 128s34.5 77 77 77 77-34.5 77-77c0-15-4.3-29-12-40" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
-  <circle cx="166" cy="63" r="7" fill="#fff"/><circle cx="193" cy="88" r="7" fill="#fff"/>
-  <path d="m128 87 41 41-41 41-41-41 41-41Z" fill="url(#orm-core)"/>
-  <path d="m128 104 24 24-24 24-24-24 24-24Z" fill="#C92319"/><circle cx="128" cy="128" r="7" fill="#fff"/>
+  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-red)"/>
+  <rect x="5" y="5" width="246" height="246" rx="61" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2"/>
+  <path d="M128 55 187 86v73l-59 32-59-32V86l59-31Z" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m72 108 56 30 56-30M72 132l56 30 56-30" fill="none" stroke="#fff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m128 73 29 15-29 15-29-15 29-15Z" fill="#fff"/><circle cx="128" cy="88" r="5.5" fill="#C92218"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
