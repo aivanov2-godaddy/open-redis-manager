@@ -8,6 +8,11 @@ source "$repo_root/packaging/lib.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-manifest-test.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 
+if orm_safe_target_parent_chain 'relative/file' || orm_safe_target_parent_chain "$test_root/../source"; then
+    printf 'unsafe relative or traversal path passed the parent-chain check.\n' >&2
+    exit 1
+fi
+
 ORM_VERSION_FILE="$test_root/VERSION"
 ORM_INSTALL_MANIFEST="$test_root/install-manifest"
 printf '0.1.0-rc.2+test.1\n' >"$ORM_VERSION_FILE"

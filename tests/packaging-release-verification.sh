@@ -17,6 +17,19 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
 openssl pkey -in "$private_key" -pubout -out "$key_dir/test-release.pem"
 chmod 0600 "$private_key"
 chmod 0644 "$key_dir/test-release.pem"
+orm_release_safe_root_directory "$key_dir" \
+    || { printf 'root-owned private key directory was rejected.\n' >&2; exit 1; }
+unsafe_parent="$test_root/writable-parent"
+mkdir -p "$unsafe_parent/child"
+chmod 0777 "$unsafe_parent"
+chmod 0700 "$unsafe_parent/child"
+if orm_release_safe_root_directory "$unsafe_parent/child"; then
+    printf 'writable non-sticky trust-key ancestor was accepted.\n' >&2
+    exit 1
+fi
+chmod 01777 "$unsafe_parent"
+orm_release_safe_root_directory "$unsafe_parent/child" \
+    || { printf 'root-owned sticky temporary parent was rejected.\n' >&2; exit 1; }
 
 future_day="$(date -u -d '+1 day' '+%Y-%m-%dT%H:%M:%SZ')"
 future_expiry="$(date -u -d '+30 days' '+%Y-%m-%dT%H:%M:%SZ')"
@@ -29,10 +42,26 @@ past_expiry="$(date -u -d '-1 day' '+%Y-%m-%dT%H:%M:%SZ')"
     || { printf 'SemVer comparison does not follow prerelease/build ordering.\n' >&2; exit 1; }
 
 write_artifact() {
-    local version="$1"
+    local version="$1" release_root="$test_root/orm-$1" path
     artifact="$test_root/orm-${version}.tar.gz"
-    printf 'signed ORM release payload %s\n' "$version" >"$test_root/payload"
-    tar -czf "$artifact" -C "$test_root" payload
+    rm -rf -- "$release_root"
+    mkdir -p "$release_root"
+    printf '%s\n' "$version" >"$release_root/VERSION"
+    while IFS= read -r path; do
+        [[ "$path" == VERSION ]] && continue
+        mkdir -p "$release_root/$(dirname -- "$path")"
+        cp -- "$repo_root/$path" "$release_root/$path"
+        chmod 0644 "$release_root/$path"
+    done <"$repo_root/packaging/release-required-files.txt"
+    while IFS= read -r path; do
+        [[ -d "$path" && ! -L "$path" ]] && chmod 0755 "$path"
+    done < <(find "$release_root" -type d -print)
+    chmod 0644 "$release_root/VERSION"
+    if [[ ! -s "$release_root/packaging/release-required-files.txt" ]]; then
+        printf 'release required-file manifest was not copied.\n' >&2
+        exit 1
+    fi
+    tar -czf "$artifact" -C "$test_root" "orm-${version}"
 }
 
 write_metadata() {
@@ -60,8 +89,13 @@ expect_invalid() {
 }
 
 write_metadata
-[[ "$(orm_release_metadata_verify "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
+[[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
+
+if (cd "$test_root" && orm_release_metadata_verify release.metadata release.sig "$artifact" "$key_dir" '0.1.0-dev' >/dev/null 2>&1); then
+    printf 'relative release paths were accepted.\n' >&2
+    exit 1
+fi
 
 printf 'tampered\n' >>"$artifact"
 expect_invalid 'an artifact whose digest changed'

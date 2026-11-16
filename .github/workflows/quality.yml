@@ -23,7 +23,9 @@ jobs:
       - name: Run pre-commit checks
         run: pre-commit run --all-files
       - name: Check packaging shell syntax
-        run: bash -n packaging/install.sh packaging/uninstall.sh packaging/upgrade.sh packaging/lib.sh packaging/release-lib.sh tests/packaging-install.sh tests/packaging-upgrade.sh tests/packaging-manifest.sh tests/packaging-release-verification.sh
+        run: bash -n packaging/install.sh packaging/uninstall.sh packaging/upgrade.sh packaging/lib.sh packaging/release-lib.sh tests/packaging-install.sh tests/packaging-upgrade.sh tests/packaging-manifest.sh tests/packaging-release-verification.sh tests/packaging-release-archive.sh
+      - name: Check release archive inspector syntax
+        run: perl -c packaging/inspect-release-archive.pl
       - name: Check packaging fresh install and rollback
         run: sudo bash tests/packaging-install.sh
       - name: Check packaging instance-root guards
@@ -32,6 +34,8 @@ jobs:
         run: sudo bash tests/packaging-manifest.sh
       - name: Check signed release metadata and artifact verification
         run: sudo bash tests/packaging-release-verification.sh
+      - name: Check signed release archive structure
+        run: sudo bash tests/packaging-release-archive.sh
       - name: Check packaging upgrade integrity and rollback
         run: sudo bash tests/packaging-upgrade.sh
       - name: Check live cPanel smoke-test entry point

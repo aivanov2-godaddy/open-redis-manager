@@ -2,9 +2,31 @@
 set -Eeuo pipefail
 
 ORM_RELEASE_METADATA_MAX_BYTES=8192
-ORM_RELEASE_ARTIFACT_MAX_BYTES=268435456
+ORM_RELEASE_ARTIFACT_MAX_BYTES=134217728
 ORM_RELEASE_METADATA_MAX_AGE_SECONDS=7776000
 ORM_RELEASE_CLOCK_SKEW_SECONDS=300
+
+orm_release_safe_root_directory() {
+    local directory="${1:-}" owner mode rest component
+    local -a components=()
+    [[ "$directory" == /* && "$directory" != *//* ]] || return 1
+    rest="${directory#/}"
+    IFS='/' read -r -a components <<<"$rest"
+    for component in "${components[@]}"; do
+        [[ -n "$component" && "$component" != . && "$component" != .. ]] || return 1
+    done
+    while :; do
+        [[ -d "$directory" && ! -L "$directory" ]] || return 1
+        owner="$(stat -c '%u' -- "$directory")" || return 1
+        mode="$(stat -c '%a' -- "$directory")" || return 1
+        [[ "$owner" == 0 && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+        if (( (8#$mode & 0022) != 0 )); then
+            (( (8#$mode & 01000) != 0 )) || return 1
+        fi
+        [[ "$directory" == / ]] && break
+        directory="$(dirname -- "$directory")"
+    done
+}
 
 orm_semver_compare() {
     local left="${1:-}" right="${2:-}" result
@@ -65,17 +87,20 @@ orm_release_metadata_verify() {
     local -a expected_keys=(product key_id version channel artifact artifact_size artifact_sha256 min_from_version max_from_version created_at expires_at)
 
     for line in "$metadata" "$signature" "$artifact"; do
-        orm_safe_target_parent_chain "$line" || return 1
+        [[ "$line" == /* && "$line" != *//* ]] || return 1
         [[ -f "$line" && ! -L "$line" ]] || return 1
         input_owner="$(stat -c '%u' -- "$line")" || return 1
         input_mode="$(stat -c '%a' -- "$line")" || return 1
         parent="$(dirname -- "$line")"
+        orm_release_safe_root_directory "$parent" || return 1
         parent_owner="$(stat -c '%u' -- "$parent")" || return 1
         parent_mode="$(stat -c '%a' -- "$parent")" || return 1
         [[ "$input_owner" == 0 && "$input_mode" =~ ^[0-7]{3,4}$ \
             && "$parent_owner" == 0 && "$parent_mode" =~ ^[0-7]{3,4}$ ]] || return 1
         (( (8#$input_mode & 0022) == 0 && (8#$parent_mode & 0022) == 0 )) || return 1
     done
+    [[ "$trusted_key_dir" == /* && "$trusted_key_dir" != *//* ]] || return 1
+    orm_release_safe_root_directory "$trusted_key_dir" || return 1
     [[ -d "$trusted_key_dir" && ! -L "$trusted_key_dir" ]] || return 1
     key_owner="$(stat -c '%u' -- "$trusted_key_dir")" || return 1
     key_mode="$(stat -c '%a' -- "$trusted_key_dir")" || return 1
@@ -128,7 +153,7 @@ orm_release_metadata_verify() {
         && "$expires_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || return 1
 
     key_path="$trusted_key_dir/${key_id}.pem"
-    orm_safe_target_parent_chain "$key_path" || return 1
+    [[ "$key_path" == /* && "$key_path" != *//* ]] || return 1
     [[ -f "$key_path" && ! -L "$key_path" ]] || return 1
     key_owner="$(stat -c '%u' -- "$key_path")" || return 1
     key_mode="$(stat -c '%a' -- "$key_path")" || return 1
@@ -158,5 +183,13 @@ orm_release_metadata_verify() {
 
     actual_digest="$(sha256sum -- "$artifact" | awk '{print $1}')" || return 1
     [[ "$actual_digest" == "$expected_digest" ]] || return 1
+    printf '%s\n' "$version"
+}
+
+orm_release_verify_bundle() {
+    [[ $# -eq 5 ]] || return 2
+    local artifact="$3" version
+    version="$(orm_release_metadata_verify "$@")" || return 1
+    "$ORM_PERL" "$ORM_PACKAGE_ROOT/inspect-release-archive.pl" "$artifact" "$version" >/dev/null || return 1
     printf '%s\n' "$version"
 }
