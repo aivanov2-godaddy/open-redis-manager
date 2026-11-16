@@ -1,19 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">Three cache records held inside a continuous management orbit on a Redis-red field.</desc>
+  <desc id="orm-desc">A custom white R monogram with three cache-control bars on a Redis-red field.</desc>
   <defs>
-    <linearGradient id="tile" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse">
+    <linearGradient id="red" x1="26" y1="20" x2="232" y2="242" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F04438"/>
       <stop offset="1" stop-color="#C81E1E"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#tile)"/>
-  <path d="M178 56 A82 82 0 1 0 205 120" fill="none" stroke="#FFF" stroke-linecap="round" stroke-width="12"/>
-  <path d="m207 103 11 25-25-1 14-24Z" fill="#FFF"/>
-  <rect x="83" y="91" width="90" height="17" rx="8.5" fill="#FFF"/>
-  <rect x="83" y="119.5" width="90" height="17" rx="8.5" fill="#FFF"/>
-  <rect x="83" y="148" width="90" height="17" rx="8.5" fill="#FFF"/>
-  <circle cx="102" cy="99.5" r="3.5" fill="#D92D20"/>
-  <circle cx="102" cy="128" r="3.5" fill="#D92D20"/>
-  <circle cx="102" cy="156.5" r="3.5" fill="#D92D20"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#red)"/>
+  <path d="M83 198V58h62c39 0 57 20 57 49 0 25-14 42-40 48l42 43" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="22"/>
+  <path d="M91 84h47M91 105h57M91 126h37" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="8"/>
 </svg>
