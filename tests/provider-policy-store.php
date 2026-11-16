@@ -21,7 +21,7 @@ if (!mkdir($root, 0700)) {
 $path = $root . '/provider-policy.json';
 $owner = function_exists('posix_geteuid') ? posix_geteuid() : null;
 $assert(ProviderPolicyStore::normalize(ProviderPolicyStore::defaults()) === ProviderPolicyStore::defaults(),
-    'Accept the version-three report-only default policy shape.');
+    'Accept the version-four report-only policy and validated global instance defaults.');
 $legacyPolicy = [
     'version' => 1,
     'mode' => 'report-only',
@@ -32,6 +32,11 @@ $legacyExpected = ProviderPolicyStore::defaults();
 $legacyExpected['mode'] = 'warn';
 $assert(ProviderPolicyStore::normalize($legacyPolicy) === $legacyExpected,
     'Migrate a version-one report-only policy to compatibility warnings with default branding and simple exposure.');
+$legacyV3 = ProviderPolicyStore::defaults();
+$legacyV3['version'] = 3;
+unset($legacyV3['instance_defaults']);
+$assert(ProviderPolicyStore::normalize($legacyV3) === ProviderPolicyStore::defaults(),
+    'Migrate a version-three policy while preserving its existing controls and adding safe future-instance defaults.');
 $logoBytes = file_get_contents(dirname(__DIR__) . '/packaging/whm/icons/orm-whm.png');
 $assert(is_string($logoBytes) && strlen($logoBytes) <= 32768, 'Use a bounded PNG logo fixture.');
 $validBranding = ProviderPolicyStore::defaultBranding();
@@ -87,6 +92,12 @@ $policy['mode'] = 'warn';
 $policy['exposure'] = 'advanced';
 $policy['packages']['starter'] = ['enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2];
 $policy['resellers']['reseller1'] = ['max_instances' => 4, 'max_memory_mib' => 128];
+$policy['instance_defaults'] = [
+    'memory_mib' => 24,
+    'maxmemory_policy' => 'allkeys-lfu',
+    'databases' => 8,
+    'metrics_history_retention_days' => 45,
+];
 $assert($store->save($policy), 'Atomically save validated package policy.');
 $assert($store->load() === $policy, 'Read back package, reseller, mode, and exposure policy after saving.');
 $stat = lstat($path);
@@ -114,6 +125,18 @@ $assert(ProviderPolicyStore::normalize($badExposure) === null, 'Reject unrecogni
 $badBranding = $policy;
 $badBranding['branding']['secondary_color'] = '#FFFFFF';
 $assert(ProviderPolicyStore::normalize($badBranding) === null, 'Reject invalid branding in the complete provider policy.');
+$badDefaults = $policy;
+$badDefaults['instance_defaults']['maxmemory_policy'] = 'volatile-anything';
+$assert(ProviderPolicyStore::normalize($badDefaults) === null, 'Reject an unlisted global eviction policy.');
+$badDefaults = $policy;
+$badDefaults['instance_defaults']['databases'] = 17;
+$assert(ProviderPolicyStore::normalize($badDefaults) === null, 'Reject database counts beyond the supported bounded range.');
+$badDefaults = $policy;
+$badDefaults['instance_defaults']['metrics_history_retention_days'] = 6;
+$assert(ProviderPolicyStore::normalize($badDefaults) === null, 'Reject metrics retention below the supported minimum.');
+$badDefaults = $policy;
+$badDefaults['instance_defaults']['memory_mib'] = 65;
+$assert(ProviderPolicyStore::normalize($badDefaults) === null, 'Reject global memory defaults above the host limit.');
 $assert(!$store->save($badMemory), 'Refuse to persist invalid provider policy.');
 
 $symlinkPath = $root . '/linked-policy.json';

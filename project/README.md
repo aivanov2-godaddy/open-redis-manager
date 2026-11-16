@@ -12,7 +12,7 @@ Goal: turn the UI prototype into an installable, least-privilege cPanel/WHM plug
 
 **0.2.0 — Operations and lifecycle completeness** ([milestone #2](https://github.com/aivanov2-godaddy/open-redis-manager/milestone/2))
 
-Goal: implement the remaining documented administration workflows after the safe cPanel foundation. This milestone covers actionable health guidance, security/abuse reports, an audit viewer, a signed versioned updater, and verified fleet aggregates with bounded batch snapshots. Each implementation still needs its own security review and tests; it does not establish production host support.
+Goal: implement the remaining documented administration workflows after the safe cPanel foundation. This milestone covers actionable health guidance, security/abuse reports, an audit viewer, a signed versioned updater, verified fleet aggregates with bounded batch snapshots, and configurable global defaults for new Redis/Valkey instances. Each implementation still needs its own security review and tests; it does not establish production host support.
 
 ## Issue drafts
 
@@ -29,6 +29,7 @@ Goal: implement the remaining documented administration workflows after the safe
 - [#70 — Implement a signed, versioned WHM updater](https://github.com/aivanov2-godaddy/open-redis-manager/issues/70) ([draft](issues/11-signed-updater.md))
 - [#68 — Add fleet aggregates and batched snapshot operations](https://github.com/aivanov2-godaddy/open-redis-manager/issues/68) ([draft](issues/12-fleet-aggregates.md))
 - [#71 — Add WHM security and abuse reporting](https://github.com/aivanov2-godaddy/open-redis-manager/issues/71) ([draft](issues/13-security-abuse-reports.md))
+- [#95 — Add configurable WHM defaults for new Redis and Valkey instances](https://github.com/aivanov2-godaddy/open-redis-manager/issues/95) ([draft](issues/14-whm-global-defaults.md))
 
 Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account lifecycle, live metrics, fixed setup presets and bounded configuration. PR #16 merged the initial lifecycle slice; live disposable cPanel validation is still required before production use.
 
@@ -39,7 +40,7 @@ Open a feature branch and pull request for each coherent implementation incremen
 ## Current status (2026-11-17)
 
 - Upstream repository: public. `main` tracks the upstream default branch; implementation work is reviewed through feature branches and pull requests.
-- Milestones #1 and #2 exist on GitHub. The 0.1.0 release gates remain open in issues #1 and #7. PR #92 shipped the signed, asynchronous file-update flow; issue #70 remains open for migration planning, full post-update verification, production signing operations, interruption/recovery coverage, and disposable-host validation. Check live issue state before treating any planning link here as open or closed.
+- Milestones #1 and #2 exist on GitHub. The 0.1.0 release gates remain open in issues #1 and #7. PR #94 shipped the offline signed release bundle builder; issue #70 remains open for migration planning, full post-update verification, production signing operations, interruption/recovery coverage, and disposable-host validation. Issue #95 tracks configurable WHM defaults for new Redis/Valkey instances. Check live issue state before treating any planning link here as open or closed.
 - Recent merged work includes PR #57 (validation and release-gate documentation), #58 (ENOSPC rollback coverage), #59 (ORM brand icon), #60 (isolated fresh-install and rollback coverage), #64 (optional account-scoped Redis AUTH), #65 (AUTH release gates), #66 (feature coverage catalog), #72 (0.2 feature backlog), and #73 (cPanel health guidance).
 - The repository includes a manual development installer, cPanel/WHM entry points, an account-bound broker, instance lifecycle/configuration, metrics, backups and restore, package/reseller policy, provider branding, application discovery, guarded migration, root-only diagnostics, a fixed recovery scan/start action, a report-only WHM security review, an audit viewer, and signed asynchronous WHM updates. The standalone prototype UI uses sample data.
 - Linux CI and fixture tests cover important broker and packaging paths, including fresh-install success/rollback in an isolated mock cPanel root. The live cPanel smoke has verified account identity only. Live fresh install, lifecycle, ACLs across supported releases, restore, migration, recovery, uninstall, CloudLinux/CageFS and failure-injection behavior remain release gates. No ORM-supported production host matrix is established.

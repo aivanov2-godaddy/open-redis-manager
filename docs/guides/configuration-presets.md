@@ -20,7 +20,7 @@ The cPanel initialization form offers all five profiles. The broker accepts only
 | Session cache | 32 MiB |
 | Generic | 64 MiB |
 
-All profiles currently use `allkeys-lru`, 16 logical databases, a 100-client ceiling, no client idle timeout, and persistence disabled. The current hard cap is 64 MiB. Package and reseller ceilings are not implemented yet. The initial profile label is stored in the root-owned instance manifest; version 1 manifests continue to read as Generic. Individual settings can be changed on the existing service as described below.
+The profile supplies a memory baseline (WordPress 48 MiB, Laravel 32 MiB, Magento 64 MiB, Session 32 MiB, Generic 64 MiB). WHM can lower that value through the 8–64 MiB global default; package memory ceilings still apply during provisioning. WHM also sets the allowlisted eviction policy and 1–16 logical database count for new instances. All profiles retain a 100-client ceiling, no client idle timeout, and persistence disabled. The profile label is stored in the root-owned instance manifest; legacy version 1 manifests continue to read as Generic. Individual user-editable settings can be changed on an existing service as described below, while database count and persistence stay host-controlled.
 
 The profile never accepts raw configuration values from the browser.
 

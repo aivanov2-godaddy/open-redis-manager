@@ -443,29 +443,48 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         return is_int($value) && $value >= $minimum && $value <= $maximum ? $value : null;
     };
     $packageName = $_POST['package_name'] ?? '';
-    $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
-    $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
     if ($providerPolicy === null || !in_array($providerAction, [
         'default', 'save-package', 'remove-package', 'save-reseller', 'remove-reseller', 'save-branding',
     ], true)
-        || !in_array($submittedMode, ['report-only', 'warn', 'enforce'], true)
-        || ($providerAction === 'default' && !in_array($submittedExposure, ['simple', 'developer', 'advanced'], true))
-        || $defaultMemory === null || $defaultRetention === null) {
+    ) {
         $providerPolicyMessage = 'The provider policy is unavailable or contains invalid values. No changes were saved.';
     } else {
         $updatedProviderPolicy = $providerPolicy;
-        $updatedProviderPolicy['mode'] = $providerAction === 'default'
-            ? $submittedMode : $providerPolicy['mode'];
-        $updatedProviderPolicy['exposure'] = $providerAction === 'default'
-            ? $submittedExposure : $providerPolicy['exposure'];
-        $updatedProviderPolicy['default'] = [
-            'enabled' => ($_POST['default_enabled'] ?? null) === '1',
-            'max_memory_mib' => $defaultMemory,
-            'backup_retention' => $defaultRetention,
-        ];
+        if ($providerAction === 'default') {
+            $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
+            $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
+            $instanceMemory = $readPolicyInteger('instance_default_memory_mib', 8, 64);
+            $instanceDatabases = $readPolicyInteger('instance_default_databases', 1, 16);
+            $historyRetention = $readPolicyInteger('instance_default_history_days', 7, 90);
+            $instanceEviction = $_POST['instance_default_eviction'] ?? null;
+            if (!in_array($submittedMode, ['report-only', 'warn', 'enforce'], true)
+                || !in_array($submittedExposure, ['simple', 'developer', 'advanced'], true)
+                || $defaultMemory === null || $defaultRetention === null || $instanceMemory === null
+                || $instanceDatabases === null || $historyRetention === null
+                || !is_string($instanceEviction) || !in_array($instanceEviction, [
+                    'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
+                    'volatile-lfu', 'volatile-random', 'volatile-ttl', 'noeviction',
+                ], true)) {
+                $providerPolicyMessage = 'The global defaults contain invalid values. No changes were saved.';
+            } else {
+                $updatedProviderPolicy['mode'] = $submittedMode;
+                $updatedProviderPolicy['exposure'] = $submittedExposure;
+                $updatedProviderPolicy['default'] = [
+                    'enabled' => ($_POST['default_enabled'] ?? null) === '1',
+                    'max_memory_mib' => $defaultMemory,
+                    'backup_retention' => $defaultRetention,
+                ];
+                $updatedProviderPolicy['instance_defaults'] = [
+                    'memory_mib' => $instanceMemory,
+                    'maxmemory_policy' => $instanceEviction,
+                    'databases' => $instanceDatabases,
+                    'metrics_history_retention_days' => $historyRetention,
+                ];
+            }
+        }
         $validPackageName = is_string($packageName)
             && preg_match('/\A[a-zA-Z0-9_.-]{1,64}\z/', $packageName) === 1 && $packageName !== 'default';
-        if ($providerAction === 'save-package') {
+        if ($providerPolicyMessage === null && $providerAction === 'save-package') {
             $packageMemory = $readPolicyInteger('package_memory_mib', 8, 64);
             $packageRetention = $readPolicyInteger('package_backup_retention', 2, 3);
             if (!$validPackageName || $packageMemory === null || $packageRetention === null) {
@@ -477,13 +496,13 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     'backup_retention' => $packageRetention,
                 ];
             }
-        } elseif ($providerAction === 'remove-package') {
+        } elseif ($providerPolicyMessage === null && $providerAction === 'remove-package') {
             if (!$validPackageName || !array_key_exists($packageName, $updatedProviderPolicy['packages'])) {
                 $providerPolicyMessage = 'The requested package rule was not found. No changes were saved.';
             } else {
                 unset($updatedProviderPolicy['packages'][$packageName]);
             }
-        } elseif ($providerAction === 'save-reseller') {
+        } elseif ($providerPolicyMessage === null && $providerAction === 'save-reseller') {
             $resellerOwner = $_POST['reseller_owner'] ?? null;
             $maxInstances = $readPolicyInteger('reseller_max_instances', 0, 100000);
             $maxMemory = $readPolicyInteger('reseller_max_memory_mib', 0, 1000000);
@@ -496,14 +515,14 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     'max_memory_mib' => $maxMemory,
                 ];
             }
-        } elseif ($providerAction === 'remove-reseller') {
+        } elseif ($providerPolicyMessage === null && $providerAction === 'remove-reseller') {
             $resellerOwner = $_POST['reseller_owner'] ?? null;
             if (!is_string($resellerOwner) || !array_key_exists($resellerOwner, $updatedProviderPolicy['resellers'])) {
                 $providerPolicyMessage = 'The requested reseller rule was not found. No changes were saved.';
             } else {
                 unset($updatedProviderPolicy['resellers'][$resellerOwner]);
             }
-        } elseif ($providerAction === 'save-branding') {
+        } elseif ($providerPolicyMessage === null && $providerAction === 'save-branding') {
             $logoUpload = $_FILES['branding_logo'] ?? null;
             $logoUploadError = is_array($logoUpload) ? ($logoUpload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
             $clearLogo = ($_POST['branding_clear_logo'] ?? null) === '1';
@@ -994,7 +1013,7 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php endif; ?>
     </section>
     <section aria-labelledby="orm-provider-policy-title">
-      <h2 id="orm-provider-policy-title">Package resource policy</h2>
+      <h2 id="orm-provider-policy-title">Provider policy and new instance defaults</h2>
       <?php if (!$rootAuthorized): ?>
         <p role="status">Only the root WHM administrator can view or change provider package limits.</p>
       <?php elseif ($providerPolicy === null): ?>
@@ -1002,7 +1021,7 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php else: ?>
         <?php if ($providerPolicyMessage !== null): ?><p role="status"><?= htmlspecialchars($providerPolicyMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
         <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only logs policy violations without blocking. Warn allows the operation and shows a fixed notice in cPanel. Enforce blocks new provisions that exceed package or reseller limits and memory changes above package caps. Existing instances are grandfathered and are never rewritten by a policy change.</p>
-        <h3>Default package rule</h3>
+        <h3>Global defaults for new instances</h3>
         <form method="post">
           <input type="hidden" name="orm_action" value="provider.policy.update">
           <input type="hidden" name="provider_rule_action" value="default">
@@ -1019,10 +1038,24 @@ WHM::header('Open Redis Manager', 0, 0);
             <option value="advanced"<?= $providerPolicy['exposure'] === 'advanced' ? ' selected' : '' ?>>Advanced · developer features plus backups and restore</option>
           </select>
           <p>Exposure only changes which controls are shown. It does not grant access or change broker permissions. If the exposure setting cannot be verified, cPanel uses Simple.</p>
+          <label for="orm-provider-instance-memory">Default instance memory (MiB)</label>
+          <input id="orm-provider-instance-memory" name="instance_default_memory_mib" type="number" min="8" max="64" step="1" required value="<?= (int) $providerPolicy['instance_defaults']['memory_mib'] ?>">
+          <label for="orm-provider-instance-eviction">Default eviction policy</label>
+          <select id="orm-provider-instance-eviction" name="instance_default_eviction" required>
+            <?php foreach (['allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl', 'noeviction'] as $evictionPolicy): ?>
+              <option value="<?= $evictionPolicy ?>"<?= $providerPolicy['instance_defaults']['maxmemory_policy'] === $evictionPolicy ? ' selected' : '' ?>><?= htmlspecialchars($evictionPolicy, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
+            <?php endforeach; ?>
+          </select>
+          <label for="orm-provider-instance-databases">Default database count</label>
+          <input id="orm-provider-instance-databases" name="instance_default_databases" type="number" min="1" max="16" step="1" required value="<?= (int) $providerPolicy['instance_defaults']['databases'] ?>">
+          <label for="orm-provider-instance-history">Metrics history retention (days)</label>
+          <input id="orm-provider-instance-history" name="instance_default_history_days" type="number" min="7" max="90" step="1" required value="<?= (int) $providerPolicy['instance_defaults']['metrics_history_retention_days'] ?>">
+          <p>These values are recorded for each new ORM instance. Saving them does not rewrite an existing instance, its Redis configuration, snapshots, or history.</p>
+          <h3>Default package rule</h3>
           <label><input type="checkbox" name="default_enabled" value="1"<?= $providerPolicy['default']['enabled'] ? ' checked' : '' ?>> Allow new instances for packages without a specific rule</label>
-          <label for="orm-provider-default-memory">Default memory ceiling (MiB)</label>
+          <label for="orm-provider-default-memory">Default package memory ceiling (MiB)</label>
           <input id="orm-provider-default-memory" name="default_memory_mib" type="number" min="8" max="64" step="1" required value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
-          <label for="orm-provider-default-retention">Default snapshot retention</label>
+          <label for="orm-provider-default-retention">Default snapshot retention for this package rule</label>
           <input id="orm-provider-default-retention" name="default_backup_retention" type="number" min="2" max="3" step="1" required value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
           <button type="submit">Save default policy</button>
         </form>

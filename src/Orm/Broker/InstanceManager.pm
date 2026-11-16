@@ -33,8 +33,8 @@ my $MAX_SECURITY_METRICS_AGE_SECONDS = 26 * 60 * 60;
 my $MAX_SECURITY_METRICS_BYTES = 2048;
 my $MAX_FLEET_SUMMARY_ACCOUNTS = 10_000;
 my $MAX_FLEET_STATE_OUTPUT_BYTES = 262144;
-my $MAX_METRICS_HISTORY_SAMPLES = 720;
-my $MAX_METRICS_HISTORY_BYTES = 262144;
+my $MAX_METRICS_HISTORY_SAMPLES = 2160;
+my $MAX_METRICS_HISTORY_BYTES = 1048576;
 my $MAX_BACKUPS_PER_ACCOUNT = 3;
 my $MAX_BACKUP_BYTES = 128 * 1024 * 1024;
 my $BACKUP_TIMEOUT_SECONDS = 60;
@@ -481,8 +481,8 @@ sub _disable_auth_locked {
     return _failure('configuration_unavailable') if !$auth_valid;
     return { auth_configured => JSON::PP::false, success => JSON::PP::true, version => 1 }
         if !defined($previous_secret);
-    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret);
-    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings});
+    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret, _manifest_database_count($manifest));
+    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, undef, _manifest_database_count($manifest));
     return _failure('configuration_unavailable') if !defined($old_config) || !defined($new_config);
 
     my $temporary = $self->_stage_atomic_write(
@@ -546,8 +546,8 @@ sub _rotate_auth_locked {
     return _failure('configuration_unavailable') if !$auth_valid;
     my $secret = _generate_auth_secret();
     return _failure('auth_generation_failed') if !defined($secret);
-    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret);
-    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $secret);
+    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret, _manifest_database_count($manifest));
+    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $secret, _manifest_database_count($manifest));
     return _failure('configuration_unavailable') if !defined($old_config) || !defined($new_config);
 
     my $temporary = $self->_stage_atomic_write(
@@ -710,8 +710,6 @@ sub _provision_locked {
     my $binary = $self->_available_binary($backend);
     return _failure('backend_unavailable') if !defined($binary);
     my $settings = _preset_settings($preset);
-    my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
-    return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
     my $provider_decision = $self->{provider_policy}->provision_decision(
         $account,
         $settings->{memory_mib},
@@ -727,6 +725,15 @@ sub _provision_locked {
     );
     return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
     return _failure('provider_policy_denied') if !$provider_decision->{allowed};
+    $settings->{memory_mib} = $provider_decision->{provision_memory_mib};
+    $settings->{maxmemory_policy} = $provider_decision->{instance_defaults}->{maxmemory_policy};
+    my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
+    return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
+    my $provisioned_defaults = {
+        backup_retention => 0 + $provider_decision->{backup_retention},
+        databases => 0 + $provider_decision->{instance_defaults}->{databases},
+        metrics_history_retention_days => 0 + $provider_decision->{instance_defaults}->{metrics_history_retention_days},
+    };
 
     my $config_dir = $self->_account_config_dir($account->{name});
     my $data_dir = $self->_account_data_dir($account->{name});
@@ -752,10 +759,11 @@ sub _provision_locked {
         socket => $socket,
         preset => $preset,
         uid => 0 + $account->{uid},
-        version => 2,
+        provisioned_defaults => $provisioned_defaults,
+        version => 3,
     };
     my $manifest_json = JSON::PP->new->canonical(1)->encode($manifest) . "\n";
-    my $config = _redis_config($data_dir, $socket, $settings);
+    my $config = _redis_config($data_dir, $socket, $settings, undef, $provisioned_defaults->{databases});
     if (!$self->_atomic_write(File::Spec->catfile($config_dir, 'redis.conf'), $config, 0640, $self->{expected_owner_uid}, $account->{gid})) {
         return $self->_rollback_provision($account, $config_dir, $data_dir, 1, 'storage_unavailable');
     }
@@ -976,7 +984,7 @@ sub _migrate_to_valkey_locked {
     my %target_manifest = %{$manifest};
     delete $target_manifest{settings};
     $target_manifest{backend} = 'valkey';
-    $target_manifest{version} = 2;
+    $target_manifest{version} = $manifest->{version} >= 3 ? 3 : 2;
     my %original_manifest = %{$manifest};
     delete $original_manifest{settings};
     delete $original_manifest{preset} if $original_manifest{version} == 1;
@@ -1174,7 +1182,7 @@ sub _configure_locked {
 
     my ($auth_valid, $auth_secret) = $self->_read_auth_secret($account, $manifest);
     return _failure('configuration_unavailable') if !$auth_valid;
-    my $config = _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret);
+    my $config = _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret, _manifest_database_count($manifest));
     my $temporary = $self->_stage_atomic_write(
         $manifest->{config}, $config, 0640, $self->{expected_owner_uid}, $account->{gid}
     );
@@ -1512,8 +1520,10 @@ sub _create_backup_locked {
     return _failure('backup_storage_unavailable') if ref($existing) ne 'ARRAY';
     my $effective_policy = $self->{provider_policy}->effective_for($account);
     return _failure('provider_policy_unavailable') if ref($effective_policy) ne 'HASH';
+    my $retention = $manifest->{version} >= 3
+        ? $manifest->{provisioned_defaults}->{backup_retention} : $effective_policy->{backup_retention};
     my $retention_limit = $effective_policy->{mode} eq 'enforce'
-        ? $effective_policy->{backup_retention} : $MAX_BACKUPS_PER_ACCOUNT;
+        ? $retention : $MAX_BACKUPS_PER_ACCOUNT;
     my $created_at = time;
     my $backup_id;
     my $temporary;
@@ -2237,17 +2247,23 @@ sub _write_metrics_history {
         close($lock);
         return 0;
     }
-    my $cutoff = time - $MAX_METRICS_AGE_SECONDS;
+    my $manifest = $self->_read_manifest($account);
+    if (!$manifest) {
+        close($lock);
+        return 0;
+    }
+    my $retention_days = $manifest->{version} >= 3
+        ? $manifest->{provisioned_defaults}->{metrics_history_retention_days} : 30;
+    my $retention_seconds = $retention_days * 24 * 60 * 60;
+    my $cutoff = time - $retention_seconds;
     @{$history} = grep { $_->{sampled_at} >= $cutoff } @{$history};
     my %stored = map { $_ => 0 + $sample->{$_} } (@METRIC_FIELDS, 'sampled_at');
     my $bucket = int($stored{sampled_at} / 3600);
     if (@{$history}) {
         my $last_bucket = int($history->[-1]->{sampled_at} / 3600);
         if ($bucket < $last_bucket) {
-            close($lock);
-            return 1;
-        }
-        if ($bucket == $last_bucket) {
+            # Keep the pruned history even when an out-of-order sample cannot be appended.
+        } elsif ($bucket == $last_bucket) {
             $history->[-1] = \%stored;
         } else {
             push @{$history}, \%stored;
@@ -2416,6 +2432,11 @@ sub _read_manifest {
         return undef if join(',', @keys) ne 'backend,config,data,gid,preset,socket,uid,version';
         return undef if !defined($manifest->{preset}) || ref($manifest->{preset})
             || !exists($PRESET_MEMORY_BYTES{$manifest->{preset}});
+    } elsif ($manifest_version == 3) {
+        return undef if join(',', @keys) ne 'backend,config,data,gid,preset,provisioned_defaults,socket,uid,version';
+        return undef if !defined($manifest->{preset}) || ref($manifest->{preset})
+            || !exists($PRESET_MEMORY_BYTES{$manifest->{preset}})
+            || !_valid_provisioned_defaults($manifest->{provisioned_defaults});
     } else {
         return undef;
     }
@@ -2457,6 +2478,8 @@ sub _valid_config {
     my $memory_count = scalar(() = $content =~ /^maxmemory [0-9]+$/mg);
     my ($memory_policy) = $content =~ /^maxmemory-policy ([a-z-]+)$/m;
     my $policy_count = scalar(() = $content =~ /^maxmemory-policy [a-z-]+$/mg);
+    my ($database_count) = $content =~ /^databases ([0-9]+)$/m;
+    my $database_directive_count = scalar(() = $content =~ /^databases [0-9]+$/mg);
     my ($maxclients) = $content =~ /^maxclients ([0-9]+)$/m;
     my $clients_count = scalar(() = $content =~ /^maxclients [0-9]+$/mg);
     my ($timeout) = $content =~ /^timeout ([0-9]+)$/m;
@@ -2466,6 +2489,7 @@ sub _valid_config {
     return undef if $auth_directive_count > 1 || $auth_directive_count != @auth_secrets;
     return undef if !defined($memory_bytes) || ($memory_count // 0) != 1
         || !defined($memory_policy) || ($policy_count // 0) != 1
+        || !defined($database_count) || ($database_directive_count // 0) != 1
         || !defined($maxclients) || ($clients_count // 0) != 1
         || !defined($timeout) || ($timeout_count // 0) != 1;
     return undef if $memory_bytes % (1024 * 1024) != 0;
@@ -2476,8 +2500,10 @@ sub _valid_config {
         timeout => 0 + $timeout,
     };
     return undef if !_valid_settings($settings);
+    return undef if $database_count < 1 || $database_count > 16
+        || $database_count != _manifest_database_count($manifest);
     my $auth_secret = @auth_secrets ? $auth_secrets[0] : undef;
-    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret);
+    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret, 0 + $database_count);
     return wantarray ? ($settings, $auth_secret) : $settings;
 }
 
@@ -2687,8 +2713,10 @@ sub _redis_parameter {
 }
 
 sub _redis_config {
-    my ($data, $socket, $settings, $auth_secret) = @_;
+    my ($data, $socket, $settings, $auth_secret, $database_count) = @_;
+    $database_count = 16 if !defined($database_count);
     return undef if !_valid_settings($settings);
+    return undef if ref($database_count) || $database_count !~ /\A[0-9]+\z/ || $database_count < 1 || $database_count > 16;
     return undef if defined($auth_secret) && !_valid_auth_secret($auth_secret);
     my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return join("\n",
@@ -2705,13 +2733,29 @@ sub _redis_config {
         'appendonly no',
         'maxmemory ' . $memory_bytes,
         'maxmemory-policy ' . $settings->{maxmemory_policy},
-        'databases 16',
+        'databases ' . $database_count,
         'timeout ' . $settings->{timeout},
         'maxclients ' . $settings->{maxclients},
         (defined($auth_secret) ? 'requirepass ' . $auth_secret : ()),
         'logfile ""',
         ''
     );
+}
+
+sub _manifest_database_count {
+    my ($manifest) = @_;
+    return $manifest->{version} >= 3 ? $manifest->{provisioned_defaults}->{databases} : 16;
+}
+
+sub _valid_provisioned_defaults {
+    my ($defaults) = @_;
+    return 0 if ref($defaults) ne 'HASH'
+        || join(',', sort keys %{$defaults}) ne 'backup_retention,databases,metrics_history_retention_days'
+        || !_is_integer($defaults->{backup_retention}) || $defaults->{backup_retention} < 2 || $defaults->{backup_retention} > 3
+        || !_is_integer($defaults->{databases}) || $defaults->{databases} < 1 || $defaults->{databases} > 16
+        || !_is_integer($defaults->{metrics_history_retention_days})
+        || $defaults->{metrics_history_retention_days} < 7 || $defaults->{metrics_history_retention_days} > 90;
+    return 1;
 }
 
 sub _valid_auth_secret {

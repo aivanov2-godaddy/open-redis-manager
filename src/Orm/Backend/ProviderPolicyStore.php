@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Orm\Backend;
 
-/** Root-owned provider policy for package-scoped ORM resource limits. */
+/** Root-owned provider policy for package limits and global defaults for future instances. */
 final class ProviderPolicyStore
 {
     private const PATH = '/etc/orm-provider-policy.json';
@@ -16,7 +16,7 @@ final class ProviderPolicyStore
     ) {
     }
 
-    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>,branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}}|null */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},instance_defaults:array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>,branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}}|null */
     public function load(): ?array
     {
         if (!$this->authorized()) {
@@ -106,14 +106,20 @@ final class ProviderPolicyStore
         }
     }
 
-    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array{},resellers:array{},branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}} */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},instance_defaults:array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int},packages:array{},resellers:array{},branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}} */
     public static function defaults(): array
     {
         return [
-            'version' => 3,
+            'version' => 4,
             'mode' => 'report-only',
             'exposure' => 'simple',
             'default' => ['enabled' => true, 'max_memory_mib' => 64, 'backup_retention' => 3],
+            'instance_defaults' => [
+                'memory_mib' => 64,
+                'maxmemory_policy' => 'allkeys-lru',
+                'databases' => 16,
+                'metrics_history_retention_days' => 30,
+            ],
             'packages' => [],
             'resellers' => [],
             'branding' => self::defaultBranding(),
@@ -128,17 +134,18 @@ final class ProviderPolicyStore
         }
         $keys = array_keys($policy);
         sort($keys);
-        if (!in_array($policy['version'] ?? null, [1, 2, 3], true)
+        if (!in_array($policy['version'] ?? null, [1, 2, 3, 4], true)
             || ($policy['version'] === 1 && $keys !== ['default', 'mode', 'packages', 'version'])
             || ($policy['version'] === 2 && $keys !== ['default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
             || ($policy['version'] === 3 && $keys !== ['branding', 'default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
+            || ($policy['version'] === 4 && $keys !== ['branding', 'default', 'exposure', 'instance_defaults', 'mode', 'packages', 'resellers', 'version'])
             || ($policy['version'] === 1 && !in_array($policy['mode'] ?? null, ['report-only', 'enforce'], true))
             || ($policy['version'] === 2 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                 || !is_array($policy['resellers'] ?? null)
                 || array_is_list($policy['resellers']) && $policy['resellers'] !== []
                 || count($policy['resellers']) > 1000))
-            || ($policy['version'] === 3 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
+            || (in_array($policy['version'], [3, 4], true) && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                 || !is_array($policy['resellers'] ?? null)
                 || array_is_list($policy['resellers']) && $policy['resellers'] !== []
@@ -149,6 +156,12 @@ final class ProviderPolicyStore
         }
         $default = self::normalizeLimits($policy['default']);
         if ($default === null) {
+            return null;
+        }
+        $instanceDefaults = self::normalizeInstanceDefaults($policy['version'] === 4
+            ? ($policy['instance_defaults'] ?? null)
+            : self::defaults()['instance_defaults']);
+        if ($instanceDefaults === null) {
             return null;
         }
         $packages = [];
@@ -185,15 +198,16 @@ final class ProviderPolicyStore
             }
         }
         ksort($resellers, SORT_STRING);
-        $branding = self::normalizeBranding($policy['version'] === 3 ? ($policy['branding'] ?? null) : self::defaultBranding());
+        $branding = self::normalizeBranding($policy['version'] >= 3 ? ($policy['branding'] ?? null) : self::defaultBranding());
         if ($branding === null) {
             return null;
         }
         return [
-            'version' => 3,
+            'version' => 4,
             'mode' => $policy['version'] === 1 && $policy['mode'] === 'report-only' ? 'warn' : $policy['mode'],
             'exposure' => $policy['version'] >= 2 ? $policy['exposure'] : 'simple',
             'default' => $default,
+            'instance_defaults' => $instanceDefaults,
             'packages' => $packages,
             'resellers' => $resellers,
             'branding' => $branding,
@@ -323,6 +337,34 @@ final class ProviderPolicyStore
             'enabled' => $limits['enabled'],
             'max_memory_mib' => $limits['max_memory_mib'],
             'backup_retention' => $limits['backup_retention'],
+        ];
+    }
+
+    /** @param mixed $defaults @return array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int}|null */
+    private static function normalizeInstanceDefaults(mixed $defaults): ?array
+    {
+        if (!is_array($defaults) || array_is_list($defaults)) {
+            return null;
+        }
+        $keys = array_keys($defaults);
+        sort($keys);
+        if ($keys !== ['databases', 'maxmemory_policy', 'memory_mib', 'metrics_history_retention_days']
+            || !is_int($defaults['memory_mib']) || $defaults['memory_mib'] < 8 || $defaults['memory_mib'] > 64
+            || !is_string($defaults['maxmemory_policy'])
+            || !in_array($defaults['maxmemory_policy'], [
+                'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
+                'volatile-lfu', 'volatile-random', 'volatile-ttl', 'noeviction',
+            ], true)
+            || !is_int($defaults['databases']) || $defaults['databases'] < 1 || $defaults['databases'] > 16
+            || !is_int($defaults['metrics_history_retention_days'])
+            || $defaults['metrics_history_retention_days'] < 7 || $defaults['metrics_history_retention_days'] > 90) {
+            return null;
+        }
+        return [
+            'memory_mib' => $defaults['memory_mib'],
+            'maxmemory_policy' => $defaults['maxmemory_policy'],
+            'databases' => $defaults['databases'],
+            'metrics_history_retention_days' => $defaults['metrics_history_retention_days'],
         ];
     }
 

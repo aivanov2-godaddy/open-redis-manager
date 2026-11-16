@@ -8,7 +8,13 @@ ORM keeps provider policy in `/etc/orm-provider-policy.json`, a root-owned mode 
 - **Warn** allows the operation and returns fixed warning codes that cPanel turns into generic user-facing notices. No reseller name, quota value, package name or provider setting is returned.
 - **Enforce** blocks new provisions that violate package or reseller rules and blocks configuration memory changes above the package memory cap.
 
-Version-one and version-two policy files are migrated in memory to version three. A version-one report-only setting maps to **Warn** so existing installations keep their previous user-facing warning behavior; version-two enforcement and exposure settings are preserved. Saving in WHM writes the normalized version-three form. Policy changes never rewrite, stop, or remove existing instances.
+Version-one through version-three policy files are migrated in memory to version four. A version-one report-only setting maps to **Warn** so existing installations keep their previous user-facing warning behavior; enforcement, exposure, package, reseller, and branding settings are preserved. Saving in WHM writes the normalized version-four form. Invalid policy files fail closed in both PHP and the root-owned broker reader.
+
+## Defaults for new instances
+
+Root WHM can set a global memory default (8–64 MiB), an allowlisted eviction policy, a database count (1–16), and hourly metrics-history retention (7–90 days). The default package rule sets eligibility, a memory ceiling, and snapshot retention; package-specific rules can override those package values. Each new ORM-managed instance records its effective snapshot retention, database count, and history-retention value in its root-owned manifest and renders them into its generated Redis/Valkey configuration or metrics collector. Memory defaults are limited by the chosen workload preset and the effective package memory ceiling.
+
+Changing these defaults affects future provisioning only. It does not rewrite existing Redis configuration, manifests, snapshots, or metrics history. Existing instances keep their recorded snapshot retention, database count, and history retention. Package eligibility and memory ceilings continue to govern provisioning and later memory changes. Legacy manifests keep their 16-database, three-snapshot maximum, and 30-day history behavior.
 
 ## Package rules
 
@@ -40,10 +46,10 @@ The mapping is ORM's product choice; the reference site names these tiers but do
 
 ## Configure in WHM
 
-Open **WHM → Open Redis Manager → Package resource policy**. Root can edit the default rule, save or remove package-specific rules, choose report-only/warn/enforce, choose the cPanel exposure tier, save or remove reseller quotas, and configure provider branding. Quota fields accept zero as unlimited. Names must match the trusted cPanel `OWNER` value exactly.
+Open **WHM → Open Redis Manager → Provider policy and new instance defaults**. Root can edit global defaults for newly created instances, the default package rule, package-specific rules, policy mode, cPanel exposure, reseller quotas, and provider branding. Quota fields accept zero as unlimited. Names must match the trusted cPanel `OWNER` value exactly.
 
 See the [WHM policy and reseller preview](../../screenshots/whm-package-policy.png) and the [cPanel exposure tiers preview](../../screenshots/cpanel-exposure-tiers.png). Both use synthetic names and values; they are not connected to a live WHM server.
 
 ## Validation status
 
-Schema migration, atomic root-owned storage, branding input validation, contrast checks, PNG bounds, broker response validation, package enforcement, reseller quota checks, stopped-instance accounting, quota serialization, root-only reseller summaries, and exposure allowlisting are covered by automated tests and repository CI. Live validation on supported disposable cPanel/WHM hosts remains a release gate; see [the validation guide](../validation/cpanel-smoke.md).
+Schema migration, atomic root-owned storage, global-default bounds, fail-closed Perl/PHP policy validation, per-instance default snapshots, history pruning, branding input validation, contrast checks, PNG bounds, package enforcement, reseller quota checks, stopped-instance accounting, quota serialization, root-only reseller summaries, and exposure allowlisting are covered by automated tests and repository CI. Live validation on supported disposable cPanel/WHM hosts remains a release gate; see [the validation guide](../validation/cpanel-smoke.md).
