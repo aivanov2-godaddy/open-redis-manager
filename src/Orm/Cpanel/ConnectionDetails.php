@@ -19,8 +19,24 @@ final class ConnectionDetails
             || !in_array($instanceStatus['state'] ?? null, self::CONFIGURED_STATES, true)) {
             return null;
         }
+        return self::forSocket($username, '/var/lib/orm-instances/' . $username . '/redis.sock', $authConfigured);
+    }
 
-        $socketPath = '/var/lib/orm-instances/' . $username . '/redis.sock';
+    /** @return null|array{socket_path:string,database:int,authentication:string,auth_configured:bool,php_example:string,node_example:string,python_example:string,wordpress_example:string,litespeed_example:string,laravel_example:string,magento_values:string} */
+    public static function forSocket(string $username, string $socketPath, bool $authConfigured = false): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
+            || str_contains($socketPath, "\0") || str_contains($socketPath, "\r") || str_contains($socketPath, "\n")) {
+            return null;
+        }
+        $escapedUsername = preg_quote($username, '/');
+        $managedSocket = '/var/lib/orm-instances/' . $username . '/redis.sock';
+        $podmanSocket = '(?:[^/]+/)*' . $escapedUsername
+            . '/ea-podman\.d/ea-(?:redis|valkey)[0-9]{2,4}\.' . $escapedUsername
+            . '\.[0-9]{2,3}/(?:redis|valkey)\.sock';
+        if ($socketPath !== $managedSocket && preg_match('~\A/' . $podmanSocket . '\z~', $socketPath) !== 1) {
+            return null;
+        }
         $phpExample = "\$redis = new Redis();\n"
             . '$redis->connect(' . var_export($socketPath, true) . ");\n"
             . ($authConfigured ? "\$redis->auth(getenv('ORM_REDIS_PASSWORD'));\n" : '')

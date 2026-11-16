@@ -576,6 +576,198 @@ final class BrokerClient
         return $decoded;
     }
 
+    /** @return array{success:true,version:1,account_count:int,managed_count:int,unconfigured_count:int,unverified_count:int,state_counts:array<string,int>,metrics:array<string,int>,partial:bool}|null */
+    public function requestFleetSummary(): ?array
+    {
+        $request = "{\"operation\":\"fleet.summary\",\"version\":1}\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, 60)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 6, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($decoded) || ($decoded['success'] ?? null) !== true || ($decoded['version'] ?? null) !== 1
+            || !is_bool($decoded['partial'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($keys !== ['account_count', 'managed_count', 'metrics', 'partial', 'state_counts', 'success', 'unconfigured_count', 'unverified_count', 'version']) {
+            return null;
+        }
+        foreach (['account_count', 'managed_count', 'unconfigured_count', 'unverified_count'] as $field) {
+            if (!is_int($decoded[$field]) || $decoded[$field] < 0 || $decoded[$field] > 10000) {
+                return null;
+            }
+        }
+        if ($decoded['managed_count'] + $decoded['unconfigured_count'] + $decoded['unverified_count'] !== $decoded['account_count']) {
+            return null;
+        }
+        $stateKeys = ['failed', 'running', 'starting', 'stopped', 'stopping', 'unavailable'];
+        if (!is_array($decoded['state_counts']) || array_keys($decoded['state_counts']) !== $stateKeys) {
+            return null;
+        }
+        $stateTotal = 0;
+        foreach ($stateKeys as $key) {
+            if (!is_int($decoded['state_counts'][$key]) || $decoded['state_counts'][$key] < 0
+                || $decoded['state_counts'][$key] > $decoded['managed_count']) {
+                return null;
+            }
+            $stateTotal += $decoded['state_counts'][$key];
+        }
+        if ($stateTotal !== $decoded['managed_count']) {
+            return null;
+        }
+        $metricKeys = ['alert_accounts', 'connected_clients', 'fresh_accounts', 'high_client_accounts',
+            'high_memory_accounts', 'latest_sampled_at', 'low_hit_ratio_accounts',
+            'memory_used_bytes', 'missing_accounts', 'stale_accounts'];
+        sort($metricKeys);
+        $actualMetricKeys = is_array($decoded['metrics']) ? array_keys($decoded['metrics']) : [];
+        sort($actualMetricKeys);
+        if ($actualMetricKeys !== $metricKeys) {
+            return null;
+        }
+        foreach ($metricKeys as $field) {
+            $maximum = in_array($field, ['memory_used_bytes', 'connected_clients', 'latest_sampled_at'], true)
+                ? self::MAX_DIAGNOSTIC_INTEGER : 10000;
+            if (!is_int($decoded['metrics'][$field]) || $decoded['metrics'][$field] < 0
+                || $decoded['metrics'][$field] > $maximum) {
+                return null;
+            }
+        }
+        if ($decoded['metrics']['fresh_accounts'] + $decoded['metrics']['stale_accounts']
+            + $decoded['metrics']['missing_accounts'] !== $decoded['managed_count']
+            || $decoded['metrics']['alert_accounts'] > $decoded['metrics']['fresh_accounts']
+            || $decoded['partial'] !== ($decoded['unverified_count'] > 0
+                || $decoded['state_counts']['unavailable'] > 0
+                || $decoded['metrics']['stale_accounts'] > 0 || $decoded['metrics']['missing_accounts'] > 0)) {
+            return null;
+        }
+        return $decoded;
+    }
+
+    /** @param list<array{username:string,backup_id?:string}> $targets @return array{success:true,version:1,action:string,partial:bool,requested_count:int,succeeded_count:int,results:list<array<string,mixed>>}|null */
+    public function backupFleetBatch(string $action, array $targets): ?array
+    {
+        if (!in_array($action, ['create', 'restore'], true) || count($targets) < 1 || count($targets) > 2) {
+            return null;
+        }
+        $seen = [];
+        $canonicalTargets = [];
+        foreach ($targets as $target) {
+            if (!is_array($target) || !is_string($target['username'] ?? null)
+                || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $target['username']) !== 1
+                || isset($seen[$target['username']])) {
+                return null;
+            }
+            $seen[$target['username']] = true;
+            if ($action === 'create') {
+                if (array_keys($target) !== ['username']) {
+                    return null;
+                }
+                $canonicalTargets[] = $target['username'];
+            } else {
+                if (array_keys($target) !== ['username', 'backup_id'] && array_keys($target) !== ['backup_id', 'username']) {
+                    return null;
+                }
+                if (!self::validBackupId($target['backup_id'] ?? null)) {
+                    return null;
+                }
+                $canonicalTargets[] = ['backup_id' => $target['backup_id'], 'username' => $target['username']];
+            }
+        }
+        $operation = 'fleet.backup.batch.' . $action;
+        $request = json_encode(['operation' => $operation, 'targets' => $canonicalTargets, 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+        $timeoutSeconds = self::BACKUP_OPERATION_TIMEOUT_SECONDS * count($targets);
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, $timeoutSeconds)
+            : ($this->exchange)($request);
+        if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES
+            || !str_ends_with($response, "\n") || substr_count($response, "\n") !== 1) {
+            return null;
+        }
+        try {
+            $decoded = json_decode(substr($response, 0, -1), true, 8, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            return null;
+        }
+        $keys = is_array($decoded) ? array_keys($decoded) : [];
+        sort($keys);
+        if ($keys !== ['action', 'partial', 'requested_count', 'results', 'succeeded_count', 'success', 'version']
+            || ($decoded['success'] ?? null) !== true || ($decoded['version'] ?? null) !== 1
+            || ($decoded['action'] ?? null) !== 'backup.' . $action || !is_bool($decoded['partial'] ?? null)
+            || ($decoded['requested_count'] ?? null) !== count($targets) || !is_int($decoded['succeeded_count'] ?? null)
+            || !is_array($decoded['results']) || !array_is_list($decoded['results'])
+            || count($decoded['results']) !== count($targets)) {
+            return null;
+        }
+        $succeeded = 0;
+        foreach ($targets as $index => $target) {
+            $item = $decoded['results'][$index];
+            if (!is_array($item) || ($item['username'] ?? null) !== $target['username']
+                || ($item['action'] ?? null) !== 'backup.' . $action || !is_bool($item['success'] ?? null)) {
+                return null;
+            }
+            $itemKeys = array_keys($item);
+            sort($itemKeys);
+            if ($item['success']) {
+                $succeeded++;
+                if (!is_bool($item['audit_logged'] ?? null)) {
+                    return null;
+                }
+                if ($action === 'create') {
+                    if ($itemKeys !== ['action', 'audit_logged', 'backup', 'success', 'username']
+                        || !self::validBackup($item['backup'] ?? null)) {
+                        return null;
+                    }
+                } elseif ($itemKeys !== ['action', 'audit_logged', 'backup_id', 'safety_backup_id', 'state', 'success', 'username']
+                    || ($item['backup_id'] ?? null) !== $target['backup_id']
+                    || !self::validBackupId($item['safety_backup_id'] ?? null) || ($item['state'] ?? null) !== 'running') {
+                    return null;
+                }
+            } else {
+                $error = $item['error'] ?? null;
+                if (!is_string($error) || !in_array($error, [
+                    'invalid_request', 'not_authorized', 'operation_failed', 'account_unavailable', 'not_configured',
+                    'not_running', 'backup_not_found', 'backup_failed', 'backup_invalid', 'backup_in_progress',
+                    'backup_retention_failed', 'backup_storage_unavailable', 'restore_validation_unavailable',
+                    'restore_failed', 'restore_rollback_failed', 'rate_limited',
+                ], true)) {
+                    return null;
+                }
+                $expected = ['action', 'audit_logged', 'error', 'success', 'username'];
+                if (isset($item['safety_backup_id'])) {
+                    $expected[] = 'safety_backup_id';
+                    if (!self::validBackupId($item['safety_backup_id'])) {
+                        return null;
+                    }
+                }
+                if (isset($item['audit_logged'])) {
+                    if (!is_bool($item['audit_logged'])) {
+                        return null;
+                    }
+                } else {
+                    $expected = array_values(array_diff($expected, ['audit_logged']));
+                }
+                sort($expected);
+                if ($itemKeys !== $expected) {
+                    return null;
+                }
+            }
+        }
+        if ($decoded['succeeded_count'] !== $succeeded || $decoded['partial'] !== ($succeeded !== count($targets))) {
+            return null;
+        }
+        return $decoded;
+    }
+
     /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,state?:string,diagnostics?:array<string,int|string>,error?:string}|null */
     public function diagnoseFleetAccount(string $username): ?array
     {

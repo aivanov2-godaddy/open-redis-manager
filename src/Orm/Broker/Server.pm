@@ -133,7 +133,8 @@ sub run {
                 my $peer_uid = $clients{$fd}->{uid};
                 my $limit = $request->{operation} eq 'identity'
                     ? $IDENTITY_RATE_LIMIT_PER_SECOND
-                    : $request->{operation} eq 'fleet.list' || $request->{operation} eq 'fleet.diagnostics'
+                    : $request->{operation} eq 'fleet.list' || $request->{operation} eq 'fleet.summary'
+                        || $request->{operation} eq 'fleet.diagnostics'
                         || $request->{operation} eq 'fleet.recovery.scan'
                         || $request->{operation} eq 'provider.resellers' ? 1
                     : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
@@ -142,19 +143,23 @@ sub run {
                         || $request->{operation} eq 'fleet.control'
                         || $request->{operation} eq 'fleet.backup.create'
                         || $request->{operation} eq 'fleet.backup.restore'
+                        || $request->{operation} =~ /\Afleet\.backup\.batch\./
                         || $request->{operation} eq 'fleet.migrate'
                         || $request->{operation} eq 'fleet.recovery.repair') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
                 my $rate_window = ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable') ? 60
                     : $request->{operation} eq 'fleet.diagnostics' ? 5
                     : $request->{operation} eq 'fleet.recovery.scan' ? 15
+                    : $request->{operation} =~ /\Afleet\.backup\.batch\./ ? 5
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                     || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore'
                     || $request->{operation} eq 'fleet.migrate' || $request->{operation} eq 'fleet.recovery.repair') ? 60 : 1;
-                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.diagnostics|fleet\.recovery\.(?:scan|repair)|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.summary|fleet\.diagnostics|fleet\.recovery\.(?:scan|repair)|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.backup\.batch\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
                 my $rate_bucket = $request->{operation} eq 'fleet.control'
                     ? 'fleet.control'
                     : $request->{operation} eq 'fleet.list' ? 'fleet.list'
+                    : $request->{operation} eq 'fleet.summary' ? 'fleet.summary'
+                    : $request->{operation} =~ /\Afleet\.backup\.batch\./ ? 'fleet.backup.batch'
                     : $request->{operation} eq 'provider.resellers' ? 'provider.resellers'
                     : $request->{operation} eq 'provider.exposure' ? 'provider.exposure'
                     : $request->{operation} eq 'provider.branding' ? 'provider.branding'
@@ -182,6 +187,15 @@ sub run {
                         error => 'rate_limited', success => JSON::PP::false, version => 1,
                     });
                     next;
+                }
+                if ($request->{operation} =~ /\Afleet\.backup\.batch\./) {
+                    my %rate_limited;
+                    for my $target (@{$request->{targets}}) {
+                        my $bucket = 'fleet.backup:' . $target->{username};
+                        $rate_limited{$target->{username}} = 1
+                            if !_rate_allowed(\%rates, $peer_uid, $now, 1, $root_read, 60, $bucket);
+                    }
+                    $request->{rate_limited_targets} = \%rate_limited;
                 }
                 my $response = Orm::Broker::Handler->handle_frame(
                     $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory

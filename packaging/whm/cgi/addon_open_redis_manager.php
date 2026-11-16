@@ -24,6 +24,15 @@ $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' 
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
+$fleetSummary = null;
+$fleetSummaryMessage = null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.summary') {
+    $fleetSummary = $fleetClient->requestFleetSummary();
+    $fleetSummaryMessage = $fleetSummary === null
+        ? ['type' => 'error', 'text' => 'The fleet summary could not be verified. Refresh the page and try again.']
+        : ['type' => 'success', 'text' => 'Fleet summary loaded from verified account records and recent scheduled metric snapshots.'];
+}
 $resellerSummary = null;
 $fleetDiagnosticsMessage = null;
 $fleetDiagnosticsResult = null;
@@ -117,6 +126,8 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
 }
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
+$fleetBatchResult = null;
+$fleetBatchMessage = null;
 $fleetMigrationMessage = null;
 $controlRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'fleet.control';
@@ -223,6 +234,64 @@ if ($fleetBackupRequest) {
             $text .= ' The denial could not be confirmed in the audit log.';
         }
         $fleetBackupMessage = ['type' => 'error', 'text' => $text];
+    }
+}
+$fleetBatchRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.backup.batch';
+if ($fleetBatchRequest) {
+    $action = $_POST['fleet_batch_action'] ?? null;
+    $selected = $_POST['accounts'] ?? null;
+    $targets = [];
+    $entryByUsername = [];
+    foreach (is_array($fleetPage['entries'] ?? null) ? $fleetPage['entries'] : [] as $entry) {
+        $entryByUsername[$entry['username']] = $entry;
+    }
+    $validSelection = is_string($action) && in_array($action, ['create', 'restore'], true)
+        && is_array($selected) && array_is_list($selected) && count($selected) >= 1 && count($selected) <= 2;
+    if ($validSelection) {
+        $seen = [];
+        foreach ($selected as $username) {
+            if (!is_string($username) || !isset($entryByUsername[$username]) || isset($seen[$username])
+                || $entryByUsername[$username]['state'] !== 'running') {
+                $validSelection = false;
+                break;
+            }
+            $seen[$username] = true;
+            if ($action === 'create') {
+                $targets[] = ['username' => $username];
+                continue;
+            }
+            $backupId = $_POST['backup_ids'][$username] ?? null;
+            $ownedBackup = false;
+            foreach ($entryByUsername[$username]['backups'] as $backup) {
+                $ownedBackup = $ownedBackup || (is_string($backupId) && hash_equals($backup['id'], $backupId));
+            }
+            if (!$ownedBackup) {
+                $validSelection = false;
+                break;
+            }
+            $targets[] = ['username' => $username, 'backup_id' => $backupId];
+        }
+    }
+    if (!$validSelection) {
+        $fleetBatchMessage = ['type' => 'error', 'text' => 'Select one or two running accounts from this page and choose a retained snapshot for every restore target.'];
+    } else {
+        $fleetBatchResult = $fleetClient->backupFleetBatch($action, $targets);
+        if ($fleetBatchResult === null) {
+            $fleetBatchMessage = ['type' => 'error', 'text' => 'The batch result could not be verified. Check account status before retrying.'];
+        } else {
+            $outcomes = [];
+            foreach ($fleetBatchResult['results'] as $item) {
+                $outcomes[] = $item['success']
+                    ? $item['username'] . ': ' . ($action === 'create' ? 'snapshot created' : 'snapshot restored with safety snapshot retained')
+                    : $item['username'] . ': not completed (' . $item['error'] . ')';
+            }
+            $fleetBatchMessage = [
+                'type' => $fleetBatchResult['partial'] ? 'error' : 'success',
+                'text' => implode('; ', $outcomes) . ($fleetBatchResult['partial']
+                    ? '. Some selected accounts failed; review each outcome before retrying.' : '.'),
+            ];
+        }
     }
 }
 $fleetMigrationRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
@@ -508,7 +577,7 @@ if (!$authorized) {
 
 WHM::header('Open Redis Manager', 0, 0);
 ?>
-<style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
+<style>.orm-entry h1{display:flex;align-items:center;gap:10px}.orm-fleet-batch-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 0}.orm-fleet-batch-controls p{flex-basis:100%;margin:0}.orm-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true"><title>Open Redis Manager cache cube</title>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/><rect x="5" y="5" width="246" height="246" rx="57" fill="none" stroke="#FFF" stroke-opacity=".18" stroke-width="2"/>
@@ -564,6 +633,19 @@ WHM::header('Open Redis Manager', 0, 0);
         <?php $fleetPageCount = count($fleetPage['entries']); $fleetFirstAccount = $fleetPageCount > 0 ? $fleetOffset + 1 : 0; $fleetLastAccount = $fleetOffset + $fleetPageCount; ?>
         <p><strong><?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> verified configured ORM accounts in the full inventory. Showing <?= $fleetPageCount > 0 ? $fleetFirstAccount . '–' . $fleetLastAccount : 'no accounts' ?> of <?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
         <p>State counts for this page only (<?= $fleetPageCount ?> accounts): running <?= $fleetPageStateCounts['running'] ?>, stopped <?= $fleetPageStateCounts['stopped'] ?>, starting <?= $fleetPageStateCounts['starting'] ?>, stopping <?= $fleetPageStateCounts['stopping'] ?>, failed <?= $fleetPageStateCounts['failed'] ?>, unverifiable <?= $fleetPageStateCounts['unhealthy'] ?>. “Unverifiable” means ORM could not confirm the manifest, ownership, or service state.</p>
+        <?php if ($fleetSummaryMessage !== null): ?><p role="<?= $fleetSummaryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetSummaryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+        <form method="post" class="orm-fleet-actions">
+          <input type="hidden" name="orm_action" value="fleet.summary">
+          <button type="submit"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M3 16V9m5 7V4m5 12v-5m4 5V7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Load fleet summary</button>
+        </form>
+        <?php if ($fleetSummary !== null): ?>
+          <?php $fleetMetrics = $fleetSummary['metrics']; $fleetStates = $fleetSummary['state_counts']; ?>
+          <section aria-labelledby="orm-fleet-summary-title">
+            <h3 id="orm-fleet-summary-title">Verified fleet summary<?= $fleetSummary['partial'] ? ' · partial data' : '' ?></h3>
+            <p><?= (int) $fleetSummary['managed_count'] ?> managed, <?= (int) $fleetStates['running'] ?> running, <?= (int) $fleetSummary['unconfigured_count'] ?> unconfigured, <?= (int) $fleetSummary['unverified_count'] ?> unverified. States are read from one bounded systemd query; metrics use scheduled snapshots no older than 15 minutes.</p>
+            <p>Fresh metrics for <?= (int) $fleetMetrics['fresh_accounts'] ?> accounts: <?= number_format($fleetMetrics['memory_used_bytes']) ?> bytes used across <?= number_format($fleetMetrics['connected_clients']) ?> connected clients. Alerts: <?= (int) $fleetMetrics['alert_accounts'] ?> accounts (<?= (int) $fleetMetrics['high_memory_accounts'] ?> memory, <?= (int) $fleetMetrics['high_client_accounts'] ?> clients, <?= (int) $fleetMetrics['low_hit_ratio_accounts'] ?> hit ratio). Stale <?= (int) $fleetMetrics['stale_accounts'] ?>; missing <?= (int) $fleetMetrics['missing_accounts'] ?>. Missing and stale values are excluded from totals, never treated as zero.</p>
+          </section>
+        <?php endif; ?>
         <?php if ($fleetPage['total'] > 0): ?>
         <label for="orm-fleet-search">Search this page</label>
         <input id="orm-fleet-search" type="search" autocomplete="off">
@@ -578,12 +660,26 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="unhealthy">Unverifiable</option>
         </select>
         <p>Each row shows snapshots retained for that account. Migration is available for running Redis instances only. Stop all application writers before using it; service connections will be interrupted while the snapshot is validated and the backend is switched.</p>
+        <?php if ($fleetBatchMessage !== null): ?><p role="<?= $fleetBatchMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetBatchMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+        <div class="orm-fleet-batch-controls">
+          <form method="post" id="orm-fleet-batch-create">
+            <input type="hidden" name="orm_action" value="fleet.backup.batch">
+            <input type="hidden" name="fleet_batch_action" value="create">
+            <button type="submit" onclick="return confirm('Create snapshots for the selected running accounts? Select no more than two accounts. Each account is processed separately, so one failure will not stop the other.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M10 3v14M3 10h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Create snapshots for selected accounts</button>
+          </form>
+          <form method="post" id="orm-fleet-batch-restore">
+            <input type="hidden" name="orm_action" value="fleet.backup.batch">
+            <input type="hidden" name="fleet_batch_action" value="restore">
+            <button type="submit" onclick="return confirm('Restore snapshots for the selected running accounts? Newer writes may be lost. ORM creates a per-account safety snapshot and uses rollback if restore fails. Select no more than two accounts.')"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M4 8a6.5 6.5 0 1 1-.3 4M4 3v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Restore selected snapshots</button>
+          </form>
+          <p>Batch operations apply only to this visible page and at most two running accounts per request. Each outcome is reported independently and recorded in the system authentication log.</p>
+        </div>
         <table>
            <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery scan</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
-                <th scope="row"><?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
+                <th scope="row"><label><input type="checkbox" name="accounts[]" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" form="orm-fleet-batch-create"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>> <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> <span class="orm-visually-hidden">for batch snapshot</span></label><br><label><input type="checkbox" name="accounts[]" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" form="orm-fleet-batch-restore"<?= $entry['state'] === 'running' && $entry['backups_available'] && $entry['backups'] !== [] ? '' : ' disabled' ?>> Select for batch restore</label></th>
                 <td><?= htmlspecialchars(ucfirst($entry['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td><?= htmlspecialchars($entry['state'] === 'unhealthy' ? 'Unverifiable' : ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td>
@@ -651,6 +747,12 @@ WHM::header('Open Redis Manager', 0, 0);
                           <option value="<?= htmlspecialchars($backup['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(gmdate('Y-m-d H:i:s', $backup['created_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC · <?= number_format($backup['size_bytes']) ?> bytes</option>
                         <?php endforeach; ?>
                       </select>
+                      <label for="orm-batch-backup-<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">Batch restore snapshot</label>
+                      <select id="orm-batch-backup-<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" name="backup_ids[<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>]" form="orm-fleet-batch-restore">
+                        <?php foreach ($entry['backups'] as $backup): ?>
+                          <option value="<?= htmlspecialchars($backup['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars(gmdate('Y-m-d H:i:s', $backup['created_at']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC</option>
+                        <?php endforeach; ?>
+                      </select>
                       <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?> onclick="return confirm('Restore this snapshot for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? The cache will stop briefly, writes newer than the snapshot may be lost, and ORM will create a safety snapshot first.')">Restore snapshot</button>
                     </form>
                   <?php endif; ?>
@@ -674,13 +776,23 @@ WHM::header('Open Redis Manager', 0, 0);
             });
             search.addEventListener('input', filter);
             state.addEventListener('change', filter);
+            for (const formId of ['orm-fleet-batch-create', 'orm-fleet-batch-restore']) {
+              const form = document.getElementById(formId);
+              form?.addEventListener('submit', event => {
+                const selected = document.querySelectorAll(`input[form="${formId}"]:checked`).length;
+                if (selected < 1 || selected > 2) {
+                  event.preventDefault();
+                  window.alert('Select one or two running accounts on this page.');
+                }
+              });
+            }
           })();
         </script>
         <?php else: ?>
           <p>No ORM-managed instances have been initialized.</p>
         <?php endif; ?>
       <?php endif; ?>
-      <p>This root-only view lists account names, normalized states, and each account's bounded snapshot metadata. Every service and backup action is validated against the trusted cPanel account by the broker; restore uses that account's safety snapshot and rollback path. Diagnostic probes are fixed, read-only operations and return validated counters only. Actions are audited and do not expose service paths, credentials, Redis keys, or values.</p>
+      <p>This root-only view lists verified account names, normalized states, and bounded snapshot metadata. Every service and backup action is validated against trusted cPanel identity by the broker; restores use a per-account safety snapshot and rollback path. Batch operations affect at most two running accounts on the visible page and report each outcome separately. Diagnostic and summary probes use fixed reads and validated counters only. Actions are audited and do not expose service paths, credentials, Redis keys, or values.</p>
     </section>
     <?php endif; ?>
     <section aria-labelledby="orm-backends-title">

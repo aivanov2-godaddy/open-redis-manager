@@ -32,6 +32,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Monitoring and diagnostics](guides/monitoring-diagnostics.md)
 - [Redis and Valkey](guides/redis-valkey.md)
 - [Read-only backend discovery](guides/backend-discovery.md)
+- [cPanel Redis and Valkey containers](guides/cpanel-podman.md)
 - [cPanel and WHM entry-point scaffold](../packaging/README.md)
 - [CloudLinux runtime integration](guides/cloudlinux.md)
 - [Application integrations](integrations.md)

@@ -73,6 +73,18 @@ $assert(str_contains($authDetails['wordpress_example'], 'WP_REDIS_PASSWORD')
     'include password guidance for WordPress, LiteSpeed, Laravel, and Magento');
 $assert(!str_contains(implode("\n", $authDetails), 'actual-secret-canary'),
     'never put a credential value into generated helper text');
+$podmanDetails = ConnectionDetails::forSocket('demo', '/home/demo/ea-podman.d/ea-redis62.demo.01/redis.sock');
+$assert(is_array($podmanDetails)
+    && $podmanDetails['socket_path'] === '/home/demo/ea-podman.d/ea-redis62.demo.01/redis.sock'
+    && str_contains($podmanDetails['php_example'], "->connect('/home/demo/ea-podman.d/ea-redis62.demo.01/redis.sock')"),
+    'build application connection helpers for the current account Redis pod socket');
+$valkeyPodmanDetails = ConnectionDetails::forSocket('demo', '/home/demo/ea-podman.d/ea-valkey72.demo.02/valkey.sock');
+$assert(is_array($valkeyPodmanDetails) && str_contains($valkeyPodmanDetails['laravel_example'], 'REDIS_PORT=0'),
+    'build application helpers for the current account Valkey pod socket');
+$assert(ConnectionDetails::forSocket('demo', '/home/other/ea-podman.d/ea-redis62.other.01/redis.sock') === null
+    && ConnectionDetails::forSocket('demo', '/var/lib/orm-instances/other/redis.sock') === null
+    && ConnectionDetails::forSocket('demo', '/home/demo/ea-podman.d/ea-redis62.demo.01/../redis.sock') === null,
+    'reject pod sockets outside the current cPanel account and unsafe paths');
 
 $page = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $assert(is_string($page), 'read the installed cPanel page template');

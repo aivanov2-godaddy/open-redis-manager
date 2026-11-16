@@ -111,6 +111,21 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         $CONTROL_STATES{$account->{name}} = $state;
         return { success => 1, state => $state };
     }
+
+    package Local::FleetSummaryManager;
+    sub new { return bless {}, $_[0]; }
+    sub fleet_summary {
+        my ($self, $accounts) = @_;
+        return {
+            account_count => scalar(@{$accounts}), managed_count => 0,
+            unconfigured_count => scalar(@{$accounts}), unverified_count => 0,
+            state_counts => { running => 0, stopped => 0, starting => 0, stopping => 0, failed => 0, unavailable => 0 },
+            metrics => { fresh_accounts => 0, stale_accounts => 0, missing_accounts => 0,
+                memory_used_bytes => 0, connected_clients => 0, high_memory_accounts => 0,
+                high_client_accounts => 0, low_hit_ratio_accounts => 0, alert_accounts => 0, latest_sampled_at => 0 },
+            partial => JSON::PP::false, success => JSON::PP::true, version => 1,
+        };
+    }
 }
 
 my $tmp = tempdir(CLEANUP => 1);
@@ -180,6 +195,22 @@ my $root_response = Orm::Broker::Handler->handle_frame($request, 0, undef, undef
 like($root_response, qr/"success":true/, 'allow root peers to read the scoped fleet inventory');
 my $account_response = Orm::Broker::Handler->handle_frame($request, 10001, undef, undef, $inventory);
 like($account_response, qr/"error":"not_authorized"/, 'deny non-root peers from reading the fleet inventory');
+
+my $summaryInventory = Orm::Broker::FleetInventory->new(
+    instance_root => $instance_root, expected_owner_uid => $<,
+    resolver => Local::FleetResolver->new(), instance_manager => Local::FleetSummaryManager->new(),
+    lookup_name => sub { $_[0] =~ /\Aacct([0-9]{2})\z/ ? { uid => 10000 + $1 } : undef },
+    audit => sub { push @audit, [@_]; },
+);
+my $fleetSummary = $summaryInventory->summary();
+ok($fleetSummary->{success} && $fleetSummary->{partial}, 'return a successful but explicitly partial fleet summary');
+is($fleetSummary->{account_count}, 37, 'count verified and unverified inventory entries');
+is($fleetSummary->{unverified_count}, 2, 'count malformed and symlinked metadata as unverified');
+my $summaryRequest = '{"operation":"fleet.summary","version":1}' . "\n";
+like(Orm::Broker::Handler->handle_frame($summaryRequest, 0, undef, undef, $summaryInventory),
+    qr/"unverified_count":2/, 'allow root to request the bounded fleet aggregate');
+like(Orm::Broker::Handler->handle_frame($summaryRequest, 10001, undef, undef, $summaryInventory),
+    qr/"error":"not_authorized"/, 'keep fleet aggregates root-only');
 
 my $diagnostics_request = '{"operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
 is(parse_request($diagnostics_request)->{operation}, 'fleet.diagnostics', 'parse the fixed read-only diagnostics request');
@@ -389,6 +420,38 @@ is_deeply($audit[-1], [10001, 'acct01', 'backup.create', 'not_authorized', 'unav
     'record denied backup attempts using the kernel peer UID');
 my $rootBackup = Orm::Broker::Handler->handle_frame($fleetBackupRequest, 0, undef, undef, $inventory);
 like($rootBackup, qr/"success":true/, 'allow root to request an account snapshot through the broker');
+
+my $batchNow = 2000;
+my $batchInventory = Orm::Broker::FleetInventory->new(
+    instance_root => $instance_root, expected_owner_uid => $<,
+    resolver => Local::FleetResolver->new(), instance_manager => Local::FleetManager->new(),
+    lookup_name => sub { $_[0] =~ /\Aacct([0-9]{2})\z/ ? { uid => 10000 + $1 } : undef },
+    clock => sub { $batchNow }, audit => sub { push @audit, [@_]; },
+);
+my $batchResult = $batchInventory->backup_batch('create', [
+    { username => 'acct01' }, { username => 'acct99' },
+]);
+ok($batchResult->{success} && $batchResult->{partial} && $batchResult->{succeeded_count} == 1,
+    'continue a bounded backup batch after one account lookup fails');
+is($batchResult->{results}[0]->{username}, 'acct01', 'preserve batch outcome order');
+is($batchResult->{results}[1]->{error}, 'account_unavailable', 'report a per-account failure in the batch result');
+my $batchRequest = '{"operation":"fleet.backup.batch.create","targets":["acct01","acct02"],"version":1}' . "\n";
+like(Orm::Broker::Handler->handle_frame($batchRequest, 10001, undef, undef, $batchInventory),
+    qr/"error":"not_authorized"/, 'deny a batch snapshot request from non-root');
+my $rateNow = 3000;
+my $rateBatchInventory = Orm::Broker::FleetInventory->new(
+    instance_root => $instance_root, expected_owner_uid => $<,
+    resolver => Local::FleetResolver->new(), instance_manager => Local::FleetManager->new(),
+    lookup_name => sub { $_[0] =~ /\Aacct([0-9]{2})\z/ ? { uid => 10000 + $1 } : undef },
+    clock => sub { $rateNow }, audit => sub { push @audit, [@_]; },
+);
+my $isolatedRateResult = $rateBatchInventory->backup_batch('create', [
+    { username => 'acct01' }, { username => 'acct02' },
+], { acct01 => 1 });
+ok($isolatedRateResult->{partial} && $isolatedRateResult->{results}[0]->{error} eq 'rate_limited'
+    && $isolatedRateResult->{results}[1]->{success}, 'isolate per-account rate limiting inside a batch');
+my $globalRateResult = $batchInventory->backup_batch('create', [{ username => 'acct02' }]);
+is($globalRateResult->{results}[0]->{error}, 'rate_limited', 'apply a short global cooldown to repeated batches');
 
 chmod(0777, $instance_root) or die "weaken instance root: $!";
 ok(!$inventory->page(0)->{success}, 'fail closed when the metadata root is writable by others');

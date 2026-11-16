@@ -19,12 +19,14 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Account backups, restore with safety snapshot and rollback attempt, Redis-to-Valkey migration, root-only WHM diagnostics, provider policy controls, and guarded recovery scan/start.
 - Advisory cPanel health guidance for service state, configured memory/client limits, and cumulative hit ratio; metric findings pause for missing or stale samples.
 - Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
+- Account-scoped discovery of existing cPanel EA Podman Redis/Valkey sockets with optional PhpRedis PING, safe version reporting, and application connection examples. cPanel retains container lifecycle and data ownership.
+- On-demand fleet status and fresh scheduled-metrics aggregates, plus sequential create/restore batches capped at two visible running accounts with independent audited outcomes.
 
 ## Experimental
 
 - Manual development installer, authenticated cPanel/WHM entry points, and root-owned broker integration. Linux CI exercises fresh-install success and rollback with isolated mock cPanel registration utilities; a live cPanel install is still unvalidated.
 - Optional cPanel account-level Redis AUTH enable, disable, and password rotation for running ORM instances. Generated passwords are returned once after restart and PING verification; failed verification attempts a configuration and service rollback. WHM-directed credential management and disposable-host validation remain open.
-- Lifecycle, metrics, backups/restore, migration, WHM diagnostics, provider controls, and recovery behavior on real cPanel systems.
+- Lifecycle, metrics, backups/restore, migration, Podman discovery, WHM diagnostics, provider controls, and recovery behavior on this disposable cPanel host.
 - The cPanel health guidance thresholds are heuristics and remain unverified on a supported disposable host.
 - Host support across cPanel/WHM versions, supported OS releases, internal PHP versions, EasyApache/Alt-PHP, handlers, CageFS, and PHP Selector.
 
@@ -33,7 +35,7 @@ Live cPanel identity evidence consists of two smoke runs during private testing.
 ## Planned
 
 - A general in-panel updater; the identity-v1 compatibility bridge is narrowly scoped.
-- All-fleet backup, restore, and repair batching. Current operations target one selected account per request.
+- Automatic whole-fleet backup/restore/repair batches; current WHM snapshot batches intentionally cover at most two selected accounts per request.
 - A production-supported cPanel/OS/PHP matrix. No ORM host combination has completed the full validation gate.
 
 ## Release gate

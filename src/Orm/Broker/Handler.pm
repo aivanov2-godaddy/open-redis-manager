@@ -38,6 +38,17 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.summary') {
+            if ($peer_uid != 0) {
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $summary = eval { $fleet_inventory->summary() };
+                $response = ref($summary) eq 'HASH' ? $summary
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
         if ($request->{operation} eq 'fleet.diagnostics') {
             if ($peer_uid != 0) {
                 eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, 'diagnostics.read') }
@@ -98,6 +109,25 @@ sub handle_frame {
                     $fleet_inventory->backup($request->{username}, $action, $request->{backup_id})
                 };
                 $response = ref($backup_response) eq 'HASH' ? $backup_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
+        if ($request->{operation} eq 'fleet.backup.batch.create' || $request->{operation} eq 'fleet.backup.batch.restore') {
+            my $action = $request->{operation} eq 'fleet.backup.batch.create' ? 'create' : 'restore';
+            if ($peer_uid != 0) {
+                if (defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') }) {
+                    for my $target (@{$request->{targets}}) {
+                        eval { $fleet_inventory->audit_denial($peer_uid, $target->{username}, 'backup.batch.' . $action) };
+                    }
+                }
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $batch_response = eval {
+                    $fleet_inventory->backup_batch($action, $request->{targets}, $request->{rate_limited_targets})
+                };
+                $response = ref($batch_response) eq 'HASH' ? $batch_response
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }

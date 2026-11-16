@@ -87,6 +87,7 @@ orm_package_file_map() {
         connection_details "$ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php" 644 \
         diagnostic_report "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php" "$ORM_3RDPARTY/src/Orm/Cpanel/DiagnosticReport.php" 644 \
         health_guidance "$ORM_REPO_ROOT/src/Orm/Cpanel/HealthGuidance.php" "$ORM_3RDPARTY/src/Orm/Cpanel/HealthGuidance.php" 644 \
+        podman_cache_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/PodmanCacheDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/PodmanCacheDiscovery.php" 644 \
         backend_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" 644 \
         broker_bin "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN" 755 \
         instance_launcher "$ORM_REPO_ROOT/bin/orm-instance-launcher.pl" "$ORM_INSTANCE_LAUNCHER" 755 \
@@ -258,7 +259,7 @@ orm_registration_state() {
 }
 
 orm_install_paths_are_clear() {
-    local path unit_state source target mode key
+    local path unit_state source target mode key registration_status
     while IFS='|' read -r key source target mode; do
         orm_safe_target_parent_chain "$target" || orm_die "refusing an unsafe target directory: $(dirname -- "$target")"
         [[ ! -e "$target" && ! -L "$target" ]] || orm_die "refusing to overwrite existing path: $target"
@@ -276,7 +277,7 @@ orm_install_paths_are_clear() {
     if orm_registration_state; then
         orm_die 'the WHM AppConfig application is already registered.'
     else
-        local registration_status=$?
+        registration_status=$?
         [[ "$registration_status" -eq 1 ]] || orm_die 'could not safely verify WHM AppConfig registration.'
     fi
 }
