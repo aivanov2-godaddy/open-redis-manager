@@ -21,6 +21,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 ## Experimental
 
 - Manual development installer, authenticated cPanel/WHM entry points, and root-owned broker integration. Linux CI exercises fresh-install success and rollback with isolated mock cPanel registration utilities; a live cPanel install is still unvalidated.
+- Optional cPanel account-level Redis AUTH enable, disable, and password rotation for running ORM instances. Generated passwords are returned once after restart and PING verification; failed verification attempts a configuration and service rollback. WHM-directed credential management and disposable-host validation remain open.
 - Lifecycle, metrics, backups/restore, migration, WHM diagnostics, provider controls, and recovery behavior on real cPanel systems.
 - Host support across cPanel/WHM versions, supported OS releases, internal PHP versions, EasyApache/Alt-PHP, handlers, CageFS, and PHP Selector.
 
@@ -28,7 +29,6 @@ Live cPanel identity evidence consists of two smoke runs during private testing.
 
 ## Planned
 
-- Redis AUTH credential storage, management, and rotation.
 - A general in-panel updater; the identity-v1 compatibility bridge is narrowly scoped.
 - All-fleet backup, restore, and repair batching. Current operations target one selected account per request.
 - A production-supported cPanel/OS/PHP matrix. No ORM host combination has completed the full validation gate.

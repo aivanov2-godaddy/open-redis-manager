@@ -5,6 +5,7 @@ use Errno qw(ENOENT);
 use Fcntl qw(O_RDONLY O_WRONLY O_RDWR O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
 use JSON::PP ();
+use MIME::Base64 qw(encode_base64);
 use POSIX qw(WNOHANG _exit setgid setuid);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use Orm::Broker::BackendPolicy;
@@ -80,6 +81,8 @@ sub new {
         redis_cli_call => $args{redis_cli_call},
         config_get => $args{config_get},
         config_set => $args{config_set},
+        auth_probe => $args{auth_probe},
+        auth_audit => $args{auth_audit},
         backup_create => $args{backup_create},
         atomic_write_call => $args{atomic_write_call},
         atomic_commit => $args{atomic_commit},
@@ -92,6 +95,9 @@ sub dispatch {
     return _failure('invalid_request') if !_valid_account($account);
 
     return $self->status($account) if $operation eq 'instance.status';
+    return $self->auth_status($account) if $operation eq 'instance.auth.status';
+    return $self->rotate_auth($account) if $operation eq 'instance.auth.rotate';
+    return $self->disable_auth($account) if $operation eq 'instance.auth.disable';
     return $self->metrics($account) if $operation eq 'instance.metrics';
     return $self->metrics_history($account, $metrics_range) if $operation eq 'metrics.history';
     return $self->provider_exposure() if $operation eq 'provider.exposure';
@@ -210,6 +216,169 @@ sub status {
     return _state('failed', $manifest) if $state eq 'failed';
     return _state('stopped', $manifest) if $state eq 'inactive';
     return _failure('instance_unavailable');
+}
+
+sub auth_status {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($auth_valid, $auth_secret) = $self->_read_auth_secret($account, $manifest);
+    return _failure('configuration_unavailable') if !$auth_valid;
+    return {
+        auth_configured => defined($auth_secret) ? JSON::PP::true : JSON::PP::false,
+        success => JSON::PP::true,
+        version => 1,
+    };
+}
+
+sub rotate_auth {
+    my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    my $response;
+    if (!defined($lock)) {
+        $response = _failure('operation_in_progress');
+    } else {
+        $response = $self->_rotate_auth_locked($account);
+    }
+    $self->_auth_audit($account, $response, 'auth.rotate');
+    close($lock) if defined($lock);
+    return $response;
+}
+
+sub disable_auth {
+    my ($self, $account) = @_;
+    my $lock = $self->_acquire_instance_lock($account);
+    my $response;
+    if (!defined($lock)) {
+        $response = _failure('operation_in_progress');
+    } else {
+        $response = $self->_disable_auth_locked($account);
+    }
+    $self->_auth_audit($account, $response, 'auth.disable');
+    close($lock) if defined($lock);
+    return $response;
+}
+
+sub _disable_auth_locked {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('instance_unavailable') if !$active && $state ne 'inactive' && $state ne 'failed';
+    return _failure('not_running') if !$active || $state ne 'active';
+
+    my ($auth_valid, $previous_secret) = $self->_read_auth_secret($account, $manifest);
+    return _failure('configuration_unavailable') if !$auth_valid;
+    return { auth_configured => JSON::PP::false, success => JSON::PP::true, version => 1 }
+        if !defined($previous_secret);
+    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret);
+    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings});
+    return _failure('configuration_unavailable') if !defined($old_config) || !defined($new_config);
+
+    my $temporary = $self->_stage_atomic_write(
+        $manifest->{config}, $new_config, 0640, $self->{expected_owner_uid}, $account->{gid}
+    );
+    return _failure('configuration_storage_unavailable') if !defined($temporary);
+    return _failure('configuration_storage_unavailable')
+        if !$self->_commit_atomic_write($temporary, $manifest->{config});
+
+    my $unit = $self->_unit_name($account->{name});
+    my ($restarted) = $self->_systemctl('restart', '--no-block', $unit);
+    my $new_ready = $restarted
+        && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout})
+        && $self->_auth_probe($manifest->{backend}, $manifest->{socket});
+    if (!$new_ready) {
+        my $config_restored = $self->_atomic_write(
+            $manifest->{config}, $old_config, 0640, $self->{expected_owner_uid}, $account->{gid}
+        );
+        return _failure('auth_recovery_required') if !$config_restored;
+        my ($rollback_started) = $self->_systemctl('restart', '--no-block', $unit);
+        my $rolled_back = $rollback_started
+            && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout})
+            && $self->_auth_probe($manifest->{backend}, $manifest->{socket});
+        return _failure($rolled_back ? 'auth_disable_failed' : 'auth_recovery_required');
+    }
+
+    return { auth_configured => JSON::PP::false, success => JSON::PP::true, version => 1 };
+}
+
+sub _auth_audit {
+    my ($self, $account, $response, $action) = @_;
+    $action = $action eq 'auth.disable' ? 'auth.disable' : 'auth.rotate';
+    my $outcome = ref($response) eq 'HASH' && $response->{success}
+        ? 'success' : ref($response) eq 'HASH' ? ($response->{error} // 'failed') : 'failed';
+    $outcome = 'failed' if $outcome !~ /\A[a-z_]{1,40}\z/;
+    my $state = $outcome eq 'success' || $outcome eq 'auth_rotation_failed' || $outcome eq 'auth_disable_failed'
+        ? 'running' : 'unavailable';
+    if (ref($self->{auth_audit}) eq 'CODE') {
+        eval { $self->{auth_audit}->($account->{uid}, $account->{name}, $action, $outcome, $state) };
+        return;
+    }
+    eval {
+        openlog('orm-broker', 'pid', 'authpriv');
+        syslog(LOG_NOTICE, 'account_auth actor_uid=%s account=%s action=%s result=%s state=%s',
+            $account->{uid}, $account->{name}, $action, $outcome, $state)
+            or die "syslog write failed";
+        closelog();
+    };
+    eval { closelog(); };
+}
+
+sub _rotate_auth_locked {
+    my ($self, $account) = @_;
+    my $manifest = $self->_read_manifest($account);
+    return _failure('not_configured') if !$manifest;
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return _failure('instance_unavailable') if !$active && $state ne 'inactive' && $state ne 'failed';
+    return _failure('not_running') if !$active || $state ne 'active';
+
+    my ($auth_valid, $previous_secret) = $self->_read_auth_secret($account, $manifest);
+    return _failure('configuration_unavailable') if !$auth_valid;
+    my $secret = _generate_auth_secret();
+    return _failure('auth_generation_failed') if !defined($secret);
+    my $old_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $previous_secret);
+    my $new_config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings}, $secret);
+    return _failure('configuration_unavailable') if !defined($old_config) || !defined($new_config);
+
+    my $temporary = $self->_stage_atomic_write(
+        $manifest->{config}, $new_config, 0640, $self->{expected_owner_uid}, $account->{gid}
+    );
+    return _failure('configuration_storage_unavailable') if !defined($temporary);
+    return _failure('configuration_storage_unavailable')
+        if !$self->_commit_atomic_write($temporary, $manifest->{config});
+
+    my $unit = $self->_unit_name($account->{name});
+    my ($restarted) = $self->_systemctl('restart', '--no-block', $unit);
+    my $new_ready = $restarted
+        && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout})
+        && $self->_auth_probe($manifest->{backend}, $manifest->{socket});
+    if (!$new_ready) {
+        my $config_restored = $self->_atomic_write(
+            $manifest->{config}, $old_config, 0640, $self->{expected_owner_uid}, $account->{gid}
+        );
+        return _failure('auth_recovery_required') if !$config_restored;
+        my ($rollback_started) = $self->_systemctl('restart', '--no-block', $unit);
+        my $rolled_back = $rollback_started
+            && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout})
+            && $self->_auth_probe($manifest->{backend}, $manifest->{socket});
+        return _failure($rolled_back ? 'auth_rotation_failed' : 'auth_recovery_required');
+    }
+
+    return {
+        auth_configured => JSON::PP::true,
+        secret => $secret,
+        success => JSON::PP::true,
+        version => 1,
+    };
+}
+
+sub _auth_probe {
+    my ($self, $backend, $socket) = @_;
+    if (ref($self->{auth_probe}) eq 'CODE') {
+        return eval { $self->{auth_probe}->($backend, $socket) } ? 1 : 0;
+    }
+    my $pong = $self->_run_redis_cli($backend, $socket, 'PING');
+    return defined($pong) && $pong eq "PONG\n" ? 1 : 0;
 }
 
 sub backend {
@@ -793,7 +962,9 @@ sub _configure_locked {
         return _failure('configuration_unavailable') if !_valid_settings($runtime_previous);
     }
 
-    my $config = _redis_config($manifest->{data}, $manifest->{socket}, $settings);
+    my ($auth_valid, $auth_secret) = $self->_read_auth_secret($account, $manifest);
+    return _failure('configuration_unavailable') if !$auth_valid;
+    my $config = _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret);
     my $temporary = $self->_stage_atomic_write(
         $manifest->{config}, $config, 0640, $self->{expected_owner_uid}, $account->{gid}
     );
@@ -897,6 +1068,8 @@ sub _run_redis_cli {
         return undef if !$output || ref($output) || length($output) > $output_limit;
         return $output;
     }
+    my ($auth_valid, $auth_secret) = $self->_auth_secret_for_socket($socket);
+    return undef if !$auth_valid;
     my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
     my $path;
     for my $candidate (@{$self->{client_paths}->{$client_name} // []}) {
@@ -912,6 +1085,7 @@ sub _run_redis_cli {
     my $completed = eval {
         local $SIG{ALRM} = sub { die "Redis client timeout\n" };
         local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        $ENV{REDISCLI_AUTH} = $auth_secret if defined($auth_secret);
         alarm(3);
         if (open(my $pipe, '-|', $path, '-s', $socket, '--raw', @arguments)) {
             $opened = 1;
@@ -929,6 +1103,43 @@ sub _run_redis_cli {
     alarm(0);
     return undef if !$completed || $opened || $output eq '' || length($output) > $output_limit;
     return $output;
+}
+
+sub _auth_secret_for_socket {
+    my ($self, $socket, $expected_gid) = @_;
+    return (0, undef) if !defined($socket) || ref($socket);
+    my ($account_name) = $socket =~ m{\A\Q$self->{data_root}\E/([a-zA-Z0-9_-]{1,16})/redis\.sock\z};
+    return (0, undef) if !defined($account_name);
+    my $directory = $self->_account_config_dir($account_name);
+    my @directory_stat = lstat($directory);
+    return (0, undef) if !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $directory_stat[4] != $self->{expected_owner_uid}
+        || (defined($expected_gid) && $directory_stat[5] != $expected_gid)
+        || ($directory_stat[2] & 0027) != 0;
+    my $path = File::Spec->catfile($directory, 'redis.conf');
+    return (0, undef) if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
+    my @stat = stat($handle);
+    if (!@stat || !S_ISREG($stat[2]) || $stat[4] != $self->{expected_owner_uid}
+        || $stat[5] != $directory_stat[5] || $stat[3] != 1 || ($stat[2] & 0037) != 0
+        || $stat[7] > 16384) {
+        close($handle);
+        return (0, undef);
+    }
+    my $content = '';
+    my $read = read($handle, $content, 16385);
+    my $closed = close($handle);
+    return (0, undef) if !defined($read) || !$closed || length($content) > 16384;
+    my @secrets = $content =~ /^requirepass ([A-Za-z0-9_-]{43})$/mg;
+    my $directives = scalar(() = $content =~ /^requirepass(?:[ \t].*)?$/mg);
+    return (0, undef) if $directives > 1 || $directives != @secrets;
+    return (1, @secrets ? $secrets[0] : undef);
+}
+
+sub _read_auth_secret {
+    my ($self, $account, $manifest) = @_;
+    return (0, undef) if ref($account) ne 'HASH' || ref($manifest) ne 'HASH'
+        || ($manifest->{config} // '') ne File::Spec->catfile($self->_account_config_dir($account->{name}), 'redis.conf');
+    return $self->_auth_secret_for_socket($manifest->{socket}, $account->{gid});
 }
 
 sub _parse_info_fields {
@@ -1524,6 +1735,8 @@ sub _run_backup_cli {
     return 0 if !defined($socket) || ref($socket);
     my ($account_name) = $socket =~ m{\A\Q$self->{data_root}\E/([a-zA-Z0-9_-]{1,16})/redis\.sock\z};
     return 0 if !defined($account_name) || !defined($destination) || ref($destination);
+    my ($auth_valid, $auth_secret) = $self->_auth_secret_for_socket($socket);
+    return 0 if !$auth_valid;
     my $backup_directory = File::Spec->catdir($self->{data_root}, '.orm-backups', $account_name);
     return 0 if $destination !~ m{\A\Q$backup_directory\E/[.]snapshot-[0-9]+-[a-f0-9]{8}[.]tmp\z};
     if (ref($self->{backup_create}) eq 'CODE') {
@@ -1545,6 +1758,7 @@ sub _run_backup_cli {
     return 0 if !defined($pid);
     if ($pid == 0) {
         local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        $ENV{REDISCLI_AUTH} = $auth_secret if defined($auth_secret);
         umask(0077);
         open(STDOUT, '>', '/dev/null') or _exit(127);
         open(STDERR, '>', '/dev/null') or _exit(127);
@@ -1754,6 +1968,8 @@ sub _redis_info {
     my ($self, $backend, $socket) = @_;
     return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/;
     return undef if !defined($socket) || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+    my ($auth_valid, $auth_secret) = $self->_auth_secret_for_socket($socket);
+    return undef if !$auth_valid;
     my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
     my $path;
     for my $candidate (@{$self->{client_paths}->{$client_name} // []}) {
@@ -1769,6 +1985,7 @@ sub _redis_info {
     my $completed = eval {
         local $SIG{ALRM} = sub { die "metrics timeout\n" };
         local %ENV = (PATH => '/usr/bin:/bin', HOME => '/', LANG => 'C', LC_ALL => 'C');
+        $ENV{REDISCLI_AUTH} = $auth_secret if defined($auth_secret);
         alarm(3);
         if (open(my $pipe, '-|', $path, '-s', $socket, '--raw', 'INFO')) {
             $opened = 1;
@@ -1833,7 +2050,7 @@ sub _read_manifest {
     return undef if $manifest->{data} ne $expected_data
         || $manifest->{config} ne $expected_config || $manifest->{socket} ne $expected_socket;
     return undef if !defined($self->_available_binary($manifest->{backend}));
-    my $settings = $self->_valid_config($account, $manifest);
+    my ($settings, $auth_secret) = $self->_valid_config($account, $manifest);
     return undef if !$settings;
     $manifest->{settings} = $settings;
     return $manifest;
@@ -1866,6 +2083,9 @@ sub _valid_config {
     my $clients_count = scalar(() = $content =~ /^maxclients [0-9]+$/mg);
     my ($timeout) = $content =~ /^timeout ([0-9]+)$/m;
     my $timeout_count = scalar(() = $content =~ /^timeout [0-9]+$/mg);
+    my @auth_secrets = $content =~ /^requirepass ([A-Za-z0-9_-]{43})$/mg;
+    my $auth_directive_count = scalar(() = $content =~ /^requirepass(?:[ \t].*)?$/mg);
+    return undef if $auth_directive_count > 1 || $auth_directive_count != @auth_secrets;
     return undef if !defined($memory_bytes) || ($memory_count // 0) != 1
         || !defined($memory_policy) || ($policy_count // 0) != 1
         || !defined($maxclients) || ($clients_count // 0) != 1
@@ -1878,8 +2098,9 @@ sub _valid_config {
         timeout => 0 + $timeout,
     };
     return undef if !_valid_settings($settings);
-    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings);
-    return $settings;
+    my $auth_secret = @auth_secrets ? $auth_secrets[0] : undef;
+    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret);
+    return wantarray ? ($settings, $auth_secret) : $settings;
 }
 
 sub _available_binary {
@@ -2088,8 +2309,9 @@ sub _redis_parameter {
 }
 
 sub _redis_config {
-    my ($data, $socket, $settings) = @_;
+    my ($data, $socket, $settings, $auth_secret) = @_;
     return undef if !_valid_settings($settings);
+    return undef if defined($auth_secret) && !_valid_auth_secret($auth_secret);
     my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return join("\n",
         'daemonize no',
@@ -2108,9 +2330,28 @@ sub _redis_config {
         'databases 16',
         'timeout ' . $settings->{timeout},
         'maxclients ' . $settings->{maxclients},
+        (defined($auth_secret) ? 'requirepass ' . $auth_secret : ()),
         'logfile ""',
         ''
     );
+}
+
+sub _valid_auth_secret {
+    my ($secret) = @_;
+    return defined($secret) && !ref($secret) && $secret =~ /\A[A-Za-z0-9_-]{43}\z/ ? 1 : 0;
+}
+
+sub _generate_auth_secret {
+    my $source;
+    return undef if !sysopen($source, '/dev/urandom', O_RDONLY);
+    my $bytes = '';
+    my $read = read($source, $bytes, 32);
+    my $closed = close($source);
+    return undef if !defined($read) || $read != 32 || !$closed;
+    my $secret = encode_base64($bytes, '');
+    $secret =~ tr{+/}{-_};
+    $secret =~ s/=+\z//;
+    return _valid_auth_secret($secret) ? $secret : undef;
 }
 
 sub _valid_account {

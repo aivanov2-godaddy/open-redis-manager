@@ -14,7 +14,7 @@ final class DiagnosticReport
     ];
 
     /** @return array<string,mixed> */
-    public static function build(?array $instanceStatus, ?array $metrics, ?int $generatedAt = null): array
+    public static function build(?array $instanceStatus, ?array $metrics, ?int $generatedAt = null, ?bool $authConfigured = null): array
     {
         $statusOk = ($instanceStatus['success'] ?? null) === true
             && in_array($instanceStatus['state'] ?? null, self::STATES, true);
@@ -35,7 +35,7 @@ final class DiagnosticReport
             'connection' => [
                 'transport' => 'account_private_unix_socket',
                 'tcp_enabled' => false,
-                'redis_auth_configured' => false,
+                'redis_auth_configured' => $authConfigured,
             ],
             'metrics' => self::metrics($metrics),
             'excluded_data' => [

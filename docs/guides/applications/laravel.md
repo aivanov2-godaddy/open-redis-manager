@@ -13,7 +13,7 @@ REDIS_PORT=0
 REDIS_DB=0
 ```
 
-The phpredis extension or a compatible PHP client must be enabled in the runtime used by the application. ORM does not configure Redis AUTH for account instances, so no password is needed. Laravel versions may use different configuration defaults; compare this example with the app's `config/database.php` and the [Laravel Redis guide](https://laravel.com/docs/redis). Configure cache, sessions, queues and rate limiting only if the application needs them.
+The phpredis extension or a compatible PHP client must be enabled in the runtime used by the application. AUTH is off by default. If enabled in ORM, add `REDIS_PASSWORD=${ORM_REDIS_PASSWORD}` and provide that value through the application's protected environment settings. Laravel versions may use different configuration defaults; compare this example with the app's `config/database.php` and the [Laravel Redis guide](https://laravel.com/docs/redis). Configure cache, sessions, queues and rate limiting only if the application needs them.
 
 After changing configuration, use the application's normal deployment process to clear and rebuild cached configuration. Test cache reads/writes, session continuity, and queue workers separately. Restart long-running workers only through the application's deployment procedure.
 

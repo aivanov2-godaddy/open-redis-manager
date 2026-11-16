@@ -42,4 +42,4 @@ const client = createClient({
 await client.connect();
 ```
 
-ORM-managed instances use Unix socket permissions and do not configure Redis AUTH or expose TCP. This example has not yet been validated across cPanel Node.js runtime configurations.
+ORM-managed instances use a private Unix socket and do not expose TCP. AUTH is off by default. If the account owner enables it, add `password: process.env.ORM_REDIS_PASSWORD` and provide that variable through the application's protected environment settings. This example has not yet been validated across cPanel Node.js runtime configurations.

@@ -1,6 +1,6 @@
 # Integration matrix
 
-The reference product documents a broad range of application clients. The authenticated cPanel connection panel now exposes account-specific Unix-socket values and copyable helpers for the application integrations listed below. Helpers do not install clients, edit application files, enable application features, or manage application secrets; owners make those changes through each application's supported configuration path.
+The reference product documents a broad range of application clients. The authenticated cPanel connection panel now exposes account-specific Unix-socket values and copyable helpers for the application integrations listed below. ORM can optionally generate and rotate the Redis instance password, but it does not write application settings or transfer the secret into helper snippets; owners configure applications through each application's supported protected configuration path.
 
 Step-by-step connection examples are collected in the [application guides](guides/applications/README.md). They use placeholders and describe integration steps; they do not configure customer applications.
 
@@ -30,6 +30,6 @@ Step-by-step connection examples are collected in the [application guides](guide
 ## Credential rules
 
 - Never put a real credential in a URL, browser storage, app logs, or an issue report.
-- Mask secrets on screen and in exports until the account owner explicitly reveals or copies them.
-- Rotate credentials through a staged update with a rollback path so running application clients do not get stuck with a mismatched value.
+- AUTH is off by default. The generated password appears only in the successful explicit rotation response; status, diagnostics and support exports never return it. If it is lost, rotate again.
+- A successful rotation restarts the cache and revokes the previous password after verification. Application clients may fail until their protected configuration is updated; complete that update immediately. A failed verification attempts to restore the prior config and service.
 - Samples use placeholders unless the user asks to reveal real connection values.

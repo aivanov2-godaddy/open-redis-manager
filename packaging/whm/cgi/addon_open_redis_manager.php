@@ -448,11 +448,9 @@ WHM::header('Open Redis Manager', 0, 0);
 ?>
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
-  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true"><title>Cache orbit</title>
-  <defs><linearGradient id="ormTile" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#ormTile)"/><path d="M178 56 A82 82 0 1 0 205 120" fill="none" stroke="#FFF" stroke-linecap="round" stroke-width="12"/><path d="m207 103 11 25-25-1 14-24Z" fill="#FFF"/>
-  <rect x="83" y="91" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="119.5" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="148" width="90" height="17" rx="8.5" fill="#FFF"/>
-  <circle cx="102" cy="99.5" r="3.5" fill="#D92D20"/><circle cx="102" cy="128" r="3.5" fill="#D92D20"/><circle cx="102" cy="156.5" r="3.5" fill="#D92D20"/>
+  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true"><title>Open Redis Manager cache cube</title>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/><rect x="5" y="5" width="246" height="246" rx="57" fill="none" stroke="#FFF" stroke-opacity=".18" stroke-width="2"/>
+  <path d="m128 47 67 37-67 37-67-37 67-37Z" fill="#FFF"/><path d="m61 84 67 37v67l-67-37V84Z" fill="#FFE5E1"/><path d="m128 121 67-37v67l-67 37v-67Z" fill="#FFF"/><path d="m128 63 39 21-39 22-39-22 39-21Z" fill="#D92D20"/><path d="m128 72 23 12-23 13-23-13 23-12Z" fill="#F9BDB6"/><path d="m68 128 60 32 60-32M68 140l60 32 60-32" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>

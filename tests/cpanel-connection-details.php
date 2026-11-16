@@ -56,6 +56,23 @@ $assert(str_contains($details['magento_values'], 'server=/var/lib/orm-instances/
     && str_contains($details['magento_values'], 'port=0')
     && str_contains($details['magento_values'], 'page_cache_database=1'),
     'Magento helper shows version-neutral socket values and separate cache databases');
+$authDetails = ConnectionDetails::forAccount('demo', [
+    'success' => true, 'state' => 'running', 'secret' => 'actual-secret-canary',
+], true);
+$assert(is_array($authDetails) && $authDetails['auth_configured']
+    && $authDetails['authentication'] === 'unix_socket_permissions_and_redis_auth',
+    'identify enabled AUTH while retaining the account-private socket transport');
+$assert(str_contains($authDetails['php_example'], "->auth(getenv('ORM_REDIS_PASSWORD'))")
+    && str_contains($authDetails['node_example'], 'password: process.env.ORM_REDIS_PASSWORD')
+    && str_contains($authDetails['python_example'], 'password=os.environ["ORM_REDIS_PASSWORD"]'),
+    'provide client-specific environment variable placeholders without embedding a real password');
+$assert(str_contains($authDetails['wordpress_example'], 'WP_REDIS_PASSWORD')
+    && str_contains($authDetails['litespeed_example'], 'Password: set to the ORM_REDIS_PASSWORD environment value')
+    && str_contains($authDetails['laravel_example'], 'REDIS_PASSWORD=${ORM_REDIS_PASSWORD}')
+    && str_contains($authDetails['magento_values'], 'password=<paste the rotated ORM password>'),
+    'include password guidance for WordPress, LiteSpeed, Laravel, and Magento');
+$assert(!str_contains(implode("\n", $authDetails), 'actual-secret-canary'),
+    'never put a credential value into generated helper text');
 
 $page = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $assert(is_string($page), 'read the installed cPanel page template');
@@ -95,5 +112,14 @@ $assert(str_contains($page, 'name="orm_maxclients"') && str_contains($page, 'nam
 $assert(str_contains($page, 'those evictions cannot be undone.'), 'warn that lowering memory can irreversibly evict keys');
 $assert(str_contains($page, "request('instance.configure', null, ["), 'send configuration through the fixed broker operation');
 $assert(str_contains($page, 'Configuration saved.'), 'announce configuration changes accessibly after they are accepted');
+$assert(str_contains($page, 'name="orm_action" value="auth.rotate"')
+    && str_contains($page, '$instanceClient->rotateAuth()'), 'offer one account-scoped, explicit POST rotation action');
+$assert(str_contains($page, 'name="orm_action" value="auth.disable"')
+    && str_contains($page, '$instanceClient->disableAuth()')
+    && str_contains($page, 'confirm(\'Disable Redis AUTH?'), 'require an explicit confirmation before disabling AUTH');
+$assert(str_contains($page, 'Cache-Control: no-store, private')
+    && str_contains($page, 'window.addEventListener(\'pagehide\'')
+    && str_contains($page, 'Copy the new Redis AUTH password'),
+    'no-store the one-time response, clear it on page exit, and expose an explicit accessible copy action');
 
 fwrite(STDOUT, "cPanel connection details checks passed: {$checks}\n");

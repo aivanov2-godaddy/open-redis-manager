@@ -14,6 +14,9 @@ final class BrokerClient
     private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
+        'instance.auth.status',
+        'instance.auth.rotate',
+        'instance.auth.disable',
         'instance.metrics',
         'metrics.history',
         'instance.provision',
@@ -113,6 +116,21 @@ final class BrokerClient
         $keys = array_keys($decoded);
         sort($keys);
         if ($decoded['success']) {
+            if ($operation === 'instance.auth.status') {
+                return $keys === ['auth_configured', 'success', 'version']
+                    && is_bool($decoded['auth_configured'] ?? null) ? $decoded : null;
+            }
+            if ($operation === 'instance.auth.rotate') {
+                return $keys === ['auth_configured', 'secret', 'success', 'version']
+                    && ($decoded['auth_configured'] ?? null) === true
+                    && is_string($decoded['secret'] ?? null)
+                    && preg_match('/\A[A-Za-z0-9_-]{43}\z/', $decoded['secret']) === 1
+                    ? $decoded : null;
+            }
+            if ($operation === 'instance.auth.disable') {
+                return $keys === ['auth_configured', 'success', 'version']
+                    && ($decoded['auth_configured'] ?? null) === false ? $decoded : null;
+            }
             if ($operation === 'provider.exposure') {
                 return $keys === ['exposure', 'success', 'version']
                     && in_array($decoded['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
@@ -359,12 +377,13 @@ final class BrokerClient
         }
         if ($keys !== ['error', 'success', 'version']
             || !in_array($decoded['error'], [
-                'invalid_request', 'not_authorized', 'operation_failed', 'instance_unavailable',
+                'invalid_request', 'not_authorized', 'operation_failed', 'operation_in_progress', 'instance_unavailable',
                 'instance_exists', 'storage_unavailable', 'backend_policy_required', 'backend_unavailable',
                 'provider_policy_denied', 'provider_policy_unavailable',
                 'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
                 'configuration_unavailable', 'configuration_failed', 'configuration_storage_unavailable',
                 'configuration_uncertain',
+                'auth_generation_failed', 'auth_rotation_failed', 'auth_disable_failed', 'auth_recovery_required',
                 'backup_failed', 'backup_invalid', 'backup_in_progress', 'backup_retention_failed',
                 'backup_storage_unavailable',
                 'metrics_history_unavailable',
@@ -388,6 +407,24 @@ final class BrokerClient
             && is_int($config['maxclients']) && $config['maxclients'] >= 10 && $config['maxclients'] <= 100
             && is_int($config['timeout']) && $config['timeout'] >= 0 && $config['timeout'] <= 300
             && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
+    }
+
+    /** @return array{auth_configured:bool,success:true,version:1,error?:string}|null */
+    public function authStatus(): ?array
+    {
+        return $this->request('instance.auth.status');
+    }
+
+    /** @return array{auth_configured:true,secret:string,success:true,version:1,error?:string}|null */
+    public function rotateAuth(): ?array
+    {
+        return $this->request('instance.auth.rotate');
+    }
+
+    /** @return array{auth_configured:false,success:true,version:1,error?:string}|null */
+    public function disableAuth(): ?array
+    {
+        return $this->request('instance.auth.disable');
     }
 
     private static function isBrandHexColor(string $color): bool

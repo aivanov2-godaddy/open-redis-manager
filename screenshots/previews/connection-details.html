@@ -48,13 +48,14 @@
       <div class="row"><h2>Instance status</h2><span class="state"><span class="dot"></span>Running</span></div>
       <section aria-labelledby="connection-title">
         <h2 id="connection-title">Connection details</h2>
-        <p class="sub">Use these values from applications running under this cPanel account.</p>
+        <p class="sub">Use these values from applications running under this cPanel account. The sample shows AUTH disabled.</p>
         <dl>
           <dt>Endpoint</dt><dd>Private Unix socket</dd>
           <dt>Socket path</dt><dd><code>/var/lib/orm-instances/demo/redis.sock</code></dd>
           <dt>Default database</dt><dd>0</dd>
-          <dt>Authentication</dt><dd>Socket permissions; no Redis AUTH password</dd>
+          <dt>Authentication</dt><dd>Disabled · optional per-account password</dd>
         </dl>
+        <div class="notice"><strong>Redis AUTH · Disabled</strong><p>AUTH is off by default. Enable, disable, or rotate it while the cache is running. ORM briefly restarts the service and shows a generated password once after verification. Update your application's protected settings immediately. If the password is lost, rotate it again; disabling AUTH requires applications to remove their password before reconnecting.</p><button class="copy-button" type="button" disabled>Enable AUTH and generate password</button></div>
         <details open>
           <summary>PHP with PhpRedis</summary>
           <div class="copy-actions"><button class="copy-button" type="button" aria-label="Copy PHP with PhpRedis example" data-target="php-example" data-label="PHP with PhpRedis">Copy example</button></div>
@@ -78,7 +79,7 @@ define( 'WP_REDIS_PREFIX', 'replace_with_site_prefix:' );</code></pre>
 Host: /var/lib/orm-instances/demo/redis.sock
 Port: 0
 Redis Database ID: 0
-Password: leave blank (ORM uses socket permissions)</code></pre>
+Password: leave blank while AUTH is disabled</code></pre>
           <p class="sub">Confirm the selected LiteSpeed Cache and PHP versions support Redis over a Unix socket.</p>
         </details>
         <details>
@@ -116,7 +117,7 @@ client = redis.Redis(unix_socket_path='/var/lib/orm-instances/demo/redis.sock', 
 client.ping()</code></pre>
         </details>
         <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
-        <p class="notice">Only processes running as this cPanel account can access the socket. TCP and Redis AUTH are disabled. These helpers only copy settings; they never edit application files. Confirm PHP socket visibility if CageFS or containers are enabled.</p>
+        <p class="notice">Only processes running as this cPanel account can access the socket. TCP is disabled. AUTH does not replace account isolation; same-account applications can access the instance configuration. Helpers only copy settings and never edit application files. Confirm PHP socket visibility if CageFS or containers are enabled.</p>
       </section>
     </section>
     <p class="footer">Preview screenshot uses synthetic demo data; no cPanel or Redis service is connected.</p>

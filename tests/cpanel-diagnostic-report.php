@@ -48,7 +48,7 @@ $metrics = [
     'token' => 'secret-token',
 ];
 
-$report = DiagnosticReport::build($status, $metrics, $timestamp);
+$report = DiagnosticReport::build($status, $metrics, $timestamp, false);
 $assert(array_keys($report) === ['generated_at_utc', 'schema_version', 'instance', 'connection', 'metrics', 'excluded_data'],
     'emit only the fixed top-level report fields');
 $assert($report['generated_at_utc'] === '2025-01-01T00:00:00+00:00', 'format the report timestamp in UTC');
@@ -82,6 +82,17 @@ $encoded = json_encode($report, JSON_THROW_ON_ERROR);
 foreach (['secret-account-name', 'private-host.example', '/private/account', 'secret-password', 'private-redis-key', 'application-payload', 'secret-token'] as $privateValue) {
     $assert(!str_contains($encoded, $privateValue), 'exclude private input value: ' . $privateValue);
 }
+$authReport = DiagnosticReport::build(array_replace($status, [
+    'secret' => 'auth-secret-canary', 'password' => 'auth-password-canary',
+]), $metrics, $timestamp, true);
+$assert($authReport['connection']['redis_auth_configured'] === true,
+    'export only the boolean AUTH state when it is available');
+$authEncoded = json_encode($authReport, JSON_THROW_ON_ERROR);
+$assert(!str_contains($authEncoded, 'auth-secret-canary') && !str_contains($authEncoded, 'auth-password-canary'),
+    'exclude secret and password values from diagnostics even when status input contains them');
+$unknownAuthReport = DiagnosticReport::build($status, $metrics, $timestamp, null);
+$assert($unknownAuthReport['connection']['redis_auth_configured'] === null,
+    'represent an unavailable AUTH status as unknown instead of claiming AUTH is disabled');
 
 $failedStatus = DiagnosticReport::build(['success' => false, 'state' => 'running', 'preset' => 'generic'], null, $timestamp);
 $assert($failedStatus['instance'] === ['state' => 'unavailable', 'preset' => null, 'configuration' => null],

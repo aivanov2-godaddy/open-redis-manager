@@ -1,6 +1,6 @@
 # cPanel user guide
 
-> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention, and a previewable credential-redacted diagnostics report. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Root WHM now offers per-account snapshot listing, creation, and restore; fleet-wide batch actions and credential management remain unimplemented. Disposable-host validation is still required.
+> The standalone prototype renders sample data. The installed cPanel entry point has account-scoped initialization, status, start, stop, live and stale metrics, bounded configuration actions, hourly metric history with 24-hour and 7-day charts, explicit account-scoped RDB snapshot creation/list/download/restore with three-snapshot retention, optional Redis AUTH enable/disable/rotation, and a previewable credential-redacted diagnostics report. Restore creates a validated safety snapshot and verifies the resulting service state, with an automatic rollback attempt if the restored data fails to start. Initialization offers five fixed workload presets. Root WHM offers per-account snapshot listing, creation, and restore; WHM-directed AUTH management and fleet-wide batch actions remain unimplemented. Disposable-host validation is still required.
 
 ## Overview
 
@@ -9,9 +9,13 @@ The account page shows service state, current or retained memory, connection cou
 ## Lifecycle and connection details
 
 - Initialize/start and stop only the authenticated cPanel account's instance. See the [instance lifecycle guide](instance-lifecycle.md).
-- Show the current private Unix socket endpoint and database. This build has TCP disabled and does not configure a Redis AUTH secret.
-- Do not imply a secret exists; future credential handling must reveal or copy only after explicit user action and avoid persisting it in the browser.
+- Show the current private Unix socket endpoint, database, and whether AUTH is configured. TCP remains disabled.
+- AUTH is off by default. An explicit POST generates a password or rotates the current one for a running instance. The generated value is shown once after verification; advise the account owner to update application settings immediately. If the value is lost, rotate it again.
 - Explain that a compatible application client and application configuration are still required.
+
+## Redis AUTH
+
+AUTH is optional and disabled by default. Enable, disable, or rotate it only while the instance is running. ORM briefly restarts the cache and verifies the resulting AUTH state with `PING`. A generated password appears in the successful enable/rotation response only. Copy it immediately into the application's protected configuration; refreshing or resubmitting the action does not reveal an old password. If the value is lost, rotate again. A successful rotation revokes the prior password; disabling AUTH means applications must remove their configured password before reconnecting. AUTH does not isolate code running as the same cPanel account. TCP access remains disabled.
 
 ## Configuration and apps
 

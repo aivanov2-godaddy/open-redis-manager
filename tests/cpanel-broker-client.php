@@ -21,6 +21,52 @@ $client = new BrokerClient(static function (string $request) use (&$requests): s
 $status = $client->request('instance.status');
 $assert($status === ['success' => true, 'state' => 'running', 'version' => 1], 'Parse a valid instance status response.');
 $assert($requests[0] === "{\"operation\":\"instance.status\",\"version\":1}\n", 'Send a canonical operation with no account-supplied identity.');
+$authStatusRequests = [];
+$authStatusClient = new BrokerClient(static function (string $request) use (&$authStatusRequests): string {
+    $authStatusRequests[] = $request;
+    return "{\"auth_configured\":false,\"success\":true,\"version\":1}\n";
+});
+$assert($authStatusClient->authStatus() === [
+    'auth_configured' => false, 'success' => true, 'version' => 1,
+], 'Read a masked boolean AUTH state without returning credential material.');
+$assert($authStatusRequests[0] === "{\"operation\":\"instance.auth.status\",\"version\":1}\n",
+    'AUTH status requests contain no secret or caller-selected account.');
+$authDisableRequests = [];
+$authDisableClient = new BrokerClient(static function (string $request) use (&$authDisableRequests): string {
+    $authDisableRequests[] = $request;
+    return "{\"auth_configured\":false,\"success\":true,\"version\":1}\n";
+});
+$assert($authDisableClient->disableAuth() === [
+    'auth_configured' => false, 'success' => true, 'version' => 1,
+], 'Accept the canonical AUTH disable response without a secret.');
+$assert($authDisableRequests[0] === "{\"operation\":\"instance.auth.disable\",\"version\":1}\n",
+    'Send only the canonical AUTH disable operation.');
+$rotationSecret = str_repeat('A', 43);
+$rotationRequests = [];
+$rotationClient = new BrokerClient(static function (string $request) use (&$rotationRequests, $rotationSecret): string {
+    $rotationRequests[] = $request;
+    return json_encode([
+        'auth_configured' => true, 'secret' => $rotationSecret, 'success' => true, 'version' => 1,
+    ], JSON_THROW_ON_ERROR) . "\n";
+});
+$rotation = $rotationClient->rotateAuth();
+$assert($rotation === [
+    'auth_configured' => true, 'secret' => $rotationSecret, 'success' => true, 'version' => 1,
+], 'Accept a bounded generated credential only from the explicit rotation response.');
+$assert($rotationRequests[0] === "{\"operation\":\"instance.auth.rotate\",\"version\":1}\n"
+    && !str_contains($rotationRequests[0], $rotationSecret), 'Never send plaintext credentials in rotation requests.');
+$badRotation = new BrokerClient(static fn (string $request): string =>
+    "{\"auth_configured\":true,\"secret\":\"bad secret\",\"success\":true,\"version\":1}\n"
+);
+$assert($badRotation->rotateAuth() === null, 'Reject malformed generated credential values.');
+$badDisable = new BrokerClient(static fn (string $request): string =>
+    "{\"auth_configured\":true,\"success\":true,\"version\":1}\n"
+);
+$assert($badDisable->disableAuth() === null, 'Reject a success response that leaves AUTH enabled.');
+$extraAuthStatus = new BrokerClient(static fn (string $request): string =>
+    "{\"auth_configured\":false,\"secret\":\"leaked\",\"success\":true,\"version\":1}\n"
+);
+$assert($extraAuthStatus->authStatus() === null, 'Reject secret fields from the AUTH status response.');
 $exposureRequests = [];
 $exposureClient = new BrokerClient(static function (string $request) use (&$exposureRequests): string {
     $exposureRequests[] = $request;
