@@ -56,6 +56,63 @@ if ($fleetDiagnosticsRequest) {
         ];
     }
 }
+$fleetRecoveryMessage = null;
+$fleetRecoveryResult = null;
+$fleetRecoveryAction = $_POST['orm_action'] ?? null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && in_array($fleetRecoveryAction, ['fleet.recovery.scan', 'fleet.recovery.repair'], true)) {
+    $username = $_POST['username'] ?? null;
+    if (!is_string($username)) {
+        $recovery = null;
+    } elseif ($fleetRecoveryAction === 'fleet.recovery.scan') {
+        $recovery = $fleetClient->scanFleetRecovery($username);
+    } else {
+        $repair = $_POST['repair'] ?? null;
+        $recovery = is_string($repair) ? $fleetClient->repairFleetAccount($username, $repair) : null;
+    }
+    if ($recovery === null) {
+        $fleetRecoveryMessage = ['type' => 'error', 'text' => 'The recovery request could not be verified. Refresh the page and try again.'];
+    } elseif ($recovery['success'] && $fleetRecoveryAction === 'fleet.recovery.scan') {
+        $fleetRecoveryResult = $recovery;
+        $findingMessages = [
+            'health_probe_failed' => 'The service reports running, but fixed health probes could not verify it. No automatic repair is available.',
+            'not_configured' => 'The selected cPanel account does not have an ORM instance.',
+            'service_failed' => 'The service is failed. ORM verified the instance manifest; the fixed Start service repair is available.',
+            'service_healthy' => 'The service is running and passed the fixed read-only health probes.',
+            'service_stopped' => 'The service is stopped. ORM verified the instance manifest; the fixed Start service repair is available.',
+            'service_transitioning' => 'The service is changing state. Wait for it to settle, then scan again.',
+        ];
+        $fleetRecoveryMessage = [
+            'type' => in_array($recovery['finding'], ['service_healthy', 'service_stopped', 'service_failed'], true) ? 'success' : 'error',
+            'text' => 'Recovery scan for ' . $recovery['username'] . ': '
+                . ($findingMessages[$recovery['finding']] ?? 'The scan returned an unknown finding.')
+                . ($recovery['audit_logged'] ? ' The scan was recorded in the system authentication log.'
+                    : ' Warning: the scan completed, but its audit record could not be confirmed.'),
+        ];
+    } elseif ($recovery['success']) {
+        $fleetRecoveryMessage = [
+            'type' => 'success',
+            'text' => 'Start requested for ' . $recovery['username'] . '. Current state: ' . $recovery['state'] . '.'
+                . ($recovery['audit_logged'] ? ' The repair was recorded in the system authentication log.'
+                    : ' Warning: the service may have started, but its audit record could not be confirmed.'),
+        ];
+    } else {
+        $recoveryErrors = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'instance_unavailable' => 'The instance manifest, ownership, or service state could not be verified; no repair was attempted.',
+            'operation_in_progress' => 'Another operation is active for this account. Wait for it to finish, then scan again.',
+            'rate_limited' => 'Wait before sending another recovery request for this account.',
+            'repair_not_applicable' => 'The service is no longer verified as stopped or failed; scan it again before any repair.',
+            'service_failed' => 'The fixed start operation failed. Scan the service again before retrying.',
+        ];
+        $fleetRecoveryMessage = [
+            'type' => 'error',
+            'text' => ($recoveryErrors[$recovery['error'] ?? ''] ?? 'The recovery request was rejected.')
+                . (array_key_exists('audit_logged', $recovery) && !$recovery['audit_logged']
+                    ? ' The result could not be confirmed in the audit log.' : ''),
+        ];
+    }
+}
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
 $fleetMigrationMessage = null;
@@ -373,6 +430,14 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         }
     }
 }
+$fleetPageStateCounts = array_fill_keys(['failed', 'running', 'starting', 'stopped', 'stopping', 'unhealthy'], 0);
+if (is_array($fleetPage)) {
+    foreach ($fleetPage['entries'] as $fleetEntry) {
+        if (isset($fleetPageStateCounts[$fleetEntry['state']])) {
+            ++$fleetPageStateCounts[$fleetEntry['state']];
+        }
+    }
+}
 $resellerSummary = $rootAuthorized ? $fleetClient->request('provider.resellers') : null;
 
 if (!$authorized) {
@@ -383,11 +448,11 @@ WHM::header('Open Redis Manager', 0, 0);
 ?>
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
-  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
-  <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round"/>
-  <path d="M91 105h60M98 128h46M105 151h32M163 128h24" fill="none" stroke="#FFF" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="193" cy="128" r="12" fill="#FFF"/><circle cx="193" cy="128" r="4" fill="#D92D20"/>
+  <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true"><title>Cache orbit</title>
+  <defs><linearGradient id="ormTile" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#ormTile)"/><path d="M178 56 A82 82 0 1 0 205 120" fill="none" stroke="#FFF" stroke-linecap="round" stroke-width="12"/><path d="m207 103 11 25-25-1 14-24Z" fill="#FFF"/>
+  <rect x="83" y="91" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="119.5" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="148" width="90" height="17" rx="8.5" fill="#FFF"/>
+  <circle cx="102" cy="99.5" r="3.5" fill="#D92D20"/><circle cx="102" cy="128" r="3.5" fill="#D92D20"/><circle cx="102" cy="156.5" r="3.5" fill="#D92D20"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>
@@ -409,6 +474,9 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php endif; ?>
       <?php if ($fleetDiagnosticsMessage !== null): ?>
         <p role="<?= $fleetDiagnosticsMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetDiagnosticsMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+      <?php endif; ?>
+      <?php if ($fleetRecoveryMessage !== null): ?>
+        <p role="<?= $fleetRecoveryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetRecoveryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
       <?php if ($fleetDiagnosticsResult !== null): ?>
         <?php $diagnosticLabels = [
@@ -433,7 +501,9 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php if ($fleetPage === null): ?>
         <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
       <?php else: ?>
-        <p><?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> configured or unhealthy ORM accounts.</p>
+        <?php $fleetPageCount = count($fleetPage['entries']); $fleetFirstAccount = $fleetPageCount > 0 ? $fleetOffset + 1 : 0; $fleetLastAccount = $fleetOffset + $fleetPageCount; ?>
+        <p><strong><?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> verified configured ORM accounts in the full inventory. Showing <?= $fleetPageCount > 0 ? $fleetFirstAccount . '–' . $fleetLastAccount : 'no accounts' ?> of <?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
+        <p>State counts for this page only (<?= $fleetPageCount ?> accounts): running <?= $fleetPageStateCounts['running'] ?>, stopped <?= $fleetPageStateCounts['stopped'] ?>, starting <?= $fleetPageStateCounts['starting'] ?>, stopping <?= $fleetPageStateCounts['stopping'] ?>, failed <?= $fleetPageStateCounts['failed'] ?>, unverifiable <?= $fleetPageStateCounts['unhealthy'] ?>. “Unverifiable” means ORM could not confirm the manifest, ownership, or service state.</p>
         <?php if ($fleetPage['total'] > 0): ?>
         <label for="orm-fleet-search">Search this page</label>
         <input id="orm-fleet-search" type="search" autocomplete="off">
@@ -445,17 +515,17 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="stopping">Stopping</option>
           <option value="stopped">Stopped</option>
           <option value="failed">Failed</option>
-          <option value="unhealthy">Unhealthy</option>
+          <option value="unhealthy">Unverifiable</option>
         </select>
         <p>Each row shows snapshots retained for that account. Migration is available for running Redis instances only. Stop all application writers before using it; service connections will be interrupted while the snapshot is validated and the backend is switched.</p>
         <table>
-           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
+           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery scan</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                 <th scope="row"><?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
                 <td><?= htmlspecialchars(ucfirst($entry['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
-                <td><?= htmlspecialchars(ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                <td><?= htmlspecialchars($entry['state'] === 'unhealthy' ? 'Unverifiable' : ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td>
                   <form method="post" class="orm-fleet-actions">
                     <input type="hidden" name="orm_action" value="fleet.control">
@@ -471,6 +541,21 @@ WHM::header('Open Redis Manager', 0, 0);
                     <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                     <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>>Run diagnostics</button>
                   </form>
+                </td>
+                <td>
+                  <form method="post" class="orm-fleet-actions">
+                    <input type="hidden" name="orm_action" value="fleet.recovery.scan">
+                    <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <button type="submit">Read-only scan</button>
+                  </form>
+                  <?php if ($fleetRecoveryResult !== null && $fleetRecoveryResult['username'] === $entry['username'] && ($fleetRecoveryResult['repair'] ?? null) === 'start'): ?>
+                    <form method="post" class="orm-fleet-actions">
+                      <input type="hidden" name="orm_action" value="fleet.recovery.repair">
+                      <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <input type="hidden" name="repair" value="start">
+                      <button type="submit" onclick="return confirm('Start the verified stopped or failed ORM service for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>?')">Start service</button>
+                    </form>
+                  <?php endif; ?>
                 </td>
                 <td>
                   <?php if ($entry['backend'] === 'redis'): ?>

@@ -180,6 +180,118 @@ sub diagnostics {
     return _fleet_failure($error, $username, $action, $audited);
 }
 
+sub recovery_scan {
+    my ($self, $username) = @_;
+    my $action = 'recovery.scan';
+    return _fleet_failure('invalid_request', $username, $action, 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || $account->{name} ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+
+    my $status = eval { $self->{instance_manager}->status($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('status') };
+    if (ref($status) ne 'HASH' || !$status->{success}) {
+        my $audited = _audit_event($self, 0, $username, $action, 'instance_unavailable', 'unavailable');
+        return _fleet_failure('instance_unavailable', $username, $action, $audited);
+    }
+
+    my $state = $status->{state};
+    if (!defined($state) || ref($state)
+        || $state !~ /\A(?:not_configured|stopped|starting|running|stopping|failed)\z/) {
+        my $audited = _audit_event($self, 0, $username, $action, 'instance_unavailable', 'unavailable');
+        return _fleet_failure('instance_unavailable', $username, $action, $audited);
+    }
+    if ($state eq 'not_configured') {
+        my $audited = _audit_event($self, 0, $username, $action, 'success', 'unavailable');
+        return _recovery_scan_response($username, 'not_configured', undef, 'not_configured', $audited);
+    }
+    if ($state eq 'stopped' || $state eq 'failed') {
+        my $finding = $state eq 'stopped' ? 'service_stopped' : 'service_failed';
+        my $audited = _audit_event($self, 0, $username, $action, 'success', $state);
+        return _recovery_scan_response($username, $finding, 'start', $state, $audited);
+    }
+    if ($state eq 'starting' || $state eq 'stopping') {
+        my $audited = _audit_event($self, 0, $username, $action, 'success', $state);
+        return _recovery_scan_response($username, 'service_transitioning', undef, $state, $audited);
+    }
+    if ($state ne 'running') {
+        my $audited = _audit_event($self, 0, $username, $action, 'instance_unavailable', 'unavailable');
+        return _fleet_failure('instance_unavailable', $username, $action, $audited);
+    }
+
+    my $probe = eval { $self->{instance_manager}->recovery_health_check($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('recovery_health_check') };
+    my $healthy = ref($probe) eq 'HASH' && $probe->{success};
+    my $finding = $healthy ? 'service_healthy' : 'health_probe_failed';
+    my $audited = _audit_event($self, 0, $username, $action,
+        $healthy ? 'success' : 'health_probe_failed', 'running');
+    return _recovery_scan_response($username, $finding, undef, 'running', $audited);
+}
+
+sub recovery_repair {
+    my ($self, $username, $repair) = @_;
+    my $action = 'recovery.start';
+    return _fleet_failure('invalid_request', $username, $action, 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/
+        || !defined($repair) || ref($repair) || $repair ne 'start';
+
+    my $scan = $self->recovery_scan($username);
+    if (ref($scan) ne 'HASH' || !$scan->{success}) {
+        my $audited = _audit_event($self, 0, $username, $action, 'scan_failed', 'unavailable');
+        return _fleet_failure('instance_unavailable', $username, $action, $audited);
+    }
+    if (($scan->{repair} // '') ne 'start') {
+        my $audited = _audit_event($self, 0, $username, $action, 'repair_not_applicable', $scan->{state});
+        return _fleet_failure('repair_not_applicable', $username, $action, $audited);
+    }
+
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || $account->{name} ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+    my $result = eval { $self->{instance_manager}->recovery_start_if_stopped($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('recovery_start_if_stopped') };
+    if (ref($result) eq 'HASH' && $result->{success}
+        && defined($result->{state}) && $result->{state} =~ /\A(?:starting|running)\z/) {
+        my $audited = _audit_event($self, 0, $username, $action, 'success', $result->{state});
+        return {
+            action => $action,
+            audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+            state => $result->{state},
+            success => JSON::PP::true,
+            username => $username,
+            version => 1,
+        };
+    }
+    my %allowed_errors = map { $_ => 1 } qw(
+        instance_unavailable not_configured operation_in_progress repair_not_applicable service_failed
+    );
+    my $error = ref($result) eq 'HASH' && defined($result->{error}) && $allowed_errors{$result->{error}}
+        ? $result->{error} : 'instance_unavailable';
+    my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
+    return _fleet_failure($error, $username, $action, $audited);
+}
+
+sub _recovery_scan_response {
+    my ($username, $finding, $repair, $state, $audited) = @_;
+    my $response = {
+        action => 'recovery.scan',
+        audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+        finding => $finding,
+        state => $state,
+        success => JSON::PP::true,
+        username => $username,
+        version => 1,
+    };
+    $response->{repair} = $repair if defined($repair);
+    return $response;
+}
+
 sub migrate {
     my ($self, $username, $target_backend, $writes_quiesced) = @_;
     my $action = 'migration.to-valkey';
@@ -384,7 +496,8 @@ sub _audit_control {
 sub _audit_event {
     my ($self, $peer_uid, $username, $action, $outcome, $state) = @_;
     $peer_uid = 0 if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
-    $state = 'unavailable' if !defined($state) || $state !~ /\A(?:stopped|starting|running|stopping|failed|unavailable)\z/;
+    $state = 'unavailable' if !defined($state) || ref($state)
+        || $state !~ /\A(?:stopped|starting|running|stopping|failed|unavailable)\z/;
     if (ref($self->{audit}) eq 'CODE') {
         my $recorded = eval { $self->{audit}->($peer_uid, $username, $action, $outcome, $state) };
         return $recorded ? 1 : 0;
@@ -405,8 +518,17 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey|diagnostics\.read)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey|diagnostics\.read|recovery\.scan|recovery\.start)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
+}
+
+sub audit_rate_limited {
+    my ($self, $peer_uid, $username, $action) = @_;
+    $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
+    $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+    $action = 'recovery.scan' if !defined($action) || ref($action)
+        || $action !~ /\A(?:recovery\.scan|recovery\.start)\z/;
+    return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 
 sub _valid_diagnostics {

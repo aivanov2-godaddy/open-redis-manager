@@ -4,7 +4,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo redesign](orm-logo.png) | Custom connected OR monogram on a Redis-red tile, shown at full size and interface-icon scale | [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
+| [ORM logo redesign](orm-logo.png) | Three cache records inside a continuous orbit on a Redis-red tile, shown at full size and interface-icon scale | [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel application discovery](cpanel-application-discovery.png) | On-demand app marker results and honest connection preflight | Static sample-data preview; [HTML source](previews/cpanel-application-discovery.html) |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |
@@ -16,7 +16,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [cPanel diagnostics](orm-diagnostics.png) | Allowlisted support JSON preview, explicit download, and privacy exclusions | 1440 × 1100; [HTML preview](previews/cpanel-diagnostics.html) |
 | [cPanel stale monitoring preview](previews/cpanel-monitoring-stale.html) | Stopped service with last-known metrics, stale marker and 30-day retention explanation | HTML preview; image capture pending |
 | [cPanel connection details](cpanel-connection-details.png) | Private socket path, authentication mode, and seven account-specific copyable client/application helpers | 1440 × 2650; [HTML preview](previews/connection-details.html) |
-| [WHM fleet](whm-fleet.png) | Root-only account inventory with service and per-account snapshot controls | 1440 × 1100 |
+| [WHM fleet](whm-fleet.png) | Root-only account inventory, page-scoped health counts, read-only recovery scans and per-account controls | 1440 × 1387; [HTML preview](previews/whm-fleet.html) |
 | [WHM Redis-to-Valkey migration](whm-redis-valkey-migration.png) | Synthetic root WHM row with source/target versions, writer-quiescence acknowledgement and snapshot rollback guidance | 1440 × 1000; [SVG source](previews/whm-redis-valkey-migration.svg) |
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
 | [WHM read-only diagnostics](whm-fleet-diagnostics.png) | Synthetic root-only account row and the validated read-only metrics result with privacy boundary | 1440 × 1100; [SVG preview](previews/whm-fleet-diagnostics.svg) |

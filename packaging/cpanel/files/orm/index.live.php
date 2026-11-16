@@ -318,11 +318,11 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
-      <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
-  <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
-  <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round"/>
-  <path d="M91 105h60M98 128h46M105 151h32M163 128h24" fill="none" stroke="#FFF" stroke-width="10" stroke-linecap="round"/>
-  <circle cx="193" cy="128" r="12" fill="#FFF"/><circle cx="193" cy="128" r="4" fill="#D92D20"/>
+      <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true"><title>Cache orbit</title>
+  <defs><linearGradient id="ormTile" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#ormTile)"/><path d="M178 56 A82 82 0 1 0 205 120" fill="none" stroke="#FFF" stroke-linecap="round" stroke-width="12"/><path d="m207 103 11 25-25-1 14-24Z" fill="#FFF"/>
+  <rect x="83" y="91" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="119.5" width="90" height="17" rx="8.5" fill="#FFF"/><rect x="83" y="148" width="90" height="17" rx="8.5" fill="#FFF"/>
+  <circle cx="102" cy="99.5" r="3.5" fill="#D92D20"/><circle cx="102" cy="128" r="3.5" fill="#D92D20"/><circle cx="102" cy="156.5" r="3.5" fill="#D92D20"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>

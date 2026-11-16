@@ -33,8 +33,10 @@ $assertions = [
         && str_contains($cpanelPage, 'data:image/png;base64,') && str_contains($cpanelPage, '$providerBranding[\'support_url\']')
         && str_contains($cpanelPage, 'footer_visible') && str_contains($cpanelPage, '--orm-primary')
         && str_contains($cpanelPage, '--orm-surface') && str_contains($cpanelPage, '--orm-text')
-        && str_contains($cpanelPage, 'M169 80a66 66 0 1 0 0 96')
-        && str_contains($whmPage, 'M169 80a66 66 0 1 0 0 96')
+        && str_contains($cpanelPage, 'Cache orbit')
+        && str_contains($whmPage, 'Cache orbit')
+        && !str_contains($cpanelPage, 'M169 80a66 66 0 1 0 0 96')
+        && !str_contains($whmPage, 'M169 80a66 66 0 1 0 0 96')
         && !str_contains($cpanelPage, 'M75 205V53h66c35 0 55 18 55 48')
         && !str_contains($whmPage, 'M75 205V53h66c35 0 55 18 55 48'),
     is_string($whmPage) && str_contains($whmPage, "'fleet.migrate'")
@@ -47,6 +49,16 @@ $assertions = [
         && str_contains($whmPage, 'Keys in database 0')
         && str_contains($whmPage, 'Only fixed, read-only Redis/Valkey probes are used')
         && !str_contains($whmPage, "\$_POST['command']"),
+    is_string($whmPage) && str_contains($whmPage, "'fleet.recovery.scan'")
+        && str_contains($whmPage, "'fleet.recovery.repair'")
+        && str_contains($whmPage, 'scanFleetRecovery($username)')
+        && str_contains($whmPage, 'repairFleetAccount($username, $repair)')
+        && str_contains($whmPage, 'Read-only scan') && str_contains($whmPage, 'Start service')
+        && str_contains($whmPage, 'verified configured ORM accounts in the full inventory')
+        && str_contains($whmPage, 'State counts for this page only')
+        && str_contains($whmPage, '<option value="unhealthy">Unverifiable</option>')
+        && str_contains($whmPage, "? 'Unverifiable' : ucfirst(\$entry['state'])")
+        && str_contains($whmPage, 'manifest, ownership, or service state'),
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
         && str_contains($packageMap, 'ProviderPolicy.pm'),
 ];

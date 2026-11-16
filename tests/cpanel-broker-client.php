@@ -407,6 +407,43 @@ $tooLargeDiagnosticClient = new BrokerClient(static fn (string $request): string
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
 $assert($tooLargeDiagnosticClient->diagnoseFleetAccount('demo') === null,
     'Reject diagnostics counters above the shared numeric response boundary.');
+$recoveryRequests = [];
+$recoveryClient = new BrokerClient(static function (string $request) use (&$recoveryRequests): string {
+    $recoveryRequests[] = $request;
+    return "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"service_stopped\",\"repair\":\"start\",\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$recoveryScan = $recoveryClient->scanFleetRecovery('demo');
+$assert($recoveryRequests[0] === "{\"operation\":\"fleet.recovery.scan\",\"username\":\"demo\",\"version\":1}\n"
+    && ($recoveryScan['finding'] ?? null) === 'service_stopped' && ($recoveryScan['repair'] ?? null) === 'start',
+    'Send and parse the exact read-only recovery scan schema.');
+$assert($recoveryClient->scanFleetRecovery('../root') === null && count($recoveryRequests) === 1,
+    'Reject malformed recovery scan targets before broker I/O.');
+$badRecoveryClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"service_stopped\",\"raw_output\":\"private\",\"repair\":\"start\",\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($badRecoveryClient->scanFleetRecovery('demo') === null,
+    'Reject unexpected raw output in recovery scan responses.');
+$repairRequests = [];
+$repairClient = new BrokerClient(static function (string $request) use (&$repairRequests): string {
+    $repairRequests[] = $request;
+    return "{\"action\":\"recovery.start\",\"audit_logged\":true,\"state\":\"starting\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$repairResult = $repairClient->repairFleetAccount('demo', 'start');
+$assert($repairRequests[0] === "{\"repair\":\"start\",\"operation\":\"fleet.recovery.repair\",\"username\":\"demo\",\"version\":1}\n"
+    && ($repairResult['state'] ?? null) === 'starting',
+    'Send only the fixed start recovery repair.');
+$assert($repairClient->repairFleetAccount('demo', 'restart') === null && count($repairRequests) === 1,
+    'Reject recovery actions outside the fixed start repair before broker I/O.');
+$failedRepairClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.start\",\"audit_logged\":true,\"error\":\"operation_in_progress\",\"success\":false,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert(($failedRepairClient->repairFleetAccount('demo', 'start')['error'] ?? null) === 'operation_in_progress',
+    'Parse a safe in-progress recovery result.');
+$removedInstanceRepairClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.start\",\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert(($removedInstanceRepairClient->repairFleetAccount('demo', 'start')['error'] ?? null) === 'not_configured',
+    'Parse a safe result when the instance disappears before the locked repair check.');
 $controlFailure = new BrokerClient(static fn (string $request): string =>
     "{\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"version\":1}\n"
 );

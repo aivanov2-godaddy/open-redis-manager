@@ -291,6 +291,17 @@ sub read_diagnostics {
     };
 }
 
+sub recovery_health_check {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $manifest = $self->_read_manifest($account);
+    return _failure('instance_unavailable') if ref($manifest) ne 'HASH'
+        || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
+    my $response = _run_redis_cli($self, $manifest->{backend}, $manifest->{socket}, 'PING');
+    return _failure('health_probe_failed') if !defined($response) || $response ne "PONG\n";
+    return { success => JSON::PP::true, version => 1 };
+}
+
 sub provision {
     my ($self, $account, $preset) = @_;
     $preset = 'generic' if !defined($preset);
@@ -399,6 +410,26 @@ sub start {
     my $lock = $self->_acquire_instance_lock($account);
     return _failure('operation_in_progress') if !defined($lock);
     my $response = $self->_start_locked($account);
+    close($lock);
+    return $response;
+}
+
+sub recovery_start_if_stopped {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $before = $self->status($account);
+    my $response;
+    if (ref($before) ne 'HASH' || !$before->{success}) {
+        $response = _failure('instance_unavailable');
+    } elsif ($before->{state} eq 'not_configured') {
+        $response = _failure('not_configured');
+    } elsif ($before->{state} ne 'stopped' && $before->{state} ne 'failed') {
+        $response = _failure('repair_not_applicable');
+    } else {
+        $response = $self->_start_locked($account);
+    }
     close($lock);
     return $response;
 }
