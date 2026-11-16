@@ -439,8 +439,10 @@ orm_remove_empty_owned_directories() {
         "$ORM_3RDPARTY/lib/Orm" \
         "$ORM_3RDPARTY/lib" \
         "$ORM_3RDPARTY/bin" \
+        "$ORM_3RDPARTY/src/Orm/Update" \
         "$ORM_3RDPARTY/src/Orm" \
         "$ORM_3RDPARTY/src" \
+        "$ORM_3RDPARTY/packaging" \
         "$ORM_3RDPARTY" \
         "$ORM_CPanel_LIVE"; do
         rmdir -- "$path" 2>/dev/null || true
