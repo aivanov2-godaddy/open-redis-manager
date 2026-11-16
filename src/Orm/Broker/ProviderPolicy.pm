@@ -4,16 +4,29 @@ use warnings;
 use Errno qw(ENOENT);
 use Fcntl qw(O_RDONLY O_NOFOLLOW :mode);
 use JSON::PP ();
+use MIME::Base64 qw(decode_base64 encode_base64);
 use Sys::Syslog qw(:standard :macros);
 
-my $MAX_POLICY_BYTES = 131072;
+my $MAX_POLICY_BYTES = 262144;
+my $MAX_LOGO_BYTES = 32768;
 my $DEFAULT_POLICY = {
-    version => 2,
+    version => 3,
     mode => 'report-only',
     exposure => 'simple',
     default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3 },
     packages => {},
     resellers => {},
+    branding => {
+        product_name => 'Open Redis Manager',
+        logo_png_base64 => '',
+        support_url => '',
+        preset => 'orm',
+        primary_color => '#C92319',
+        secondary_color => '#A91F18',
+        surface_color => '#FFFFFF',
+        text_color => '#172536',
+        footer_visible => JSON::PP::true,
+    },
 };
 
 sub new {
@@ -61,6 +74,13 @@ sub reseller_rules {
     my $policy = $self->_read_policy();
     return undef if ref($policy) ne 'HASH';
     return { map { $_ => { %{$policy->{resellers}->{$_}} } } keys %{$policy->{resellers}} };
+}
+
+sub branding_settings {
+    my ($self) = @_;
+    my $policy = $self->_read_policy();
+    return undef if ref($policy) ne 'HASH' || ref($policy->{branding}) ne 'HASH';
+    return { %{$policy->{branding}} };
 }
 
 sub provision_decision {
@@ -129,7 +149,8 @@ sub _read_policy {
 
     my @path_stat = lstat($path);
     if (!@path_stat) {
-        return { %{$DEFAULT_POLICY}, default => { %{$DEFAULT_POLICY->{default}} }, packages => {}, resellers => {} }
+        return { %{$DEFAULT_POLICY}, default => { %{$DEFAULT_POLICY->{default}} }, packages => {}, resellers => {},
+            branding => { %{$DEFAULT_POLICY->{branding}} } }
             if $! == ENOENT;
         return undef;
     }
@@ -153,14 +174,15 @@ sub _read_policy {
 
 sub _upgrade_policy {
     my ($policy) = @_;
-    return $policy if $policy->{version} == 2;
+    return $policy if $policy->{version} == 3;
     return {
-        version => 2,
-        mode => $policy->{mode} eq 'report-only' ? 'warn' : $policy->{mode},
-        exposure => 'simple',
+        version => 3,
+        mode => $policy->{version} == 1 && $policy->{mode} eq 'report-only' ? 'warn' : $policy->{mode},
+        exposure => $policy->{version} >= 2 ? $policy->{exposure} : 'simple',
         default => $policy->{default},
         packages => $policy->{packages},
-        resellers => {},
+        resellers => $policy->{version} >= 2 ? $policy->{resellers} : {},
+        branding => { %{$DEFAULT_POLICY->{branding}} },
     };
 }
 
@@ -178,6 +200,14 @@ sub _valid_policy {
             || !defined($policy->{exposure}) || ref($policy->{exposure})
             || $policy->{exposure} !~ /\A(?:simple|developer|advanced)\z/
             || ref($policy->{resellers}) ne 'HASH' || scalar(keys %{$policy->{resellers}}) > 1000;
+    } elsif ($policy->{version} == 3) {
+        return 0 if join(',', sort keys %{$policy}) ne 'branding,default,exposure,mode,packages,resellers,version'
+            || !defined($policy->{mode}) || ref($policy->{mode})
+            || $policy->{mode} !~ /\A(?:report-only|warn|enforce)\z/
+            || !defined($policy->{exposure}) || ref($policy->{exposure})
+            || $policy->{exposure} !~ /\A(?:simple|developer|advanced)\z/
+            || ref($policy->{resellers}) ne 'HASH' || scalar(keys %{$policy->{resellers}}) > 1000
+            || !_valid_branding($policy->{branding});
     } else {
         return 0;
     }
@@ -187,13 +217,138 @@ sub _valid_policy {
         return 0 if !defined($name) || $name !~ /\A[a-zA-Z0-9_.-]{1,64}\z/
             || $name eq 'default' || !_valid_limits($policy->{packages}->{$name});
     }
-    if ($policy->{version} == 2) {
+    if ($policy->{version} >= 2) {
         for my $owner (keys %{$policy->{resellers}}) {
             return 0 if !defined($owner) || $owner !~ /\A[a-zA-Z0-9_-]{1,16}\z/
                 || !_valid_reseller_limits($policy->{resellers}->{$owner});
         }
     }
     return 1;
+}
+
+sub _valid_branding {
+    my ($branding) = @_;
+    return 0 if ref($branding) ne 'HASH'
+        || join(',', sort keys %{$branding}) ne 'footer_visible,logo_png_base64,preset,primary_color,product_name,secondary_color,support_url,surface_color,text_color'
+        || !defined($branding->{product_name}) || ref($branding->{product_name})
+        || $branding->{product_name} !~ /\A[A-Za-z0-9][A-Za-z0-9 .&()+\/_-]{0,47}\z/
+        || !defined($branding->{support_url}) || ref($branding->{support_url})
+        || !_valid_support_url($branding->{support_url})
+        || !defined($branding->{preset}) || ref($branding->{preset})
+        || $branding->{preset} !~ /\A(?:custom|orm|underhost|redis|valkey)\z/
+        || !_is_brand_hex_color($branding->{primary_color}) || !_is_brand_hex_color($branding->{secondary_color})
+        || !_is_brand_hex_color($branding->{surface_color}) || !_is_brand_hex_color($branding->{text_color})
+        || !_has_brand_contrast($branding->{primary_color}, '#FFFFFF')
+        || !_has_brand_contrast($branding->{primary_color}, $branding->{surface_color})
+        || !_has_brand_contrast($branding->{secondary_color}, $branding->{surface_color})
+        || !_has_brand_contrast($branding->{text_color}, '#FFFFFF')
+        || !_has_brand_contrast($branding->{text_color}, $branding->{surface_color})
+        || !JSON::PP::is_bool($branding->{footer_visible})
+        || !defined($branding->{logo_png_base64}) || ref($branding->{logo_png_base64});
+    my $logo = $branding->{logo_png_base64};
+    return 1 if $logo eq '';
+    return 0 if length($logo) > int(($MAX_LOGO_BYTES * 4 / 3) + 4)
+        || $logo !~ /\A(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?\z/;
+    my $bytes = decode_base64($logo);
+    return 0 if length($bytes) > $MAX_LOGO_BYTES || encode_base64($bytes, '') ne $logo;
+    return _valid_logo_png($bytes);
+}
+
+sub _valid_logo_png {
+    my ($bytes) = @_;
+    return 0 if length($bytes) < 45 || substr($bytes, 0, 8) ne "\x89PNG\r\n\x1a\n";
+    my $offset = 8;
+    my ($width, $height, $color_type, $seen_header, $seen_palette, $seen_data, $data_bytes) = (0, 0, 0, 0, 0, 0, 0);
+    while ($offset < length($bytes)) {
+        return 0 if length($bytes) - $offset < 12;
+        my $chunk_length = unpack('N', substr($bytes, $offset, 4));
+        my $chunk_type = substr($bytes, $offset + 4, 4);
+        return 0 if $chunk_type !~ /\A[A-Za-z]{4}\z/ || substr($chunk_type, 2, 1) !~ /\A[A-Z]\z/
+            || $chunk_length > $MAX_LOGO_BYTES || $offset + 12 + $chunk_length > length($bytes);
+        my $chunk_data = substr($bytes, $offset + 8, $chunk_length);
+        my $chunk_crc = unpack('N', substr($bytes, $offset + 8 + $chunk_length, 4));
+        return 0 if _png_crc32($chunk_type . $chunk_data) != $chunk_crc;
+        if (!$seen_header) {
+            return 0 if $chunk_type ne 'IHDR' || $chunk_length != 13;
+            ($width, $height) = unpack('N2', substr($chunk_data, 0, 8));
+            my $depth = unpack('C', substr($chunk_data, 8, 1));
+            $color_type = unpack('C', substr($chunk_data, 9, 1));
+            my ($method, $filter, $interlace) = unpack('C3', substr($chunk_data, 10, 3));
+            my %valid_depths = (0 => [1, 2, 4, 8, 16], 2 => [8, 16], 3 => [1, 2, 4, 8], 4 => [8, 16], 6 => [8, 16]);
+            my $valid_depth = exists($valid_depths{$color_type})
+                ? scalar grep { $_ == $depth } @{$valid_depths{$color_type}}
+                : 0;
+            return 0 if $width < 16 || $width > 512 || $height < 16 || $height > 256
+                || !$valid_depth
+                || $method != 0 || $filter != 0 || $interlace > 1;
+            $seen_header = 1;
+        } elsif ($chunk_type eq 'IHDR') {
+            return 0;
+        }
+        if ($chunk_type eq 'PLTE') {
+            return 0 if $seen_palette || $seen_data || $chunk_length == 0 || $chunk_length > 768 || $chunk_length % 3 != 0;
+            $seen_palette = 1;
+        } elsif ($chunk_type eq 'IDAT') {
+            return 0 if $color_type == 3 && !$seen_palette;
+            $seen_data = 1;
+            $data_bytes += $chunk_length;
+        } elsif ($chunk_type eq 'IEND') {
+            return $chunk_length == 0 && $seen_data && $data_bytes > 0 && $offset + 12 == length($bytes);
+        } elsif ($chunk_type =~ /\A[A-Z]/ && $chunk_type ne 'IHDR') {
+            return 0;
+        }
+        $offset += 12 + $chunk_length;
+    }
+    return 0;
+}
+
+sub _png_crc32 {
+    my ($data) = @_;
+    my $crc = 0xffffffff;
+    for my $byte (unpack('C*', $data)) {
+        $crc ^= $byte;
+        for (1 .. 8) {
+            $crc = ($crc >> 1) ^ (($crc & 1) ? 0xedb88320 : 0);
+        }
+    }
+    return ($crc ^ 0xffffffff) & 0xffffffff;
+}
+
+sub _valid_support_url {
+    my ($url) = @_;
+    return 1 if defined($url) && !ref($url) && $url eq '';
+    return 0 if !defined($url) || ref($url) || length($url) > 200
+        || $url !~ m{\Ahttps://[^\s/?#@]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!\$&'()*+,;=:@%/-]*)?\z};
+    my ($authority) = $url =~ m{\Ahttps://([^/]+)};
+    return 0 if !defined($authority);
+    my ($host, $port) = $authority =~ /\A([A-Za-z0-9.-]+)(?::([0-9]{1,5}))?\z/;
+    return 0 if !defined($host) || length($host) > 253;
+    for my $label (split /\./, $host) {
+        return 0 if length($label) < 1 || length($label) > 63
+            || $label !~ /\A[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\z/;
+    }
+    return 0 if defined($port) && ($port < 1 || $port > 65535);
+    return 1;
+}
+
+sub _is_brand_hex_color {
+    my ($color) = @_;
+    return defined($color) && !ref($color) && $color =~ /\A#[A-Fa-f0-9]{6}\z/;
+}
+
+sub _has_brand_contrast {
+    my ($foreground, $background) = @_;
+    return 0 if !_is_brand_hex_color($foreground) || !_is_brand_hex_color($background);
+    my $luminance = sub {
+        my ($color) = @_;
+        my @components = map { hex($_) / 255 } ($color =~ /\A#(..)(..)(..)\z/);
+        my @linear = map { $_ <= 0.04045 ? $_ / 12.92 : (($_ + 0.055) / 1.055) ** 2.4 } @components;
+        return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
+    };
+    my $first = $luminance->($foreground);
+    my $second = $luminance->($background);
+    my ($light, $dark) = $first >= $second ? ($first, $second) : ($second, $first);
+    return ($light + 0.05) / ($dark + 0.05) >= 4.5;
 }
 
 sub _valid_limits {

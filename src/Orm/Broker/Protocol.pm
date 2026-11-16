@@ -49,7 +49,7 @@ sub parse_request {
             version => 1,
         };
     }
-    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop|backup\.create|backup\.list|provider\.exposure|provider\.resellers)","version":1\}\n\z/;
+    return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.metrics|instance\.provision|instance\.start|instance\.stop|backup\.create|backup\.list|provider\.exposure|provider\.branding|provider\.resellers)","version":1\}\n\z/;
 
     my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;
     return undef if !defined($operation);

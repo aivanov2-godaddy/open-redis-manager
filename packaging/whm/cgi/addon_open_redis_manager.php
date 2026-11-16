@@ -165,7 +165,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
     $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
     if ($providerPolicy === null || !in_array($providerAction, [
-        'default', 'save-package', 'remove-package', 'save-reseller', 'remove-reseller',
+        'default', 'save-package', 'remove-package', 'save-reseller', 'remove-reseller', 'save-branding',
     ], true)
         || !in_array($submittedMode, ['report-only', 'warn', 'enforce'], true)
         || ($providerAction === 'default' && !in_array($submittedExposure, ['simple', 'developer', 'advanced'], true))
@@ -222,6 +222,47 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
             } else {
                 unset($updatedProviderPolicy['resellers'][$resellerOwner]);
             }
+        } elseif ($providerAction === 'save-branding') {
+            $logoUpload = $_FILES['branding_logo'] ?? null;
+            $logoUploadError = is_array($logoUpload) ? ($logoUpload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+            $clearLogo = ($_POST['branding_clear_logo'] ?? null) === '1';
+            $branding = $providerPolicy['branding'];
+            $branding['product_name'] = $_POST['branding_product_name'] ?? null;
+            $branding['support_url'] = $_POST['branding_support_url'] ?? null;
+            $branding['preset'] = $_POST['branding_preset'] ?? null;
+            $branding['primary_color'] = $_POST['branding_primary_color'] ?? null;
+            $branding['secondary_color'] = $_POST['branding_secondary_color'] ?? null;
+            $branding['surface_color'] = $_POST['branding_surface_color'] ?? null;
+            $branding['text_color'] = $_POST['branding_text_color'] ?? null;
+            $branding['footer_visible'] = ($_POST['branding_footer_visible'] ?? null) === '1';
+            if ($clearLogo && $logoUploadError !== UPLOAD_ERR_NO_FILE) {
+                $providerPolicyMessage = 'Choose either a new logo or remove the current logo, not both. No changes were saved.';
+            } elseif ($clearLogo) {
+                $branding['logo_png_base64'] = '';
+            } elseif ($logoUploadError !== UPLOAD_ERR_NO_FILE) {
+                $temporaryPath = is_array($logoUpload) && is_string($logoUpload['tmp_name'] ?? null)
+                    ? $logoUpload['tmp_name'] : '';
+                $uploadedSize = is_array($logoUpload) ? ($logoUpload['size'] ?? null) : null;
+                if ($logoUploadError !== UPLOAD_ERR_OK || !is_int($uploadedSize) || $uploadedSize < 1 || $uploadedSize > 32768
+                    || $temporaryPath === '' || !is_uploaded_file($temporaryPath)) {
+                    $providerPolicyMessage = 'The logo upload must be a PNG no larger than 32 KiB. No changes were saved.';
+                } else {
+                    $logoBytes = @file_get_contents($temporaryPath);
+                    if (!is_string($logoBytes) || strlen($logoBytes) !== $uploadedSize || strlen($logoBytes) > 32768) {
+                        $providerPolicyMessage = 'The logo upload could not be read safely. No changes were saved.';
+                    } else {
+                        $branding['logo_png_base64'] = base64_encode($logoBytes);
+                    }
+                }
+            }
+            if ($providerPolicyMessage === null) {
+                $normalizedBranding = \Orm\Backend\ProviderPolicyStore::normalizeBranding($branding);
+                if ($normalizedBranding === null) {
+                    $providerPolicyMessage = 'Check the product name, HTTPS support URL, PNG dimensions, and color contrast. No changes were saved.';
+                } else {
+                    $updatedProviderPolicy['branding'] = $normalizedBranding;
+                }
+            }
         }
 
         if ($providerPolicyMessage === null) {
@@ -229,7 +270,9 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                 $providerPolicy = $providerPolicyStore->load();
                 $providerPolicyMessage = $providerPolicy === null
                     ? 'The policy was written, but could not be re-read safely. Check the root-owned policy file.'
-                    : 'Provider policy saved. Reseller quotas gate new provisions only; existing instances were not rewritten.';
+                    : ($providerAction === 'save-branding'
+                        ? 'Provider branding saved and mirrored to cPanel.'
+                        : 'Provider policy saved. Reseller quotas gate new provisions only; existing instances were not rewritten.');
                 error_log('ORM provider policy changed through root WHM; action=' . $providerAction);
             } else {
                 $providerPolicyMessage = 'The provider policy could not be saved safely. No changes were applied.';
@@ -445,6 +488,125 @@ WHM::header('Open Redis Manager', 0, 0);
           <input id="orm-provider-default-retention" name="default_backup_retention" type="number" min="2" max="3" step="1" required value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
           <button type="submit">Save default policy</button>
         </form>
+        <h3>Provider branding</h3>
+        <p>White-label the cPanel screen with a product name, PNG logo, HTTPS support link, four clearly labelled theme colors, and accessible color palettes. The preview updates as you edit; cPanel receives only these display settings.</p>
+        <form method="post" enctype="multipart/form-data" id="orm-branding-form">
+          <input type="hidden" name="orm_action" value="provider.policy.update">
+          <input type="hidden" name="provider_rule_action" value="save-branding">
+          <input type="hidden" name="provider_mode" value="<?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <input type="hidden" name="default_memory_mib" value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
+          <input type="hidden" name="default_backup_retention" value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+          <?php if ($providerPolicy['default']['enabled']): ?><input type="hidden" name="default_enabled" value="1"><?php endif; ?>
+          <label for="orm-branding-name">Product name</label>
+          <input id="orm-branding-name" name="branding_product_name" type="text" maxlength="48" pattern="[A-Za-z0-9][A-Za-z0-9 .&amp;()+/_-]{0,47}" required value="<?= htmlspecialchars($providerPolicy['branding']['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <label for="orm-branding-support">Support URL (HTTPS)</label>
+          <input id="orm-branding-support" name="branding_support_url" type="url" maxlength="200" placeholder="https://support.example.com/redis" value="<?= htmlspecialchars($providerPolicy['branding']['support_url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <label for="orm-branding-preset">Brand color preset</label>
+          <select id="orm-branding-preset" name="branding_preset">
+            <?php foreach (['custom' => 'Custom', 'underhost' => 'UnderHost-inspired', 'redis' => 'Redis-inspired', 'valkey' => 'Valkey-inspired', 'orm' => 'ORM red'] as $value => $label): ?>
+              <option value="<?= $value ?>"<?= $providerPolicy['branding']['preset'] === $value ? ' selected' : '' ?>><?= $label ?></option>
+            <?php endforeach; ?>
+          </select>
+          <label for="orm-branding-primary">Primary action color</label>
+          <input id="orm-branding-primary" name="branding_primary_color" type="color" required value="<?= htmlspecialchars($providerPolicy['branding']['primary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <label for="orm-branding-secondary">Link color</label>
+          <input id="orm-branding-secondary" name="branding_secondary_color" type="color" required value="<?= htmlspecialchars($providerPolicy['branding']['secondary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <label for="orm-branding-surface">Panel background color</label>
+          <input id="orm-branding-surface" name="branding_surface_color" type="color" required value="<?= htmlspecialchars($providerPolicy['branding']['surface_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <label for="orm-branding-text">Text color</label>
+          <input id="orm-branding-text" name="branding_text_color" type="color" required value="<?= htmlspecialchars($providerPolicy['branding']['text_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+          <p>Each preset changes colors only. Choose your own logo and product name separately. Foreground colors must keep at least 4.5:1 contrast against the panel background; action text must also contrast against white.</p>
+          <label for="orm-branding-logo">Logo (PNG, 16–512 px wide × 16–256 px high, up to 32 KiB)</label>
+          <input id="orm-branding-logo" name="branding_logo" type="file" accept="image/png" aria-describedby="orm-branding-logo-help">
+          <p id="orm-branding-logo-help">SVG and other active image formats are not accepted. A transparent PNG works best.</p>
+          <?php if ($providerPolicy['branding']['logo_png_base64'] !== ''): ?>
+            <label><input type="checkbox" name="branding_clear_logo" value="1"> Remove the current logo</label>
+          <?php endif; ?>
+          <label><input type="checkbox" name="branding_footer_visible" value="1"<?= $providerPolicy['branding']['footer_visible'] ? ' checked' : '' ?>> Show product name and support link in the cPanel footer</label>
+          <div class="orm-branding-preview" id="orm-branding-preview" style="--orm-preview-primary: <?= htmlspecialchars($providerPolicy['branding']['primary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-preview-secondary: <?= htmlspecialchars($providerPolicy['branding']['secondary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-preview-surface: <?= htmlspecialchars($providerPolicy['branding']['surface_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-preview-text: <?= htmlspecialchars($providerPolicy['branding']['text_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+            <div class="orm-branding-preview-title"><img id="orm-branding-preview-logo" alt=""<?= $providerPolicy['branding']['logo_png_base64'] !== '' ? ' src="data:image/png;base64,' . htmlspecialchars($providerPolicy['branding']['logo_png_base64'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '"' : ' hidden' ?>><strong id="orm-branding-preview-name"><?= htmlspecialchars($providerPolicy['branding']['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div>
+            <div class="orm-branding-preview-body"><span>Cache status</span><strong>Online</strong><button type="button" tabindex="-1">Manage cache</button></div>
+            <div class="orm-branding-preview-footer" id="orm-branding-preview-footer"><span id="orm-branding-preview-footer-name"><?= htmlspecialchars($providerPolicy['branding']['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span><a id="orm-branding-preview-support"<?= $providerPolicy['branding']['support_url'] !== '' ? ' href="' . htmlspecialchars($providerPolicy['branding']['support_url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '"' : ' hidden' ?>>Support</a></div>
+          </div>
+          <button type="submit">Save branding</button>
+        </form>
+        <script>
+          (() => {
+            const form = document.getElementById('orm-branding-form');
+            if (!form) return;
+            const name = form.querySelector('#orm-branding-name');
+            const support = form.querySelector('#orm-branding-support');
+            const primary = form.querySelector('#orm-branding-primary');
+            const secondary = form.querySelector('#orm-branding-secondary');
+            const surface = form.querySelector('#orm-branding-surface');
+            const text = form.querySelector('#orm-branding-text');
+            const preset = form.querySelector('#orm-branding-preset');
+            const preview = form.querySelector('#orm-branding-preview');
+            const previewName = form.querySelector('#orm-branding-preview-name');
+            const footerName = form.querySelector('#orm-branding-preview-footer-name');
+            const previewSupport = form.querySelector('#orm-branding-preview-support');
+            const logoInput = form.querySelector('#orm-branding-logo');
+            const previewLogo = form.querySelector('#orm-branding-preview-logo');
+            const refresh = () => {
+              const productName = name.value || 'Open Redis Manager';
+              previewName.textContent = productName;
+              footerName.textContent = productName;
+              preview.style.setProperty('--orm-preview-primary', primary.value);
+              preview.style.setProperty('--orm-preview-secondary', secondary.value);
+              preview.style.setProperty('--orm-preview-surface', surface.value);
+              preview.style.setProperty('--orm-preview-text', text.value);
+              previewSupport.hidden = support.value === '';
+              if (support.value !== '') previewSupport.href = support.value;
+              const footer = form.querySelector('[name="branding_footer_visible"]');
+              form.querySelector('#orm-branding-preview-footer').hidden = !footer.checked;
+            };
+            form.addEventListener('input', refresh);
+            const palettes = {
+              orm: { primary: '#C92319', secondary: '#A91F18', surface: '#FFFFFF', text: '#172536' },
+              underhost: { primary: '#173F55', secondary: '#1E6580', surface: '#F4F8FA', text: '#173042' },
+              redis: { primary: '#C4281F', secondary: '#9F211A', surface: '#FFF9F8', text: '#302625' },
+              valkey: { primary: '#24489D', secondary: '#1D5BA8', surface: '#F5F8FF', text: '#172B45' },
+            };
+            preset.addEventListener('change', () => {
+              const palette = palettes[preset.value];
+              if (palette) {
+                primary.value = palette.primary;
+                secondary.value = palette.secondary;
+                surface.value = palette.surface;
+                text.value = palette.text;
+              }
+              refresh();
+            });
+            [primary, secondary, surface, text].forEach((input) => input.addEventListener('input', () => {
+              preset.value = 'custom';
+              refresh();
+            }));
+            logoInput.addEventListener('change', () => {
+              const file = logoInput.files && logoInput.files[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.addEventListener('load', () => {
+                if (typeof reader.result === 'string' && reader.result.startsWith('data:image/png;base64,')) {
+                  previewLogo.src = reader.result;
+                  previewLogo.hidden = false;
+                }
+              });
+              reader.readAsDataURL(file);
+            });
+            refresh();
+          })();
+        </script>
+        <style>
+          .orm-branding-preview { max-width: 520px; margin: 18px 0; padding: 18px; border: 1px solid #dce3ec; border-radius: 10px; background: var(--orm-preview-surface); color: var(--orm-preview-text); }
+          .orm-branding-preview-title { display: flex; align-items: center; gap: 10px; color: var(--orm-preview-primary); font-size: 20px; }
+          .orm-branding-preview-title img { width: 40px; height: 40px; object-fit: contain; }
+          .orm-branding-preview-body { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 14px; border-radius: 8px; background: var(--orm-preview-surface); color: var(--orm-preview-text); }
+          .orm-branding-preview-body strong { color: #176b3a; }
+          .orm-branding-preview-body button { margin-left: auto; border: 0; border-radius: 6px; padding: 8px 12px; background: var(--orm-preview-primary); color: #fff; }
+          .orm-branding-preview-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 12px 10px; border-radius: 7px; background: var(--orm-preview-surface); color: var(--orm-preview-text); font-size: 12px; }
+          .orm-branding-preview-footer a { color: var(--orm-preview-secondary); }
+          #orm-branding-logo { display: block; margin: 8px 0; }
+        </style>
         <h3>Package-specific rule</h3>
         <p>Use the exact package name from cPanel. A package-specific rule replaces the default values for that package.</p>
         <form method="post">

@@ -4,6 +4,7 @@ use Test::More;
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Fcntl qw(:mode :flock);
+use MIME::Base64 qw(encode_base64);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use lib 'src';
 use Orm::Broker::AccountResolver;
@@ -17,9 +18,9 @@ use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
 
 my $request = '{"operation":"identity","version":1}' . "\n";
 is(parse_request($request)->{operation}, 'identity', 'accept the one canonical identity request');
-for my $operation (qw(instance.status instance.provision instance.start instance.stop provider.exposure provider.resellers)) {
+for my $operation (qw(instance.status instance.provision instance.start instance.stop provider.exposure provider.branding provider.resellers)) {
     my $frame = '{"operation":"' . $operation . '","version":1}' . "\n";
-    is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
+is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
 }
 is(parse_request('{"operation":"instance.metrics","version":1}' . "\n")->{operation},
     'instance.metrics', 'accept the fixed instance metrics request');
@@ -199,18 +200,53 @@ my $reported_only = $provider_policy->provision_decision({%{$policy_account}, pl
 ok($reported_only && $reported_only->{allowed} && @{$reported_only->{violations}} == 2
     && $reported_only->{mode} eq 'warn' && @policy_audit == 4,
     'migrate version-one report-only policy to compatible warnings without blocking package provisioning');
-$enforced_package_policy->{version} = 2;
+$enforced_package_policy->{version} = 3;
 $enforced_package_policy->{mode} = 'enforce';
 $enforced_package_policy->{exposure} = 'developer';
 $enforced_package_policy->{resellers} = {
     reseller1 => { max_instances => 2, max_memory_mib => 64 },
 };
+$enforced_package_policy->{branding} = {
+    product_name => 'Northstar Cache',
+    logo_png_base64 => '',
+    support_url => 'https://support.example.com/redis',
+    preset => 'orm',
+    primary_color => '#C92319',
+    secondary_color => '#A91F18',
+    surface_color => '#FFFFFF',
+    text_color => '#172536',
+    footer_visible => JSON::PP::true,
+};
+open(my $logo_file, '<', 'packaging/whm/icons/orm-whm.png') or die "read branded PNG fixture: $!";
+binmode($logo_file);
+my $logo_bytes = do { local $/; <$logo_file> };
+close($logo_file) or die "close branded PNG fixture: $!";
+$enforced_package_policy->{branding}->{logo_png_base64} = encode_base64($logo_bytes, '');
 $enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 64;
 open($provider_policy_file, '>', $provider_policy_path) or die "write reseller provider policy: $!";
 print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
 close($provider_policy_file) or die "close reseller provider policy: $!";
 chmod(0600, $provider_policy_path) or die "chmod reseller provider policy: $!";
 is($provider_policy->exposure_mode(), 'developer', 'read the validated provider exposure tier');
+is_deeply($provider_policy->branding_settings(), $enforced_package_policy->{branding},
+    'read the validated product branding including a bounded PNG logo');
+ok(Orm::Broker::ProviderPolicy::_valid_branding($enforced_package_policy->{branding}),
+    'validate product branding at the broker policy boundary');
+my $invalid_branding = { %{$enforced_package_policy->{branding}}, primary_color => '#FFFFFF' };
+ok(!Orm::Broker::ProviderPolicy::_valid_branding($invalid_branding),
+    'reject provider colors that do not meet the contrast minimum');
+$invalid_branding = { %{$enforced_package_policy->{branding}}, surface_color => '#111111' };
+ok(!Orm::Broker::ProviderPolicy::_valid_branding($invalid_branding),
+    'reject a surface theme that makes its text unreadable');
+$invalid_branding = { %{$enforced_package_policy->{branding}}, preset => 'unlisted' };
+ok(!Orm::Broker::ProviderPolicy::_valid_branding($invalid_branding),
+    'reject an unknown branding preset identifier');
+$invalid_branding = { %{$enforced_package_policy->{branding}}, logo_png_base64 => encode_base64("\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . pack('N2', 16, 16), '') };
+ok(!Orm::Broker::ProviderPolicy::_valid_branding($invalid_branding),
+    'reject a truncated PNG at the broker policy boundary');
+$invalid_branding = { %{$enforced_package_policy->{branding}}, support_url => 'https://bad..example.com/' };
+ok(!Orm::Broker::ProviderPolicy::_valid_branding($invalid_branding),
+    'reject malformed support hosts in the broker policy');
 is_deeply($provider_policy->reseller_rules(), { reseller1 => { max_instances => 2, max_memory_mib => 64 } },
     'read exact reseller limits for the root WHM summary');
 my $quota_at_boundary = $provider_policy->provision_decision($policy_account, 16,

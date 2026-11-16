@@ -10,6 +10,8 @@ The public marketing, documentation, and update pages of UnderHost's cPanel Redi
 
 All three pages identify the displayed product version as 2.6.11. The marketing page contains twelve unique cPanel/WHM product screenshots with accessible descriptions and covers the dashboard, monitoring, configuration, account management, CLI, backups, recovery, global configuration, security, package controls and branding. The docs page contains sections for installation, requirements, backend behavior, WHM administration, cPanel user functions, CloudLinux, roadmap, release history, and six application connection examples. The update page describes an in-WHM update path and post-update checks.
 
+A direct documentation-page review on 2026-11-16 confirmed that Branding is described as product name, logo, support URL, accent colors, and cPanel propagation (documentation section); the v2.6.7 changelog further describes four-color theming with labelled controls, a live preview, and UnderHost/Redis/Valkey presets with contrast warnings. The source does not specify exact color-role names or preset values. ORM defines roles as action, link, panel background, and text, and uses original color palettes without packaging third-party logo artwork.
+
 ### REA evidence
 
 | Page | Evidence ID | Capture and coverage |

@@ -15,6 +15,20 @@ $brokerVerified = $account !== null
     && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
 $instanceClient = new \Orm\Cpanel\BrokerClient();
 $providerExposureResult = $brokerVerified ? $instanceClient->request('provider.exposure') : null;
+$providerBrandingResult = $brokerVerified ? $instanceClient->request('provider.branding') : null;
+$providerBranding = is_array($providerBrandingResult) && ($providerBrandingResult['success'] ?? false) === true
+    && is_array($providerBrandingResult['branding'] ?? null)
+    ? $providerBrandingResult['branding'] : [
+        'product_name' => 'Open Redis Manager',
+        'logo_png_base64' => '',
+        'support_url' => '',
+        'preset' => 'orm',
+        'primary_color' => '#C92319',
+        'secondary_color' => '#A91F18',
+        'surface_color' => '#FFFFFF',
+        'text_color' => '#172536',
+        'footer_visible' => true,
+    ];
 $exposureLevel = is_array($providerExposureResult) && ($providerExposureResult['success'] ?? false) === true
     && in_array($providerExposureResult['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
     ? $providerExposureResult['exposure'] : 'simple';
@@ -222,14 +236,16 @@ try {
     if (!$brokerVerified) {
         http_response_code(503);
     }
-    print $cpanel->header('Open Redis Manager');
+    print $cpanel->header($providerBranding['product_name']);
     ?>
-    <main class="orm-entry" aria-labelledby="orm-title">
+    <main class="orm-entry" aria-labelledby="orm-title" style="--orm-primary: <?= htmlspecialchars($providerBranding['primary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-secondary: <?= htmlspecialchars($providerBranding['secondary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-surface: <?= htmlspecialchars($providerBranding['surface_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-text: <?= htmlspecialchars($providerBranding['text_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
       <style>
-        .orm-entry { max-width: 980px; margin: 24px auto; padding: 0 16px; color: #172235; }
-        .orm-entry h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; font-size: 28px; }
-        .orm-brand-icon { width: 34px; height: 34px; }
-        .orm-card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
+        .orm-entry { max-width: 980px; margin: 24px auto; padding: 0 16px; color: var(--orm-text); }
+        .orm-entry h1 { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; color: var(--orm-primary); font-size: 28px; }
+        .orm-brand-icon { width: 40px; height: 40px; object-fit: contain; }
+        .orm-entry a { color: var(--orm-secondary); }
+        .orm-brand-footer { margin: 18px 0 0; color: #59677c; font-size: 13px; }
+        .orm-card { padding: 24px; border: 1px solid #dce3ec; border-radius: 12px; background: var(--orm-surface); box-shadow: 0 4px 18px rgb(23 34 53 / 6%); }
         .orm-diagnostics { margin-top: 20px; }
         .orm-diagnostics-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
         .orm-diagnostics-description { max-width: 640px; }
@@ -243,7 +259,7 @@ try {
         .orm-state.is-failed { background: #fde9e9; color: #a42828; }
         .orm-state.is-idle { background: #edf1f6; color: #4f6078; }
         .orm-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; margin: 18px 0 24px; }
-        .orm-metric { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+        .orm-metric { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: var(--orm-surface); }
         .orm-metric-label { display: flex; align-items: center; gap: 8px; color: #59677c; font-size: 13px; }
         .orm-metric-icon { width: 18px; height: 18px; color: #317a9d; }
         .orm-metric-value { display: block; margin-top: 8px; color: #172235; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
@@ -255,12 +271,12 @@ try {
         .orm-history-ranges a { padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 7px; color: #263b57; text-decoration: none; }
         .orm-history-ranges a[aria-current="true"] { border-color: #2855d9; background: #2855d9; color: #fff; }
         .orm-history-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-        .orm-history-chart { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
+        .orm-history-chart { min-width: 0; padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: var(--orm-surface); }
         .orm-history-chart h4 { margin: 0 0 8px; color: #59677c; font-size: 13px; font-weight: 600; }
         .orm-history-chart strong { font-size: 20px; }
         .orm-history-chart svg { display: block; width: 100%; margin-top: 8px; }
         .orm-history-chart span { color: #59677c; font-size: 12px; }
-        .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: #2855d9; color: #fff; font-weight: 700; cursor: pointer; }
+        .orm-entry button { padding: 10px 16px; border: 0; border-radius: 7px; background: var(--orm-primary); color: #fff; font-weight: 700; cursor: pointer; }
         .orm-entry button:disabled { background: #e1e6ee; color: #738096; cursor: not-allowed; }
         .orm-actions { display: flex; gap: 12px; }
         .orm-preset-form, .orm-config-form { max-width: 640px; margin-top: 18px; }
@@ -292,25 +308,18 @@ try {
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
       </style>
-      <h1 id="orm-title"><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
+      <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="26" y1="18" x2="226" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#E94337"/><stop offset=".52" stop-color="#E2362B"/><stop offset="1" stop-color="#C92319"/></linearGradient>
-    <linearGradient id="orm-face" x1="76" y1="74" x2="179" y2="203" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F5F7FB"/></linearGradient>
-    <linearGradient id="orm-channel" x1="83" y1="120" x2="173" y2="184" gradientUnits="userSpaceOnUse"><stop stop-color="#F5A19A"/><stop offset="1" stop-color="#D92D20"/></linearGradient>
+    <linearGradient id="orm-red" x1="28" y1="20" x2="228" y2="240" gradientUnits="userSpaceOnUse"><stop stop-color="#ED493C"/><stop offset="1" stop-color="#C92319"/></linearGradient>
+    <linearGradient id="orm-core" x1="93" y1="91" x2="163" y2="168" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#F1F4F8"/></linearGradient>
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
-  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
-  <path d="M69 165C47 139 59 103 89 78c28-23 66-32 97-21M187 91c23 27 13 61-17 86-27 22-63 33-94 25" fill="none" stroke="#fff" stroke-linecap="round" stroke-opacity=".44" stroke-width="5"/>
-  <circle cx="76" cy="68" r="7" fill="#fff"/><circle cx="184" cy="191" r="7" fill="#fff"/>
-  <path d="m128 54 62 36-62 36-62-36 62-36Z" fill="url(#orm-face)"/>
-  <path d="m128 68 38 22-38 22-38-22 38-22Z" fill="url(#orm-red)"/>
-  <path d="m128 79 19 11-19 11-19-11 19-11Z" fill="#fff" fill-opacity=".95"/><circle cx="128" cy="90" r="4" fill="#D92D20"/>
-  <path d="m66 103 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
-  <path d="m82 127 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
-  <path d="m66 138 62 36 62-36v20l-62 36-62-36v-20Z" fill="url(#orm-face)"/>
-  <path d="m82 162 46 27 46-27v7l-46 27-46-27v-7Z" fill="url(#orm-channel)"/>
-  <path d="M174 71c9 5 16 10 21 17" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5"/><circle cx="197" cy="93" r="5" fill="#fff"/>
-</svg>Open Redis Manager</h1>
+  <rect x="5" y="5" width="246" height="246" rx="65" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width="2"/>
+  <path d="M166 63C154 55 141 51 128 51 85.5 51 51 85.5 51 128s34.5 77 77 77 77-34.5 77-77c0-15-4.3-29-12-40" fill="none" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="166" cy="63" r="7" fill="#fff"/><circle cx="193" cy="88" r="7" fill="#fff"/>
+  <path d="m128 87 41 41-41 41-41-41 41-41Z" fill="url(#orm-core)"/>
+  <path d="m128 104 24 24-24 24-24-24 24-24Z" fill="#C92319"/><circle cx="128" cy="128" r="7" fill="#fff"/>
+</svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
@@ -580,6 +589,12 @@ try {
         <?php endif; ?>
       <?php endif; ?>
     </main>
+    <?php if ($providerBranding['footer_visible']): ?>
+    <footer class="orm-brand-footer" style="--orm-secondary: <?= htmlspecialchars($providerBranding['secondary_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; --orm-surface: <?= htmlspecialchars($providerBranding['surface_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; color: <?= htmlspecialchars($providerBranding['text_color'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>; background: var(--orm-surface)">
+      <span><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
+      <?php if ($providerBranding['support_url'] !== ''): ?> · <a href="<?= htmlspecialchars($providerBranding['support_url'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">Support</a><?php endif; ?>
+    </footer>
+    <?php endif; ?>
     <?php
     print $cpanel->footer();
 } finally {

@@ -161,6 +161,14 @@ my $exposure = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
     $exposure_frame, 0 + $<, $resolver, $manager,
 ));
 is($exposure->{exposure}, 'advanced', 'return only a validated exposure tier to an authenticated cPanel account');
+my $branding_frame = '{"operation":"provider.branding","version":1}' . "\n";
+my $branding = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $branding_frame, 0 + $<, $resolver, $manager,
+));
+is_deeply($branding->{branding}, $provider_policy->branding_settings(),
+    'return validated provider display settings through the authenticated account operation');
+ok(!exists($branding->{resellers}) && !exists($branding->{max_memory_mib}),
+    'keep provider-only quotas and reseller inventory out of cPanel branding responses');
 my $reseller_frame = '{"operation":"provider.resellers","version":1}' . "\n";
 my $root_summary = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
     $reseller_frame, 0, $resolver, $manager,

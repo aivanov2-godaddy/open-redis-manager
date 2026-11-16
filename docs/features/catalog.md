@@ -37,7 +37,7 @@ This catalog records the public product behavior observed on the reference site 
 | Security | Surface authentication failures, credential hygiene and resource-abuse signals; rotate credentials with rollback-safe sequencing. | Security |
 | Abuse reports | Score memory, client, eviction, and operation-rate signals; report findings first, with enforcement as a separate explicit policy. | Security |
 | Authentication protection | Rate-limit repeated authentication failures, audit lockouts without logging secrets, and detect weak or reused credentials without exposing values. | Security |
-| Branding | Configure provider product name, logo, support link and accessible color palette with live preview. | Branding |
+| Branding | Configure provider product name, logo, support link, four labelled theme colors, brand-inspired palettes, footer visibility and a live cPanel preview. | Root WHM stores validated provider branding in the root-owned v3 policy file. The account-scoped broker exposes only display data to cPanel. The four palette roles are primary action, link, panel background, and text; the project-authored ORM, UnderHost-inspired, Redis-inspired, and Valkey-inspired palettes change colors only. |
 | Updates | Check release metadata and expose an administrator-approved update path that preserves existing accounts. | Updates |
 | Audit | Record privileged changes and operation results without secrets; support filtering and export. | Audit |
 | Backend migration | Snapshot, switch one account, verify health and connectivity, then roll back on failure. Require explicit confirmation and show downtime/data semantics. | Migration |

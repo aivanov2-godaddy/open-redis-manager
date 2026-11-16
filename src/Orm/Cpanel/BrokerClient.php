@@ -23,6 +23,7 @@ final class BrokerClient
         'backup.create',
         'backup.restore',
         'provider.exposure',
+        'provider.branding',
         'provider.resellers',
     ];
     private const MEMORY_POLICIES = [
@@ -38,7 +39,7 @@ final class BrokerClient
         }
     }
 
-    /** @return array{success:bool,version:int,state?:string,preset?:string,exposure?:string,resellers?:list<array{owner:string,account_count:int,active_instances:int,memory_mib:int,max_instances:int,max_memory_mib:int}>,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
+    /** @return array{success:bool,version:int,state?:string,preset?:string,exposure?:string,branding?:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool},resellers?:list<array{owner:string,account_count:int,active_instances:int,memory_mib:int,max_instances:int,max_memory_mib:int}>,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
     public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null, ?string $range = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
@@ -115,6 +116,58 @@ final class BrokerClient
                 return $keys === ['exposure', 'success', 'version']
                     && in_array($decoded['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                     ? $decoded : null;
+            }
+            if ($operation === 'provider.branding') {
+                if ($keys !== ['branding', 'success', 'version'] || !is_array($decoded['branding'])) {
+                    return null;
+                }
+                $branding = $decoded['branding'];
+                $brandingKeys = array_keys($branding);
+                sort($brandingKeys);
+                if ($brandingKeys !== ['footer_visible', 'logo_png_base64', 'preset', 'primary_color', 'product_name', 'secondary_color', 'support_url', 'surface_color', 'text_color']
+                    || !is_string($branding['product_name'])
+                    || preg_match('/\A[A-Za-z0-9][A-Za-z0-9 .&()+\/_-]{0,47}\z/', $branding['product_name']) !== 1
+                    || !is_string($branding['support_url']) || !self::validBrandSupportUrl($branding['support_url'])
+                    || !is_string($branding['preset']) || !in_array($branding['preset'], ['custom', 'orm', 'underhost', 'redis', 'valkey'], true)
+                    || !is_string($branding['primary_color']) || !self::isBrandHexColor($branding['primary_color'])
+                    || !is_string($branding['secondary_color']) || !self::isBrandHexColor($branding['secondary_color'])
+                    || !is_string($branding['surface_color']) || !self::isBrandHexColor($branding['surface_color'])
+                    || !is_string($branding['text_color']) || !self::isBrandHexColor($branding['text_color'])
+                    || !self::hasBrandContrast($branding['primary_color'], '#FFFFFF')
+                    || !self::hasBrandContrast($branding['primary_color'], $branding['surface_color'])
+                    || !self::hasBrandContrast($branding['secondary_color'], $branding['surface_color'])
+                    || !self::hasBrandContrast($branding['text_color'], '#FFFFFF')
+                    || !self::hasBrandContrast($branding['text_color'], $branding['surface_color'])
+                    || !is_bool($branding['footer_visible']) || !is_string($branding['logo_png_base64'])) {
+                    return null;
+                }
+                $logo = $branding['logo_png_base64'];
+                if ($logo !== '') {
+                    $bytes = strlen($logo) <= 43700 ? base64_decode($logo, true) : false;
+                    if (!is_string($bytes) || strlen($bytes) > 32768 || base64_encode($bytes) !== $logo) {
+                        return null;
+                    }
+                    $image = getimagesizefromstring($bytes);
+                    if (!is_array($image) || ($image['mime'] ?? null) !== 'image/png'
+                        || $image[0] < 16 || $image[0] > 512 || $image[1] < 16 || $image[1] > 256) {
+                        return null;
+                    }
+                }
+                return [
+                    'branding' => [
+                        'product_name' => $branding['product_name'],
+                        'logo_png_base64' => $logo,
+                        'support_url' => $branding['support_url'],
+                        'preset' => $branding['preset'],
+                        'primary_color' => strtoupper($branding['primary_color']),
+                        'secondary_color' => strtoupper($branding['secondary_color']),
+                        'surface_color' => strtoupper($branding['surface_color']),
+                        'text_color' => strtoupper($branding['text_color']),
+                        'footer_visible' => $branding['footer_visible'],
+                    ],
+                    'success' => true,
+                    'version' => 1,
+                ];
             }
             if ($operation === 'provider.resellers') {
                 if ($keys !== ['resellers', 'success', 'version'] || !is_array($decoded['resellers'])
@@ -334,6 +387,42 @@ final class BrokerClient
             && is_int($config['maxclients']) && $config['maxclients'] >= 10 && $config['maxclients'] <= 100
             && is_int($config['timeout']) && $config['timeout'] >= 0 && $config['timeout'] <= 300
             && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
+    }
+
+    private static function isBrandHexColor(string $color): bool
+    {
+        return preg_match('/\A#[A-Fa-f0-9]{6}\z/', $color) === 1;
+    }
+
+    private static function hasBrandContrast(string $foreground, string $background): bool
+    {
+        $luminance = static function (string $color): float {
+            $components = array_map(static fn (string $part): float => hexdec($part) / 255, str_split(substr($color, 1), 2));
+            $linear = array_map(static fn (float $value): float => $value <= 0.04045 ? $value / 12.92 : (($value + 0.055) / 1.055) ** 2.4, $components);
+            return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
+        };
+        $first = $luminance($foreground);
+        $second = $luminance($background);
+        return (max($first, $second) + 0.05) / (min($first, $second) + 0.05) >= 4.5;
+    }
+
+    private static function validBrandSupportUrl(string $url): bool
+    {
+        if ($url === '') {
+            return true;
+        }
+        if (strlen($url) > 200 || preg_match('~\Ahttps://[^\s/?#@]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._\~!$&\'()*+,;=:@%/-]*)?\z~', $url) !== 1) {
+            return false;
+        }
+        $parts = parse_url($url);
+        $host = is_array($parts) ? ($parts['host'] ?? null) : null;
+        $validHost = is_string($host) && (filter_var($host, FILTER_VALIDATE_IP) !== false
+            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false);
+        return is_array($parts) && strtolower($parts['scheme'] ?? '') === 'https'
+            && $validHost
+            && !isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment'])
+            && filter_var($url, FILTER_VALIDATE_URL) !== false
+            && (!isset($parts['port']) || ($parts['port'] >= 1 && $parts['port'] <= 65535));
     }
 
     private static function validProviderPolicyWarnings(mixed $warnings): bool
