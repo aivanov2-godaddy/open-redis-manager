@@ -63,7 +63,7 @@ Do not advertise any row as supported until a completed, reviewable validation r
 | Redis-to-Valkey migration | Broker tests exercise version gates, validation, success, and rollback with fixtures | Not recorded |
 | WHM recovery | Broker and fleet tests cover read-only scans and the fixed start repair | Not recorded |
 | Missing binaries / bad permissions | Guard and broker tests cover selected preflight and permission failures | Not recorded |
-| Full disk / ENOSPC | No dedicated deterministic ENOSPC injection is recorded | Not recorded |
+| Full disk / ENOSPC | Perl broker test injects ENOSPC after a partial configuration write and checks fail-closed cleanup; this simulates the write error without filling a filesystem | Not recorded |
 | Stale metrics | Broker and PHP tests cover stale sample behavior | Not recorded |
 | Failed rollback | Packaging and broker fixtures cover selected rollback failures | Not recorded on cPanel |
 
