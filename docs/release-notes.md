@@ -1,6 +1,6 @@
 # Unreleased development notes
 
-**Updated:** 2026-11-16
+**Updated:** 2026-11-17
 **Release:** none published; the project is targeting milestone 0.1.0.
 
 These notes distinguish repository implementation from deployment readiness. A feature can exist in the code while remaining experimental for cPanel deployments.
@@ -21,6 +21,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
 - Account-scoped discovery of existing cPanel EA Podman Redis/Valkey sockets with optional PhpRedis PING, safe version reporting, and application connection examples. cPanel retains container lifecycle and data ownership.
 - On-demand fleet status and fresh scheduled-metrics aggregates, plus sequential create/restore batches capped at two visible running accounts with independent audited outcomes.
+- Root-only WHM signed-release preview and apply for manually staged bundles: signature and digest verification, explicit conflict-free confirmation, candidate-bound asynchronous transaction jobs, bounded status, and recovery-required reporting. Existing installs must have an exact v3 manifest; v1/v2 manifest adoption only succeeds for an exact match. Live disposable cPanel validation remains open.
 - Root-only report-only security review for fresh fleet memory/client/hit-ratio aggregates, bounded evicted-key and processed-command counter deltas, optional backend authentication-failure counter deltas, and recent normalized ORM AUTH management outcomes. Counter rates require compatible consecutive samples with uptime continuity and actual intervals no longer than 26 hours; reports show interval bounds and treat gaps, missing fields, and resets as unknown. Backend authentication counters are anonymous aggregate evidence and do not identify clients or establish an attack. Operation and authentication activity is not classified as abuse. Requests are limited to one per minute and report events contain fixed metadata only; credential-strength findings remain unavailable.
 
 ## Experimental
@@ -36,7 +37,7 @@ Live cPanel identity evidence consists of two smoke runs during private testing.
 
 ## Planned
 
-- A general in-panel updater; the identity-v1 compatibility bridge is narrowly scoped.
+- Automatic release discovery/download, a production signing service/key lifecycle, and automated first-time migration of older installations into the v3 updater baseline.
 - Automatic whole-fleet backup/restore/repair batches; current WHM snapshot batches intentionally cover at most two selected accounts per request.
 - Authentication counter availability and counter-reset behavior across supported Redis and Valkey versions, plus disposable-host validation of the report-only evidence.
 - A production-supported cPanel/OS/PHP matrix. No ORM host combination has completed the full validation gate.

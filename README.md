@@ -85,7 +85,7 @@ See the [preset guide](docs/guides/configuration-presets.md), [instance lifecycl
 
 ## Development boundary
 
-Production integration requires a reviewed privileged service layer, cPanel UAPI/WHM ACL integration, supported-OS/package discovery, upgrade support, and end-to-end validation on disposable cPanel systems. See the docs and roadmap before treating any screen as an implemented feature.
+Production integration still requires a supported host matrix and end-to-end validation on disposable cPanel systems. The repository has a reviewed privileged service layer, cPanel/WHM entry points, package discovery, and a root-only signed updater; the updater accepts only manually staged, locally signed releases for an exact v3 install manifest. See the docs and roadmap before treating any screen as production-ready.
 
 ## License
 
