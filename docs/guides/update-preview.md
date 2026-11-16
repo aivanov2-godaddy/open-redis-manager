@@ -6,6 +6,8 @@ The WHM page exposes a root-only **Verify staged release** action. It checks a m
 
 ## Fixed paths
 
+Build the signed bundle with the [offline release signing guide](release-signing.md); keep the private key outside the repository and target server.
+
 The preview uses only these root-owned paths:
 
 | Purpose | Path |

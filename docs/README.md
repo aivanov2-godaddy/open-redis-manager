@@ -22,6 +22,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [WHM signed update preview operations](guides/update-preview.md)
+- [Offline release bundle signing](guides/release-signing.md)
 - [Interrupted update recovery](guides/update-recovery.md)
 - [Provider package policy](guides/provider-package-policy.md)
 - [cPanel user guide](guides/cpanel.md)

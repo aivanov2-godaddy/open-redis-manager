@@ -20,6 +20,8 @@ The check requires an installed ORM cPanel entry point, an active `orm-broker.se
 
 A third live cPanel identity smoke run passed on 2026-11-16. The sanitized environment and scenario results are in [`records/2026-11-16-identity-smoke.md`](records/2026-11-16-identity-smoke.md). The run verified the installed cPanel page's LiveAPI identity check while the broker was active and observed a Redis container managed by cPanel's Podman integration. It did not perform Redis/Valkey operations, and it did not establish which repository revision is installed.
 
+On 2026-11-17, the repository owner supplied a separate PHP 8.5 CLI/PhpRedis smoke result: the test account connected to its EA Podman Redis Unix socket and `PING` returned `1`. The provenance and exact scope are recorded in [`records/2026-11-17-ea-podman-phpredis-smoke.md`](records/2026-11-17-ea-podman-phpredis-smoke.md). This is a user-supplied result, not a run of the repository smoke harness.
+
 This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
 
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
