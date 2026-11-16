@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A white dimensional cache stack framed by an open hexagonal control loop on a red field.</desc>
+  <desc id="orm-desc">A dimensional white cache core connected by orbital paths on ORM red.</desc>
   <defs>
     <linearGradient id="orm-red" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
       <stop stop-color="#E5392D"/>
@@ -9,14 +9,16 @@
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="66" fill="url(#orm-red)"/>
 
-  <!-- Open control loop: a deliberate gap and forward cue distinguish the mark from a plain database stack. -->
-  <path d="M164 49 190 64a13 13 0 0 1 7 12v97a13 13 0 0 1-7 12l-55 31a13 13 0 0 1-13 0l-55-31a13 13 0 0 1-7-12V83a13 13 0 0 1 7-12l25-14" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Two orbital arcs suggest orchestration while keeping the cache core unmistakable. -->
+  <path d="M79 63a83 83 0 0 1 96 7M177 185a83 83 0 0 1-98 7" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="71" cy="69" r="9" fill="#fff"/>
+  <circle cx="185" cy="187" r="9" fill="#fff"/>
 
-  <!-- Three crisp isometric cache planes with red channels for depth. -->
-  <path d="m128 66 40 23-40 23-40-23 40-23Z" fill="#fff"/>
-  <path d="m128 77 21 12-21 12-21-12 21-12Z" fill="#D92D20"/>
-  <path d="m88 104 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/>
-  <path d="m99 126 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
-  <path d="m88 144 40 23 40-23v18l-40 23-40-23v-18Z" fill="#fff"/>
-  <path d="m99 166 29 17 29-17v7l-29 17-29-17v-7Z" fill="#D92D20"/>
+  <!-- A crisp three-plane cache prism, built from distinct top and side faces. -->
+  <path d="m128 59 43 25-43 25-43-25 43-25Z" fill="#fff"/>
+  <path d="m128 71 22 13-22 13-22-13 22-13Z" fill="#D92D20"/>
+  <path d="m85 101 43 25 43-25v22l-43 25-43-25v-22Z" fill="#fff"/>
+  <path d="m98 129 30 18 30-18v8l-30 18-30-18v-8Z" fill="#D92D20"/>
+  <path d="m85 151 43 25 43-25v22l-43 25-43-25v-22Z" fill="#fff"/>
+  <path d="m98 179 30 18 30-18v7l-30 18-30-18v-7Z" fill="#D92D20"/>
 </svg>
