@@ -148,10 +148,14 @@ transaction_started=1
 if [[ -f "$ORM_BROKER_UNIT" ]]; then
     stop_status=0
     "$ORM_SYSTEMCTL" disable --now orm-broker.service || stop_status=$?
-    if ! orm_broker_state_matches_initial; then broker_stopped=1; fi
+    stopped_enabled="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    stopped_active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    if [[ "$stopped_enabled" != "${ORM_BROKER_ENABLED_BEFORE:-}" \
+        || ( "$stopped_active" != "${ORM_BROKER_ACTIVE_BEFORE:-}" ) ]]; then broker_stopped=1; fi
     [[ "$stop_status" -eq 0 ]] || exit "$stop_status"
     broker_stopped=1
-    if ! orm_broker_state_matches_initial; then orm_die 'could not stop the broker; no package files were removed.'; fi
+    [[ "$stopped_enabled" == disabled && ( "$stopped_active" == inactive || "$stopped_active" == failed ) ]] \
+        || orm_die 'could not stop and disable the broker; no package files were removed.'
 fi
 
 if orm_instances_exist; then
