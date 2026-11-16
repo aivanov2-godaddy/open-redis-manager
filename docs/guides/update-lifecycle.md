@@ -16,6 +16,8 @@ The bridge serializes install lifecycle operations, snapshots package files, pre
 
 Fresh installs and successful identity-v1 bridge upgrades write install manifest schema v2, including the package's strict semantic version and the existing per-file mode and SHA-256 records. The validator continues to accept schema v1 manifests, but those manifests have no reliable recorded product version. This is version inventory groundwork only; signed release verification, migration planning, and general updates are not implemented yet.
 
+The repository now has an isolated release-metadata verifier that checks a detached RSA/SHA-256 signature against a root-owned pinned key, strict metadata fields, release expiry, installed-version compatibility, downgrade rejection, and the artifact size and SHA-256. It uses OpenSSL and GNU `date`, both of which must be preflighted on supported hosts. The verifier is not yet called by an updater or install lifecycle, no production trust key or signing workflow exists, and archive contents are not yet validated by this verifier. Do not use it as a production update path.
+
 cPanel documents `install_plugin` as the supported way to register a plugin and `uninstall_plugin` as the supported way to remove that registration; the ORM bridge uses both for a reversible replacement ([cPanel plugin installation guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins), [`install_plugin` reference](https://docs.cpanel.net/whm/scripts/the-install_plugin-script/), [cPanel plugin uninstall guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-uninstall-plugins)).
 
 ## Required ORM update design
