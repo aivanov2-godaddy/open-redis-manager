@@ -1,4 +1,4 @@
-# Installation and compatibility plan
+# Installation and compatibility
 
 ## Prototype
 
@@ -10,22 +10,13 @@ php -S 127.0.0.1:8080
 
 This does not install a cPanel plugin, create a Redis service, or expose WHM controls.
 
-## Production installation requirements (planned)
+## Current installer stage
 
-A production installer must be designed and reviewed for a supported cPanel/WHM release and OS matrix before it is published. Expected work includes:
+The repository contains cPanel and WHM entry points, a manual development installer, explicit WHM backend selection, root-only report-only/warn/enforce package and reseller policy, Simple/Developer/Advanced cPanel exposure, and account-scoped provisioning/lifecycle through a root broker and systemd template. The broker derives the account, package and reseller OWNER from trusted account metadata; reseller usage is counted from trusted managed-instance manifests, including stopped instances. Exposure changes page visibility without changing broker authorization. The installer is not a production installer. Lifecycle and quota behavior remain unvalidated across a supported disposable cPanel host matrix. Use only on a disposable cPanel & WHM server.
 
-1. Verify the operator is root and detect cPanel/WHM, operating system, package manager, PHP stack and required disk/memory headroom.
-2. Detect installed Redis and Valkey packages, binaries, services and existing account instances without changing them.
-3. Install the plugin files and register cPanel/WHM entry points with least privilege.
-4. Create a root-owned service boundary for privileged operations; account UI requests must never call shell commands directly.
-5. Persist account metadata and migrations with a tested backup and rollback path.
-6. Validate plugin visibility, account isolation, service health and update compatibility before reporting success.
+## Backend selection and migration
 
-The repo now contains cPanel and WHM entry points, a manual development installer, explicit WHM backend selection, root-only report-only/warn/enforce package and reseller policy, Simple/Developer/Advanced cPanel exposure, and account-scoped provisioning/lifecycle through a root broker and systemd template. The broker derives the account, package and reseller OWNER from trusted account metadata; reseller usage is counted from trusted managed-instance manifests, including stopped instances. Exposure changes page visibility without changing broker authorization. The lifecycle and quota behavior remain unvalidated on a supported disposable cPanel host matrix. Use only on a disposable cPanel & WHM server.
-
-## Backend selection plan
-
-The implementation will have a Redis-compatible backend interface for discovery, lifecycle, configuration, metrics, snapshots and migration. New installation defaults may use host capabilities and administrator policy. Upgrades preserve the existing backend and account data. Redis-to-Valkey migration is always per account, snapshot-backed and explicitly initiated.
+The broker has a Redis-compatible backend interface for discovery, lifecycle, configuration, metrics, snapshots and migration. New installation defaults may use host capabilities and administrator policy. The current upgrade bridge only supports the exact identity-v1 installation manifest; it is not a general updater. Redis-to-Valkey migration is per account, snapshot-backed and explicitly initiated, and remains experimental until live validation passes.
 
 ## Runtime compatibility checklist
 
@@ -35,3 +26,5 @@ The implementation will have a Redis-compatible backend interface for discovery,
 - CloudLinux PHP Selector and CageFS behavior documented and validated when present.
 - Resource ceilings account for total system memory, not only per-instance values.
 - Uninstall removes project-owned files and registrations while preserving user data unless the administrator explicitly chooses otherwise.
+
+See the [vendor host-install and ORM validation matrix](validation/compatibility-matrix.md), [unreleased release notes](release-notes.md), and [live cPanel smoke test](validation/cpanel-smoke.md). cPanel vendor eligibility is separate from ORM support; no production-supported ORM host matrix has been established.

@@ -5,6 +5,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 ## Product and reference
 
 - [Product overview](overview.md)
+- [Unreleased release notes](release-notes.md)
 - [Feature catalog](features/catalog.md)
 - [Reference website content map](features/website-content-map.md)
 - [Screenshot map](features/screenshot-map.md)
@@ -16,6 +17,8 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 ## Operator guides
 
 - [Live cPanel smoke test](validation/cpanel-smoke.md)
+- [Host compatibility and validation matrix](validation/compatibility-matrix.md)
+- [Disposable-host validation record template](validation/record-template.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [Provider package policy](guides/provider-package-policy.md)

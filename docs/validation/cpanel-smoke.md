@@ -22,4 +22,6 @@ A live cPanel test passed: the root-run broker was active, the cPanel account UI
 
 This evidence does not verify provisioning, lifecycle controls, metrics, configuration, backups, or a supported production matrix. Those remain release gates.
 
+See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
+
 The test uses cPanel's documented [`create_user_session` single-sign-on flow](https://api.docs.cpanel.net/guides/guide-to-api-authentication/guide-to-api-authentication-single-sign-on).

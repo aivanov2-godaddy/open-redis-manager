@@ -12,6 +12,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 - cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker; WHM diagnostics run fixed read-only probes and return validated metrics only. Lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
+- Current implementation maturity, cPanel vendor host eligibility, ORM validation coverage, and a secret-free disposable-host record template are documented in [`docs/release-notes.md`](docs/release-notes.md) and the [host validation matrix](docs/validation/compatibility-matrix.md).
 - The custom ORM monogram is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
 - Root WHM can manage package and reseller provisioning/memory ceilings, choose report-only/warn/enforce behavior, and set Simple/Developer/Advanced cPanel exposure. Existing instances are grandfathered when policy changes.
 - Root WHM can migrate one running ORM-managed Redis 6.2–7.2 account to Valkey 7.2+, after acknowledging that application writers are paused. ORM snapshots, validates and attempts rollback; [migration limits and recovery](docs/guides/redis-valkey-migration.md) explain the remaining live validation gate.

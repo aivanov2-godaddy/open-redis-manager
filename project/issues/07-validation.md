@@ -14,3 +14,4 @@ Validate privileged behaviors on supported, disposable cPanel systems before pro
 ## Progress
 
 - Added a redacted Gitleaks workflow for pull requests and pushes, with no public comments or uploaded scan artifacts. A custom rule rejects committed SSH destination strings. This strengthens source-control hygiene but does not replace disposable-host runtime validation.
+- Added a dated vendor host-install matrix that explicitly separates cPanel eligibility from ORM validation, identifies PHP runtime boundaries, and marks ORM host combinations unvalidated. Added a sanitized disposable-host evidence template and release-note status labels. No new live lifecycle or compatibility evidence is claimed; see [`docs/validation/compatibility-matrix.md`](../../docs/validation/compatibility-matrix.md).
