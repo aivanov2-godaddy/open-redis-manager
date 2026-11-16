@@ -30,6 +30,11 @@ final class WhmAuditEventWriter
             . ($success ? 'success' : 'failure') . ' state=' . $backend);
     }
 
+    public static function securityReportGenerated(): bool
+    {
+        return self::write('security_report actor_uid=0 account=global action=security.report result=success state=generated');
+    }
+
     private static function write(string $message): bool
     {
         if (!function_exists('openlog') || !function_exists('syslog') || !function_exists('closelog')

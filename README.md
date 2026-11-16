@@ -16,6 +16,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages di
 - The custom ORM cache mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
 - Root WHM can manage package and reseller provisioning/memory ceilings, choose report-only/warn/enforce behavior, and set Simple/Developer/Advanced cPanel exposure. Existing instances are grandfathered when policy changes.
 - Root WHM can migrate one running ORM-managed Redis 6.2–7.2 account to Valkey 7.2+, after acknowledging that application writers are paused. ORM snapshots, validates and attempts rollback; [migration limits and recovery](docs/guides/redis-valkey-migration.md) explain the remaining live validation gate.
+- Root WHM can generate a one-minute-rate-limited, report-only security review from current fleet memory/client/hit-ratio snapshots and normalized AUTH management events. Eviction/operation-rate data, Redis login attempts, and password-strength checks remain explicitly unavailable.
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
 - An implementation roadmap and GitHub issue drafts in [`project/`](project/).
 
