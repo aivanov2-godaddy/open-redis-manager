@@ -75,7 +75,7 @@ write_metadata() {
         install_map="$test_root/orm-$version/packaging/release-install-map.txt"
         awk -F'|' -v target="$retired_target" '$3 != target' "$install_map" >"$install_map.tmp"
         mv -- "$install_map.tmp" "$install_map"
-        [[ "$(wc -l <"$install_map")" -eq 43 ]] \
+        [[ "$(wc -l <"$install_map")" -eq "$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 1))" ]] \
             || { printf 'retirement fixture did not remove exactly one candidate target.\n' >&2; exit 1; }
         tar -czf "$artifact" -C "$test_root" "orm-${version}"
     fi
@@ -165,13 +165,14 @@ expected_artifact="$(awk -F'|' '$1 == "artifact" { print $2 }' "$metadata")"
 expected_channel="$(awk -F'|' '$1 == "channel" { print $2 }' "$metadata")"
 expected_created_at="$(awk -F'|' '$1 == "created_at" { print $2 }' "$metadata")"
 expected_expires_at="$(awk -F'|' '$1 == "expires_at" { print $2 }' "$metadata")"
+expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 4))"
 after_preview="$(target_snapshot)"
 [[ "$before_preview" == "$after_preview" && -f "$retired_path" ]] \
     || { printf 'release preview changed an installed fixture.\n' >&2; exit 1; }
 printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     local $/;
     my ($expected_digest, $expected_size, $expected_channel, $expected_artifact,
-        $expected_created_at, $expected_expires_at, $expected_target, $expected_observed_digest) = @ARGV;
+        $expected_created_at, $expected_expires_at, $expected_target, $expected_observed_digest, $expected_add) = @ARGV;
     my $preview = decode_json(<STDIN>);
     exit 1 unless $preview->{schema} eq "orm-update-preview-v2";
     exit 1 unless $preview->{installedVersion} eq "0.1.0-dev";
@@ -190,7 +191,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     exit 1 unless $preview->{release}{minimumFromVersion} eq "0.1.0-dev";
     exit 1 unless $preview->{release}{maximumFromVersion} eq "0.1.0-dev";
     exit 1 unless ref($preview->{migrationActions}) eq "ARRAY" && !$preview->{migrationPlanAvailable};
-    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 40;
+    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == $expected_add;
     exit 1 unless $preview->{summary}{conflict} == 2 && $preview->{summary}{retire} == 1;
     exit 1 unless grep { $_->{key} eq "cpanel_entry" && $_->{action} eq "replace" } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "whm_cgi" && $_->{action} eq "conflict" && $_->{requiresReview} } @{$preview->{fileActions}};
@@ -203,7 +204,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "obsolete_module" && $_->{action} eq "retire" && $_->{requiresReview} } @{$preview->{fileActions}};
 ' "$expected_artifact_digest" "$expected_artifact_size" "$expected_channel" "$expected_artifact" \
-    "$expected_created_at" "$expected_expires_at" "$third_target" "$third_observed_digest" \
+    "$expected_created_at" "$expected_expires_at" "$third_target" "$third_observed_digest" "$expected_add" \
     || { printf 'release preview JSON did not report correct read-only target actions.\n' >&2; exit 1; }
 
 for legacy_schema in v1 v2; do

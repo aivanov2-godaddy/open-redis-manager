@@ -65,6 +65,8 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderPolicy.pm
         /usr/local/cpanel/3rdparty/orm/VERSION
         /usr/local/cpanel/3rdparty/orm/packaging/preview-release.sh
+        /usr/local/cpanel/3rdparty/orm/packaging/apply-release.sh
+        /usr/local/cpanel/3rdparty/orm/bin/orm-update-worker.pl
         /usr/local/cpanel/3rdparty/orm/packaging/lib.sh
         /usr/local/cpanel/3rdparty/orm/packaging/release-lib.sh
         /usr/local/cpanel/3rdparty/orm/packaging/inspect-release-archive.pl
@@ -72,6 +74,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/packaging/release-install-map.txt
         /usr/local/cpanel/3rdparty/orm/packaging/release-required-files.txt
         /usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php
+        /usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleaseApplyJob.php
         /var/cpanel/apps/open_redis_manager.conf
     );
     return exists $allowed{$path};

@@ -118,6 +118,8 @@ orm_package_file_map() {
         broker_provider_policy "$ORM_REPO_ROOT/src/Orm/Broker/ProviderPolicy.pm" "$ORM_BROKER_LIB/ProviderPolicy.pm" 644 \
         release_version "$ORM_REPO_ROOT/VERSION" "$ORM_3RDPARTY/VERSION" 644 \
         release_preview "$ORM_PACKAGE_ROOT/preview-release.sh" "$ORM_3RDPARTY/packaging/preview-release.sh" 755 \
+        release_apply "$ORM_PACKAGE_ROOT/apply-release.sh" "$ORM_3RDPARTY/packaging/apply-release.sh" 755 \
+        release_worker "$ORM_REPO_ROOT/bin/orm-update-worker.pl" "$ORM_3RDPARTY/bin/orm-update-worker.pl" 755 \
         release_package_lib "$ORM_PACKAGE_ROOT/lib.sh" "$ORM_3RDPARTY/packaging/lib.sh" 644 \
         release_verification_lib "$ORM_PACKAGE_ROOT/release-lib.sh" "$ORM_3RDPARTY/packaging/release-lib.sh" 644 \
         release_archive_inspector "$ORM_PACKAGE_ROOT/inspect-release-archive.pl" "$ORM_3RDPARTY/packaging/inspect-release-archive.pl" 644 \
@@ -125,6 +127,7 @@ orm_package_file_map() {
         release_install_map "$ORM_PACKAGE_ROOT/release-install-map.txt" "$ORM_3RDPARTY/packaging/release-install-map.txt" 644 \
         release_required_files "$ORM_PACKAGE_ROOT/release-required-files.txt" "$ORM_3RDPARTY/packaging/release-required-files.txt" 644 \
         release_preview_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleasePreview.php" "$ORM_3RDPARTY/src/Orm/Update/ReleasePreview.php" 644 \
+        release_apply_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleaseApplyJob.php" "$ORM_3RDPARTY/src/Orm/Update/ReleaseApplyJob.php" 644 \
         whm_appconfig "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" 600
 }
 

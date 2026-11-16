@@ -42,7 +42,16 @@
     th, td { padding: 10px 14px; border-top: 1px solid #e7ebef; }
     th { color: #536273; font-weight: 650; }
     td code { color: #3c4e60; }
-    .buttonrow { margin-top: 18px; display: flex; align-items: center; gap: 13px; }
+    .buttonrow { margin-top: 18px; display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+    .confirm { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 14px 0 0; border-top: 1px solid #e5eaf0; font-size: 14px; }
+    .confirm input { width: 17px; height: 17px; accent-color: #236b9a; }
+    .job { margin-top: 18px; padding: 16px 18px; border: 1px solid #c6d8ef; border-radius: 8px; background: #f5f9ff; }
+    .job h3 { margin: 0 0 10px; }
+    .jobrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #42546a; font-size: 13px; }
+    .jobstate { padding: 5px 9px; border-radius: 99px; color: #245d84; background: #e2f0fc; font-size: 12px; font-weight: 700; }
+    .job form { display: flex; align-items: end; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
+    .job label { display: grid; gap: 5px; color: #617184; font-size: 12px; }
+    .job input { width: 300px; max-width: 100%; padding: 9px 10px; border: 1px solid #cbd5df; border-radius: 6px; font: 12px "Cascadia Code", Consolas, monospace; }
     button { padding: 10px 15px; border: 0; border-radius: 6px; color: white; background: #236b9a; font: inherit; font-weight: 650; }
     .quiet { color: #617184; font-size: 12px; }
     .footnote { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #e5eaf0; color: #657588; font-size: 12px; line-height: 1.5; }
@@ -58,7 +67,7 @@
     <section class="card" aria-labelledby="preview-title">
       <div class="card-head"><h2 id="preview-title">Signed update preview</h2><span class="tag">Root only</span></div>
       <div class="content">
-        <p class="lead">Review the verified release identity and exact ORM-managed files before deciding how to proceed. This preview does not apply the update.</p>
+        <p class="lead">Review the verified release identity and exact ORM-managed files. Applying requires a separate explicit confirmation and runs through the asynchronous transactional updater.</p>
         <div class="notice"><span class="check" aria-hidden="true">✓</span><div><strong>Signature and compatibility verified</strong>No files were changed. This is example data for the interface preview.</div></div>
         <dl class="release">
           <div><dt>Installed version</dt><dd>0.1.0-dev</dd></div>
@@ -81,8 +90,21 @@
             </tbody>
           </table></div>
         </details>
-        <div class="buttonrow"><button type="button">Verify staged release</button><span class="quiet">Verification only · no automatic download or installation</span></div>
-        <p class="footnote">The live preview reads fixed root-owned paths under <code>/var/cpanel/orm/updates/staged/</code> and <code>/etc/orm/release-keys/</code>. Browser form fields cannot choose paths or commands.</p>
+        <form class="confirm">
+          <input type="checkbox" checked aria-label="Confirm reviewed release">
+          <span>I reviewed this signed release and confirm the update.</span>
+          <button type="button">Queue signed update</button>
+        </form>
+        <div class="job" aria-label="Update job status">
+          <h3>Update job status</h3>
+          <div class="jobrow"><span>Job <code>7f4ac2d51d3b8a694ee2a0c9f16b230d</code></span><span class="jobstate">Queued</span><span>Candidate <strong>0.2.0</strong></span></div>
+          <form>
+            <label>Update job ID<input value="7f4ac2d51d3b8a694ee2a0c9f16b230d" readonly></label>
+            <button type="button">Check update status</button>
+          </form>
+        </div>
+        <div class="buttonrow"><button type="button">Verify staged release</button><span class="quiet">Root-staged signed bundle · no automatic download</span></div>
+        <p class="footnote">The server repeats signature and compatibility checks before queuing. The worker rechecks the candidate version and artifact digest under the lifecycle lock. Raw process output is not returned to WHM.</p>
       </div>
     </section>
   </main>
