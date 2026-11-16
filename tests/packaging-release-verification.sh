@@ -35,6 +35,7 @@ future_day="$(date -u -d '+1 day' '+%Y-%m-%dT%H:%M:%SZ')"
 future_expiry="$(date -u -d '+30 days' '+%Y-%m-%dT%H:%M:%SZ')"
 past_day="$(date -u -d '-2 days' '+%Y-%m-%dT%H:%M:%SZ')"
 past_expiry="$(date -u -d '-1 day' '+%Y-%m-%dT%H:%M:%SZ')"
+retired_target="$(awk -F'|' '$1 == "broker_provider_policy" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 
 [[ "$(orm_semver_compare '1.2.3-alpha.2' '1.2.3-alpha.10')" == -1 \
     && "$(orm_semver_compare '1.2.3-rc.1' '1.2.3')" == -1 \
@@ -67,8 +68,17 @@ write_artifact() {
 write_metadata() {
     local version="${1:-0.2.0}" minimum="${2:-0.1.0-dev}" maximum="${3:-0.1.0-dev}"
     local created="${4:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}" expires="${5:-$future_expiry}" key_id="${6:-test-release}"
+    local retired_target="${7:-}" install_map
     local size digest
     write_artifact "$version"
+    if [[ -n "$retired_target" ]]; then
+        install_map="$test_root/orm-$version/packaging/release-install-map.txt"
+        awk -F'|' -v target="$retired_target" '$3 != target' "$install_map" >"$install_map.tmp"
+        mv -- "$install_map.tmp" "$install_map"
+        [[ "$(wc -l <"$install_map")" -eq 34 ]] \
+            || { printf 'retirement fixture did not remove exactly one candidate target.\n' >&2; exit 1; }
+        tar -czf "$artifact" -C "$test_root" "orm-${version}"
+    fi
     size="$(stat -c '%s' -- "$artifact")"
     digest="$(sha256sum -- "$artifact" | awk '{print $1}')"
     {
@@ -88,7 +98,7 @@ expect_invalid() {
     fi
 }
 
-write_metadata
+write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release "$retired_target"
 [[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
 
@@ -113,7 +123,6 @@ printf 'installed file before local edit\n' >"$third_path"
 chmod "$third_mode" "$third_path"
 third_digest="$(sha256sum -- "$third_path" | awk '{print $1}')"
 retired_key='obsolete_module'
-retired_target='/usr/local/cpanel/3rdparty/orm/obsolete/module.php'
 retired_path="$target_root$retired_target"
 mkdir -p "$(dirname -- "$retired_path")"
 printf 'previously managed file\n' >"$retired_path"
@@ -181,7 +190,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     exit 1 unless $preview->{release}{minimumFromVersion} eq "0.1.0-dev";
     exit 1 unless $preview->{release}{maximumFromVersion} eq "0.1.0-dev";
     exit 1 unless ref($preview->{migrationActions}) eq "ARRAY" && !$preview->{migrationPlanAvailable};
-    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 32;
+    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 31;
     exit 1 unless $preview->{summary}{conflict} == 2 && $preview->{summary}{retire} == 1;
     exit 1 unless grep { $_->{key} eq "cpanel_entry" && $_->{action} eq "replace" } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "whm_cgi" && $_->{action} eq "conflict" && $_->{requiresReview} } @{$preview->{fileActions}};
