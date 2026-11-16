@@ -1,33 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A white isometric cache stack and control dial on a red rounded square.</desc>
+  <desc id="orm-desc">A white, faceted cache prism with integrated control channels on a red rounded square.</desc>
   <defs>
-    <linearGradient id="tile" x1="28" y1="18" x2="228" y2="240" gradientUnits="userSpaceOnUse">
+    <linearGradient id="tile" x1="32" y1="22" x2="224" y2="238" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F04438"/>
       <stop offset="1" stop-color="#C81E18"/>
     </linearGradient>
-    <linearGradient id="face" x1="67" y1="77" x2="185" y2="190" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#FFF1EF"/>
-    </linearGradient>
   </defs>
 
-  <rect x="4" y="4" width="248" height="248" rx="70" fill="url(#tile)"/>
-  <rect x="25" y="25" width="206" height="206" rx="55" fill="none" stroke="#FFFFFF" stroke-opacity=".15" stroke-width="3"/>
+  <rect x="4" y="4" width="248" height="248" rx="68" fill="url(#tile)"/>
 
-  <!-- Three isometric cache tiers form a single, ownable stack silhouette. -->
-  <path d="m126 47 67 35-67 36-67-36 67-35Z" fill="url(#face)"/>
-  <path d="m79 86 47 25 47-25" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
-  <path d="M60 91v27l66 35 66-35V91" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
-  <path d="m61 116 65 35 65-35M61 139l65 35 65-35" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
-  <path d="M61 139v22l65 35 65-35v-22" fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"/>
-  <path d="m79 115 9 5m-9 19 9 5m-9 19 9 5" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-width="6"/>
+  <!-- One continuous, faceted cache mark replaces the separate stack and settings badge. -->
+  <path d="m128 42 70 38v83l-70 49-70-49V80l70-38Z" fill="#fff"/>
+  <path d="m128 57 49 27-49 27-49-27 49-27Z" fill="#D92D20"/>
 
-  <!-- The control dial makes the manager role visible without shrinking the stack. -->
-  <circle cx="187" cy="184" r="33" fill="#B91C16" fill-opacity=".32"/>
-  <circle cx="184" cy="181" r="29" fill="#FFFFFF"/>
-  <path d="M174 173h20m-20 8h20m-20 8h20" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-width="4"/>
-  <circle cx="181" cy="173" r="3.5" fill="#FFFFFF" stroke="#D92D20" stroke-width="2.5"/>
-  <circle cx="189" cy="181" r="3.5" fill="#FFFFFF" stroke="#D92D20" stroke-width="2.5"/>
-  <circle cx="178" cy="189" r="3.5" fill="#FFFFFF" stroke="#D92D20" stroke-width="2.5"/>
+  <!-- Three cache channels meet at the central spine. -->
+  <path d="m58 105 70 39 70-39v18l-70 39-70-39v-18Z" fill="#D92D20"/>
+  <path d="m58 139 70 39 70-39v18l-70 39-70-39v-18Z" fill="#D92D20"/>
+
+  <!-- Compact sliders sit inside the top face as an integrated management cue. -->
+  <path d="M105 81h43m-36 8h36m-43 8h43" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
+  <circle cx="119" cy="81" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
+  <circle cx="139" cy="89" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
+  <circle cx="124" cy="97" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
 </svg>
