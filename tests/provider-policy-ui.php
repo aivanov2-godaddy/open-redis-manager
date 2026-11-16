@@ -33,7 +33,8 @@ $assertions = [
         && str_contains($cpanelPage, 'data:image/png;base64,') && str_contains($cpanelPage, '$providerBranding[\'support_url\']')
         && str_contains($cpanelPage, 'footer_visible') && str_contains($cpanelPage, '--orm-primary')
         && str_contains($cpanelPage, '--orm-surface') && str_contains($cpanelPage, '--orm-text')
-        && str_contains($cpanelPage, 'M166 63C154 55 141 51') && !str_contains($cpanelPage, 'M150 58H103'),
+        && str_contains($cpanelPage, 'M128 55 187 86v73') && str_contains($cpanelPage, 'm128 73 29 15')
+        && !str_contains($cpanelPage, 'M166 63C154 55 141 51'),
     is_string($packageMap) && str_contains($packageMap, 'ProviderPolicyStore.php')
         && str_contains($packageMap, 'ProviderPolicy.pm'),
 ];
