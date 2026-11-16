@@ -23,6 +23,7 @@ Step-by-step connection examples are collected in the [application guides](guide
 | cPanel UAPI | Account-safe user operations | Planned account-scoped API adapter |
 | WHM API | Privileged administration | Planned WHM ACL-protected adapter |
 | Hosting package and reseller policy | Package eligibility, memory/retention ceilings, reseller quotas, user exposure | Root WHM can set package availability, memory ceilings, snapshot retention, per-OWNER instance and aggregate-memory quotas, policy mode, and cPanel exposure. |
+| Provider branding | Product name, PNG logo, HTTPS support link, four-color palettes and presets, footer visibility | Root WHM validates and previews branding; cPanel receives only those display fields through the account-authenticated broker. |
 | WHMCS | Billing lifecycle events | Future, optional adapter; must remain decoupled from core |
 | Provider hook events | Billing/automation reactions | Future signed, replay-safe event interface |
 

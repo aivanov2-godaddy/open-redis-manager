@@ -7,7 +7,8 @@ namespace Orm\Backend;
 final class ProviderPolicyStore
 {
     private const PATH = '/etc/orm-provider-policy.json';
-    private const MAX_BYTES = 131072;
+    private const MAX_BYTES = 262144;
+    private const MAX_LOGO_BYTES = 32768;
 
     public function __construct(
         private readonly string $path = self::PATH,
@@ -15,7 +16,7 @@ final class ProviderPolicyStore
     ) {
     }
 
-    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>}|null */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>,branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}}|null */
     public function load(): ?array
     {
         if (!$this->authorized()) {
@@ -105,16 +106,17 @@ final class ProviderPolicyStore
         }
     }
 
-    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array{},resellers:array{}} */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int},packages:array{},resellers:array{},branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}} */
     public static function defaults(): array
     {
         return [
-            'version' => 2,
+            'version' => 3,
             'mode' => 'report-only',
             'exposure' => 'simple',
             'default' => ['enabled' => true, 'max_memory_mib' => 64, 'backup_retention' => 3],
             'packages' => [],
             'resellers' => [],
+            'branding' => self::defaultBranding(),
         ];
     }
 
@@ -126,11 +128,17 @@ final class ProviderPolicyStore
         }
         $keys = array_keys($policy);
         sort($keys);
-        if (!in_array($policy['version'] ?? null, [1, 2], true)
+        if (!in_array($policy['version'] ?? null, [1, 2, 3], true)
             || ($policy['version'] === 1 && $keys !== ['default', 'mode', 'packages', 'version'])
             || ($policy['version'] === 2 && $keys !== ['default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
+            || ($policy['version'] === 3 && $keys !== ['branding', 'default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
             || ($policy['version'] === 1 && !in_array($policy['mode'] ?? null, ['report-only', 'enforce'], true))
             || ($policy['version'] === 2 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
+                || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
+                || !is_array($policy['resellers'] ?? null)
+                || array_is_list($policy['resellers']) && $policy['resellers'] !== []
+                || count($policy['resellers']) > 1000))
+            || ($policy['version'] === 3 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                 || !is_array($policy['resellers'] ?? null)
                 || array_is_list($policy['resellers']) && $policy['resellers'] !== []
@@ -157,7 +165,7 @@ final class ProviderPolicyStore
         }
         ksort($packages, SORT_STRING);
         $resellers = [];
-        if ($policy['version'] === 2) {
+        if ($policy['version'] >= 2) {
             foreach ($policy['resellers'] as $owner => $limits) {
                 if (!is_string($owner) || preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $owner) !== 1
                     || !is_array($limits) || array_is_list($limits)) {
@@ -177,14 +185,125 @@ final class ProviderPolicyStore
             }
         }
         ksort($resellers, SORT_STRING);
+        $branding = self::normalizeBranding($policy['version'] === 3 ? ($policy['branding'] ?? null) : self::defaultBranding());
+        if ($branding === null) {
+            return null;
+        }
         return [
-            'version' => 2,
+            'version' => 3,
             'mode' => $policy['version'] === 1 && $policy['mode'] === 'report-only' ? 'warn' : $policy['mode'],
-            'exposure' => $policy['version'] === 2 ? $policy['exposure'] : 'simple',
+            'exposure' => $policy['version'] >= 2 ? $policy['exposure'] : 'simple',
             'default' => $default,
             'packages' => $packages,
             'resellers' => $resellers,
+            'branding' => $branding,
         ];
+    }
+
+    /** @return array{product_name:string,logo_png_base64:string,support_url:string,primary_color:string,secondary_color:string,footer_visible:bool} */
+    public static function defaultBranding(): array
+    {
+        return [
+            'product_name' => 'Open Redis Manager',
+            'logo_png_base64' => '',
+            'support_url' => '',
+            'preset' => 'orm',
+            'primary_color' => '#C92319',
+            'secondary_color' => '#A91F18',
+            'surface_color' => '#FFFFFF',
+            'text_color' => '#172536',
+            'footer_visible' => true,
+        ];
+    }
+
+    /** @param mixed $branding @return array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}|null */
+    public static function normalizeBranding(mixed $branding): ?array
+    {
+        if (!is_array($branding) || array_is_list($branding)) {
+            return null;
+        }
+        $keys = array_keys($branding);
+        sort($keys);
+        if ($keys !== ['footer_visible', 'logo_png_base64', 'preset', 'primary_color', 'product_name', 'secondary_color', 'support_url', 'surface_color', 'text_color']
+            || !is_string($branding['product_name'])
+            || preg_match('/\\A[A-Za-z0-9][A-Za-z0-9 .&()+\\/_-]{0,47}\\z/', $branding['product_name']) !== 1
+            || !is_string($branding['support_url']) || !self::validSupportUrl($branding['support_url'])
+            || !is_string($branding['preset']) || !in_array($branding['preset'], ['custom', 'orm', 'underhost', 'redis', 'valkey'], true)
+            || !is_string($branding['primary_color']) || !self::isBrandHexColor($branding['primary_color'])
+            || !is_string($branding['secondary_color']) || !self::isBrandHexColor($branding['secondary_color'])
+            || !is_string($branding['surface_color']) || !self::isBrandHexColor($branding['surface_color'])
+            || !is_string($branding['text_color']) || !self::isBrandHexColor($branding['text_color'])
+            || !self::hasContrast($branding['primary_color'], '#FFFFFF')
+            || !self::hasContrast($branding['primary_color'], $branding['surface_color'])
+            || !self::hasContrast($branding['secondary_color'], $branding['surface_color'])
+            || !self::hasContrast($branding['text_color'], '#FFFFFF')
+            || !self::hasContrast($branding['text_color'], $branding['surface_color'])
+            || !is_bool($branding['footer_visible']) || !is_string($branding['logo_png_base64'])) {
+            return null;
+        }
+        $logo = $branding['logo_png_base64'];
+        if ($logo !== '') {
+            if (strlen($logo) > (int) ceil(self::MAX_LOGO_BYTES * 4 / 3) + 4
+                || preg_match('/\\A(?:[A-Za-z0-9+\\/]{4})*(?:[A-Za-z0-9+\\/]{2}==|[A-Za-z0-9+\\/]{3}=)?\\z/', $logo) !== 1) {
+                return null;
+            }
+            $bytes = base64_decode($logo, true);
+            if (!is_string($bytes) || strlen($bytes) > self::MAX_LOGO_BYTES || base64_encode($bytes) !== $logo) {
+                return null;
+            }
+            $image = getimagesizefromstring($bytes);
+            if (!is_array($image) || ($image['mime'] ?? null) !== 'image/png'
+                || $image[0] < 16 || $image[0] > 512 || $image[1] < 16 || $image[1] > 256) {
+                return null;
+            }
+        }
+        return [
+            'product_name' => $branding['product_name'],
+            'logo_png_base64' => $logo,
+            'support_url' => $branding['support_url'],
+            'preset' => $branding['preset'],
+            'primary_color' => strtoupper($branding['primary_color']),
+            'secondary_color' => strtoupper($branding['secondary_color']),
+            'surface_color' => strtoupper($branding['surface_color']),
+            'text_color' => strtoupper($branding['text_color']),
+            'footer_visible' => $branding['footer_visible'],
+        ];
+    }
+
+    private static function validSupportUrl(string $url): bool
+    {
+        if ($url === '') {
+            return true;
+        }
+        if (strlen($url) > 200 || preg_match('~\\Ahttps://[^\\s/?#@]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._\~!$&\'()*+,;=:@%/-]*)?\\z~', $url) !== 1) {
+            return false;
+        }
+        $parts = parse_url($url);
+        $host = is_array($parts) ? ($parts['host'] ?? null) : null;
+        $validHost = is_string($host) && (filter_var($host, FILTER_VALIDATE_IP) !== false
+            || filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false);
+        return is_array($parts) && strtolower($parts['scheme'] ?? '') === 'https'
+            && $validHost
+            && !isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment'])
+            && filter_var($url, FILTER_VALIDATE_URL) !== false
+            && (!isset($parts['port']) || ($parts['port'] >= 1 && $parts['port'] <= 65535));
+    }
+
+    private static function isBrandHexColor(string $color): bool
+    {
+        return preg_match('/\\A#[A-Fa-f0-9]{6}\\z/', $color) === 1;
+    }
+
+    private static function hasContrast(string $foreground, string $background): bool
+    {
+        $luminance = static function (string $color): float {
+            $components = array_map(static fn (string $part): float => hexdec($part) / 255, str_split(substr($color, 1), 2));
+            $linear = array_map(static fn (float $value): float => $value <= 0.04045 ? $value / 12.92 : (($value + 0.055) / 1.055) ** 2.4, $components);
+            return 0.2126 * $linear[0] + 0.7152 * $linear[1] + 0.0722 * $linear[2];
+        };
+        $first = $luminance($foreground);
+        $second = $luminance($background);
+        return (max($first, $second) + 0.05) / (min($first, $second) + 0.05) >= 4.5;
     }
 
     /** @param mixed $limits */

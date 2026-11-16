@@ -91,6 +91,7 @@ sub dispatch {
     return $self->metrics($account) if $operation eq 'instance.metrics';
     return $self->metrics_history($account, $metrics_range) if $operation eq 'metrics.history';
     return $self->provider_exposure() if $operation eq 'provider.exposure';
+    return $self->provider_branding() if $operation eq 'provider.branding';
     return $self->backups($account) if $operation eq 'backup.list';
     return $self->create_backup($account) if $operation eq 'backup.create';
     return $self->restore_backup($account, $backup_id) if $operation eq 'backup.restore';
@@ -106,6 +107,13 @@ sub provider_exposure {
     my $exposure = $self->{provider_policy}->exposure_mode();
     return _failure('provider_policy_unavailable') if !defined($exposure);
     return { exposure => $exposure, success => JSON::PP::true, version => 1 };
+}
+
+sub provider_branding {
+    my ($self) = @_;
+    my $branding = $self->{provider_policy}->branding_settings();
+    return _failure('provider_policy_unavailable') if ref($branding) ne 'HASH';
+    return { branding => $branding, success => JSON::PP::true, version => 1 };
 }
 
 sub reseller_summary {

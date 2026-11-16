@@ -15,6 +15,8 @@ REA used a provider-owned Chromium process for controlled browser replays of the
 | Documentation | Installation and removal, Redis/Valkey backend handling, CloudLinux/PHP runtime layers, WHM and cPanel functions, presets and tuning, roadmap, release chronology, licensing notes, and WordPress/Laravel/Magento/PHP/Node.js/Python examples. | [Feature catalog](features/catalog.md), [operator guides](README.md#operator-guides), [integrations](integrations.md) |
 | Update page | WHM in-panel update workflow, stated preservation of instances/account configuration, version verification checklist, current public version 2.6.11, and planned 2.7.x observability/debugging themes. | [Source notes](source-notes.md), [feature catalog](features/catalog.md) |
 
+A direct read of the current public documentation on 2026-11-16 also confirmed the v2.6.7 branding claims: four labelled theme colors, live preview, and UnderHost/Redis/Valkey color presets with contrast warnings. The reference does not specify the color roles or exact preset values; ORM's four roles and color values are original design choices recorded in [source notes](source-notes.md).
+
 The gallery's screenshot images and vendor brand assets are referenced only as evidence; they are not redistributed in this repository. ORM uses its own interface and icon assets. The reference site's icon presentation is chiefly a repeated Redis icon in feature badges plus Redis/Valkey logos; it is not treated as a reusable icon library.
 
 ## Evidence records

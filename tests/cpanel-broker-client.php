@@ -35,6 +35,48 @@ $badExposure = new BrokerClient(static fn (string $request): string =>
     "{\"exposure\":\"secret\",\"success\":true,\"version\":1}\n"
 );
 $assert($badExposure->request('provider.exposure') === null, 'Reject an unknown exposure enum.');
+$branding = [
+    'product_name' => 'Northstar Cache',
+    'logo_png_base64' => base64_encode(file_get_contents(dirname(__DIR__) . '/packaging/whm/icons/orm-whm.png')),
+    'support_url' => 'https://support.example.com/redis',
+    'preset' => 'orm',
+    'primary_color' => '#C92319',
+    'secondary_color' => '#A91F18',
+    'surface_color' => '#FFFFFF',
+    'text_color' => '#172536',
+    'footer_visible' => true,
+];
+$brandingRequests = [];
+$brandingClient = new BrokerClient(static function (string $request) use (&$brandingRequests, $branding): string {
+    $brandingRequests[] = $request;
+    return json_encode(['branding' => $branding, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n";
+});
+$assert($brandingClient->request('provider.branding') === [
+    'branding' => $branding, 'success' => true, 'version' => 1,
+], 'Accept validated provider branding fields and a bounded PNG.');
+$brokenBranding = $branding;
+$brokenBranding['logo_png_base64'] = base64_encode("\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . pack('N2', 16, 16));
+$brokenBrandingClient = new BrokerClient(static fn (string $request): string =>
+    json_encode(['branding' => $brokenBranding, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n"
+);
+$assert($brokenBrandingClient->request('provider.branding') === null,
+    'Reject truncated PNG data from the broker response.');
+$assert($brandingRequests[0] === "{\"operation\":\"provider.branding\",\"version\":1}\n",
+    'Branding queries contain no account or reseller identity.');
+$badBranding = $branding;
+$badBranding['primary_color'] = '#FFFFFF';
+$badBrandingClient = new BrokerClient(static fn (string $request): string =>
+    json_encode(['branding' => $badBranding, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n"
+);
+$assert($badBrandingClient->request('provider.branding') === null,
+    'Reject provider branding whose color fails contrast validation.');
+$badBranding['primary_color'] = '#C92319';
+$badBranding['logo_png_base64'] = base64_encode('<svg xmlns="http://www.w3.org/2000/svg"/>');
+$unsafeLogoBrandingClient = new BrokerClient(static fn (string $request): string =>
+    json_encode(['branding' => $badBranding, 'success' => true, 'version' => 1], JSON_THROW_ON_ERROR) . "\n"
+);
+$assert($unsafeLogoBrandingClient->request('provider.branding') === null,
+    'Reject active SVG data from the broker branding response.');
 $summaryRow = [
     'owner' => 'reseller1', 'account_count' => 2, 'active_instances' => 1, 'memory_mib' => 48,
     'max_instances' => 5, 'max_memory_mib' => 128,

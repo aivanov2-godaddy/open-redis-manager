@@ -148,6 +148,7 @@ sub run {
                     : $request->{operation} eq 'fleet.list' ? 'fleet.list'
                     : $request->{operation} eq 'provider.resellers' ? 'provider.resellers'
                     : $request->{operation} eq 'provider.exposure' ? 'provider.exposure'
+                    : $request->{operation} eq 'provider.branding' ? 'provider.branding'
                     : $request->{operation} =~ /\Afleet\.backup\./
                         ? 'fleet.backup:' . $request->{username}
                         : $rate_window;

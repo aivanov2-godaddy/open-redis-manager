@@ -21,7 +21,7 @@ if (!mkdir($root, 0700)) {
 $path = $root . '/provider-policy.json';
 $owner = function_exists('posix_geteuid') ? posix_geteuid() : null;
 $assert(ProviderPolicyStore::normalize(ProviderPolicyStore::defaults()) === ProviderPolicyStore::defaults(),
-    'Accept the version-two report-only default policy shape.');
+    'Accept the version-three report-only default policy shape.');
 $legacyPolicy = [
     'version' => 1,
     'mode' => 'report-only',
@@ -31,7 +31,49 @@ $legacyPolicy = [
 $legacyExpected = ProviderPolicyStore::defaults();
 $legacyExpected['mode'] = 'warn';
 $assert(ProviderPolicyStore::normalize($legacyPolicy) === $legacyExpected,
-    'Migrate a version-one report-only policy to compatibility warnings with simple exposure and unlimited reseller quotas.');
+    'Migrate a version-one report-only policy to compatibility warnings with default branding and simple exposure.');
+$logoBytes = file_get_contents(dirname(__DIR__) . '/packaging/whm/icons/orm-whm.png');
+$assert(is_string($logoBytes) && strlen($logoBytes) <= 32768, 'Use a bounded PNG logo fixture.');
+$validBranding = ProviderPolicyStore::defaultBranding();
+$validBranding['product_name'] = 'Northstar Cache';
+$validBranding['support_url'] = 'https://support.example.com/redis';
+$validBranding['logo_png_base64'] = base64_encode($logoBytes);
+$assert(ProviderPolicyStore::normalizeBranding($validBranding) === $validBranding,
+    'Accept a bounded PNG, HTTPS support URL, product name, preset, and four accessible colors.');
+$truncatedBranding = $validBranding;
+$truncatedBranding['logo_png_base64'] = base64_encode("\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . pack('N2', 16, 16));
+$assert(ProviderPolicyStore::normalizeBranding($truncatedBranding) === null,
+    'Reject a truncated PNG that contains only a signature and partial header.');
+$lowContrast = $validBranding;
+$lowContrast['primary_color'] = '#FFFFFF';
+$assert(ProviderPolicyStore::normalizeBranding($lowContrast) === null,
+    'Reject colors that fail the 4.5:1 contrast minimum against white.');
+$lowContrast = $validBranding;
+$lowContrast['surface_color'] = '#111111';
+$assert(ProviderPolicyStore::normalizeBranding($lowContrast) === null,
+    'Reject a surface color that makes the configured text unreadable.');
+$badPreset = $validBranding;
+$badPreset['preset'] = 'unlisted';
+$assert(ProviderPolicyStore::normalizeBranding($badPreset) === null,
+    'Reject unknown brand preset names.');
+$unsafeSupport = $validBranding;
+$unsafeSupport['support_url'] = 'javascript:alert(1)';
+$assert(ProviderPolicyStore::normalizeBranding($unsafeSupport) === null,
+    'Reject non-HTTPS support URLs.');
+$unsafeSupport['support_url'] = 'https://user:pass@example.com/';
+$assert(ProviderPolicyStore::normalizeBranding($unsafeSupport) === null,
+    'Reject support URLs containing user information.');
+$unsafeSupport['support_url'] = 'https://bad..example.com/';
+$assert(ProviderPolicyStore::normalizeBranding($unsafeSupport) === null,
+    'Reject support URLs with malformed host labels.');
+$unsafeName = $validBranding;
+$unsafeName['product_name'] = '<script>alert(1)</script>';
+$assert(ProviderPolicyStore::normalizeBranding($unsafeName) === null,
+    'Reject markup in provider product names.');
+$unsafeLogo = $validBranding;
+$unsafeLogo['logo_png_base64'] = base64_encode('<svg xmlns="http://www.w3.org/2000/svg"/>');
+$assert(ProviderPolicyStore::normalizeBranding($unsafeLogo) === null,
+    'Reject active SVG content in place of a PNG logo.');
 if (!is_int($owner)) {
     rmdir($root);
     fwrite(STDOUT, "Provider policy schema checks passed: {$checks}; POSIX file checks skipped on this platform.\n");
@@ -69,6 +111,9 @@ $assert(ProviderPolicyStore::normalize($badQuota) === null, 'Reject negative res
 $badExposure = $policy;
 $badExposure['exposure'] = 'hidden';
 $assert(ProviderPolicyStore::normalize($badExposure) === null, 'Reject unrecognized exposure levels.');
+$badBranding = $policy;
+$badBranding['branding']['secondary_color'] = '#FFFFFF';
+$assert(ProviderPolicyStore::normalize($badBranding) === null, 'Reject invalid branding in the complete provider policy.');
 $assert(!$store->save($badMemory), 'Refuse to persist invalid provider policy.');
 
 $symlinkPath = $root . '/linked-policy.json';

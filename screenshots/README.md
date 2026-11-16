@@ -4,7 +4,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo redesign](orm-logo.png) | Dimensional layered cache vault with connected orbital paths in ORM red, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
+| [ORM logo redesign](orm-logo.png) | Open white loop around a faceted cache core in ORM red, previewed at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |
 | [cPanel setup presets](cpanel-presets.png) | Initial cache setup with five account-safe workload profiles | 1440 × 1000 |
@@ -21,6 +21,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |
 | [WHM security](whm-security.png) | Security signals and report-only policy | 1500 × 1200 |
 | [WHM package and reseller policy](whm-package-policy.png) | Root-only mode and exposure defaults, package ceilings, reseller usage, and quotas | Static preview; [HTML source](previews/whm-package-policy.html) |
+| [WHM provider branding](whm-provider-branding.png) | Provider identity controls and a synthetic live cPanel preview | Static preview; [HTML source](previews/whm-provider-branding.html) |
 
 The dashboard and WHM overview/accounts/security images are nonfunctional prototype screens. The cPanel setup image is a static preview rendered from [its HTML fixture](previews/cpanel-presets.html), with synthetic data. The cPanel configuration image is a static preview rendered from [its HTML fixture](previews/cpanel-configuration.html), with synthetic settings. The cPanel monitoring and hourly history images are static previews rendered from [their HTML fixture](previews/cpanel-monitoring.html); the stale-state design is in a [synthetic HTML preview](previews/cpanel-monitoring-stale.html), with image capture pending. The cPanel backup and restore screenshot is rendered from its [synthetic HTML preview](previews/cpanel-backups-restore.html). The connection-details image is a static preview rendered from [its HTML fixture](previews/connection-details.html). The WHM account-action and snapshot design is rendered from its [synthetic HTML preview](previews/whm-fleet.html). These previews are not connected to cPanel or Redis/Valkey.
 
