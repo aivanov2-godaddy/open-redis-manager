@@ -6,7 +6,17 @@ set -Eeuo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$repo_root/packaging/lib.sh"
 BASE_PATH="$PATH"
-BASE_TMPDIR="${TMPDIR:-/tmp}"
+BASE_TMPDIR=''
+for candidate in "${TMPDIR:-/tmp}" /var/tmp /run /root; do
+    [[ -d "$candidate" && -w "$candidate" && ! -L "$candidate" ]] || continue
+    probe="$(mktemp "$candidate/.orm-exec-probe.XXXXXXXX")" || continue
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$probe"
+    chmod 0700 "$probe"
+    if "$probe" >/dev/null 2>&1; then BASE_TMPDIR="$candidate"; fi
+    rm -f -- "$probe"
+    [[ -n "$BASE_TMPDIR" ]] && break
+done
+[[ -n "$BASE_TMPDIR" ]] || { printf 'packaging tests require a writable executable temporary filesystem.\n' >&2; exit 1; }
 fixture_root="$repo_root/tests/fixtures/orm-identity-v1-install"
 REAL_INSTALL="$(command -v install)"
 REAL_CP="$(command -v cp)"
