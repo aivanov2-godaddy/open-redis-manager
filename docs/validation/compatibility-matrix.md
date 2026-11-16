@@ -54,7 +54,7 @@ Do not advertise any row as supported until a completed, reviewable validation r
 
 | Scenario | Existing automated evidence | Disposable cPanel evidence |
 |---|---|---|
-| Fresh install | Packaging guard and script checks; no full fresh-install run against cPanel registration utilities | Not recorded |
+| Fresh install | Linux CI runs the installer in an isolated mock cPanel root and checks deployed files, manifest, AppConfig, service state, instance-root permissions, and rollback after registration failure | Not recorded |
 | Upgrade and uninstall | Linux CI mocks the identity-v1 upgrade, registration failures, rollback, and uninstall paths | Not recorded |
 | Account identity | Live smoke checks LiveAPI identity against the local broker | Passed once on a private test environment; exact host/version details are intentionally not stored |
 | Account boundary and WHM ACL | Broker and PHP tests cover peer identity and root-only request paths | Not recorded across the matrix |
