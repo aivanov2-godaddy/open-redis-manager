@@ -193,6 +193,44 @@ orm_write_install_manifest() {
     mv -f -- "$temporary" "$destination"
 }
 
+orm_adopt_current_install_manifest() {
+    local manifest="$1" header installed_version package_version temporary
+    [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
+    header="$(head -n 1 -- "$manifest")" || return 1
+    case "$header" in
+        orm-install-manifest-v1) ;;
+        orm-install-manifest-v2)
+            installed_version="$(orm_install_manifest_version "$manifest")" || return 1
+            package_version="$(orm_read_package_version)" || return 1
+            [[ "$installed_version" == "$package_version" ]] || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    orm_validate_install_manifest "$manifest" || return 1
+    orm_installed_files_match_current_package || return 1
+    temporary="$(mktemp "$(dirname -- "$manifest")/.orm-adopt-manifest.XXXXXXXX")" || return 1
+    if ! (orm_write_install_manifest "$temporary") || ! orm_validate_install_manifest "$temporary"; then
+        rm -f -- "$temporary" "$temporary.tmp.$$"
+        return 1
+    fi
+    if ! mv -f -- "$temporary" "$manifest"; then
+        rm -f -- "$temporary"
+        return 1
+    fi
+}
+
+orm_installed_files_match_current_package() {
+    local key source target mode source_mode installed_mode owner
+    while IFS='|' read -r key source target mode; do
+        [[ -f "$source" && ! -L "$source" && -f "$target" && ! -L "$target" ]] || return 1
+        owner="$(stat -c '%u' -- "$target")" || return 1
+        source_mode="$(stat -c '%a' -- "$source")" || return 1
+        installed_mode="$(stat -c '%a' -- "$target")" || return 1
+        [[ "$owner" == 0 && "$source_mode" == "$mode" && "$installed_mode" == "$mode" ]] || return 1
+        cmp -s -- "$source" "$target" || return 1
+    done < <(orm_package_file_map)
+}
+
 orm_validate_install_manifest() {
     local manifest="$1" key source target mode expected_digest actual_digest owner manifest_mode file_owner header version records_start recorded_target extra
     local -A recorded=() expected=()
