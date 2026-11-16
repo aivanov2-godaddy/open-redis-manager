@@ -505,6 +505,11 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
 my $migration_account = { name => 'ormmig', uid => $<, gid => $test_gid };
 my $migration_provisioned = $migration_manager->provision($migration_account, 'generic');
 ok($migration_provisioned->{success}, 'provision an isolated Redis fixture for migration tests');
+my @migration_exceptions;
+my $run_migration = sub {
+    local $SIG{__DIE__} = sub { push @migration_exceptions, $_[0]; };
+    return $migration_manager->migrate_to_valkey($migration_account);
+};
 my $migration_manifest_path = "$migration_etc/ormmig/manifest.json";
 my $legacy_manifest;
 {
@@ -520,26 +525,27 @@ print {$legacy_manifest_write} JSON::PP->new->canonical(1)->encode($legacy_manif
 close($legacy_manifest_write) or die "close legacy migration manifest fixture: $!";
 chmod(0640, $migration_manifest_path) or die "chmod legacy migration manifest fixture: $!";
 chown($<, $migration_account->{gid}, $migration_manifest_path) or die "chown legacy migration manifest fixture: $!";
-is($migration_manager->migrate_to_valkey($migration_account)->{error}, 'migration_unsupported',
+is($run_migration->()->{error}, 'migration_unsupported',
     'reject Redis 7.4 before pausing or modifying the instance');
 is($migration_unit_state, 'active', 'keep Redis running when the source version is unsupported');
 $migration_source_version = '7.2.5';
 $fail_target_rdb_check = 1;
-is($migration_manager->migrate_to_valkey($migration_account)->{error}, 'migration_validation_failed',
+is($run_migration->()->{error}, 'migration_validation_failed',
     'refuse to stop Redis when the Valkey checker rejects the snapshot');
 is($migration_unit_state, 'active', 'leave the Redis service active after target snapshot validation fails');
 $fail_target_rdb_check = 0;
 $fail_valkey_ping_once = 1;
-my $rolled_back_migration = $migration_manager->migrate_to_valkey($migration_account);
+my $rolled_back_migration = $run_migration->();
 diag('migration rollback fixture response: ' . JSON::PP->new->canonical(1)->encode($rolled_back_migration))
     if !$rolled_back_migration->{success};
+diag('migration exceptions: ' . join(' | ', @migration_exceptions)) if @migration_exceptions;
 ok(!$rolled_back_migration->{success} && $rolled_back_migration->{error} eq 'migration_failed'
     && defined($rolled_back_migration->{safety_backup_id}), 'roll back a target health failure and return its retained snapshot');
 is($migration_manager->backend($migration_account), 'redis', 'restore the Redis backend manifest after a failed Valkey start check');
 is($migration_manager->_read_manifest($migration_account)->{version}, 1,
     'restore the original version-one manifest exactly after migration rollback');
 is($migration_unit_state, 'active', 'restart the Redis service after a failed migration');
-my $successful_migration = $migration_manager->migrate_to_valkey($migration_account);
+my $successful_migration = $run_migration->();
 diag('migration success fixture response: ' . JSON::PP->new->canonical(1)->encode($successful_migration))
     if !$successful_migration->{success};
 ok($successful_migration->{success} && $successful_migration->{source_backend} eq 'redis'
