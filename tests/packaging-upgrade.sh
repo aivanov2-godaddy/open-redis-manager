@@ -192,7 +192,6 @@ MOCK
     printf '1\n' >"$TEST_APPCONFIG_STATE"
     cp -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$test_root/var/cpanel/apps/open_redis_manager.conf"
     chmod 0600 "$test_root/var/cpanel/apps/open_redis_manager.conf"
-    export TEST_APPCONFIG_INODE="$(stat -c '%i' "$test_root/var/cpanel/apps/open_redis_manager.conf")"
 
     ORM_CPANEL_ROOT="$test_root/cpanel"
     ORM_INSTALL_PLUGIN="$test_root/bin/install_plugin"
@@ -228,6 +227,7 @@ MOCK
         mkdir -p -- "$(dirname -- "$target")"
         install -m "$mode" "$fixture_root/$key" "$target"
     done < <(orm_legacy_identity_v1_file_map)
+    export TEST_APPCONFIG_INODE="$(stat -c '%i' "$ORM_APPCONFIG")"
     if [[ "$initial_active" == active ]]; then
         perl -MIO::Socket::UNIX -MSocket=SOCK_STREAM -e '$s=IO::Socket::UNIX->new(Type=>SOCK_STREAM,Local=>$ARGV[0],Listen=>64) or die $!; chmod 0666,$ARGV[0] or die $!; sleep 3600' "$TEST_SOCKET" >/dev/null 2>&1 </dev/null &
         active_socket_pid=$!
