@@ -34,6 +34,10 @@ REA reported complete capture within the requested page views. These are observa
 
 This review used public page DOM, accessible metadata, image descriptions, and one update-page viewport screenshot. The vendor's authenticated cPanel/WHM application was not available for interaction; therefore hidden workflows, API contracts, exact runtime behavior, and error handling are not established. The reference pages were captured without activating purchase, download, install, update, or account actions. The feature catalog marks current repository behavior as prototype or planned accordingly.
 
+## Redis/Valkey authentication counter
+
+The Redis [`INFO` reference](https://redis.io/docs/latest/commands/info/) documents `acl_access_denied_auth` as the number of authentication failures and marks it as added in Redis 8.0. Valkey's [`INFO` reference](https://valkey.io/commands/info/) also lists the field and warns that fields vary by version. ORM detects the field at runtime; missing fields are unknown, not zero. The aggregate counter contains no client identity and does not establish malicious intent. The implementation reports only bounded monotonic deltas and retains reset/gap states as unknown.
+
 ## Attribution and originality
 
 This project uses the product site as a functional reference. The feature descriptions here are summarized in original wording. Vendor prose, logos, screenshots, source code and trademarks are not copied into this repository. Open Redis Manager's interface and icon set are original. Redis, Valkey and cPanel remain the property of their respective owners; this project is not affiliated with or endorsed by those projects or cPanel, L.L.C.

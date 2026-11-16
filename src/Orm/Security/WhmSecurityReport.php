@@ -118,10 +118,42 @@ final class WhmSecurityReport
                 && $metrics['rate_window_latest_end_at'] <= $generatedAt
                 && $metrics['rate_window_latest_end_at'] >= $generatedAt - self::MAX_RATE_WINDOW_SECONDS;
         }
+        $authRatesValid = $ratesValid
+            && is_int($metrics['auth_rate_accounts'] ?? null) && $metrics['auth_rate_accounts'] >= 0
+            && is_int($metrics['auth_rate_missing_accounts'] ?? null) && $metrics['auth_rate_missing_accounts'] >= 0
+            && $metrics['auth_rate_accounts'] + $metrics['auth_rate_missing_accounts'] === $fleet['managed_count']
+            && is_int($metrics['auth_failure_accounts'] ?? null) && $metrics['auth_failure_accounts'] >= 0
+            && $metrics['auth_failure_accounts'] <= $metrics['auth_rate_accounts']
+            && is_int($metrics['max_auth_failures_per_window'] ?? null) && $metrics['max_auth_failures_per_window'] >= 0
+            && $metrics['max_auth_failures_per_window'] <= 9_000_000_000_000_000
+            && is_int($metrics['auth_rate_window_min_seconds'] ?? null) && $metrics['auth_rate_window_min_seconds'] >= 0
+            && is_int($metrics['auth_rate_window_max_seconds'] ?? null) && $metrics['auth_rate_window_max_seconds'] >= 0
+            && is_int($metrics['auth_rate_window_earliest_start_at'] ?? null)
+            && $metrics['auth_rate_window_earliest_start_at'] >= 0
+            && $metrics['auth_rate_window_earliest_start_at'] <= 9_999_999_999
+            && is_int($metrics['auth_rate_window_latest_end_at'] ?? null)
+            && $metrics['auth_rate_window_latest_end_at'] >= 0
+            && $metrics['auth_rate_window_latest_end_at'] <= 9_999_999_999;
+        if ($authRatesValid && $metrics['auth_rate_accounts'] === 0) {
+            $authRatesValid = $metrics['max_auth_failures_per_window'] === 0
+                && $metrics['auth_rate_window_min_seconds'] === 0
+                && $metrics['auth_rate_window_max_seconds'] === 0
+                && $metrics['auth_rate_window_earliest_start_at'] === 0
+                && $metrics['auth_rate_window_latest_end_at'] === 0
+                && $metrics['auth_failure_accounts'] === 0;
+        } elseif ($authRatesValid) {
+            $authRatesValid = $metrics['auth_rate_window_min_seconds'] >= 1
+                && $metrics['auth_rate_window_max_seconds'] >= $metrics['auth_rate_window_min_seconds']
+                && $metrics['auth_rate_window_max_seconds'] <= self::MAX_RATE_WINDOW_SECONDS
+                && $metrics['auth_rate_window_earliest_start_at'] <= $metrics['auth_rate_window_latest_end_at']
+                && $metrics['auth_rate_window_latest_end_at'] <= $generatedAt
+                && $metrics['auth_rate_window_latest_end_at'] >= $generatedAt - self::MAX_RATE_WINDOW_SECONDS;
+        }
         $auditValid = ($audit['success'] ?? null) === true && is_array($audit['records'] ?? null)
             && is_bool($audit['partial'] ?? null) && is_array($audit['sources'] ?? null);
-        $partial = !$fleetValid || !$ratesValid || !$auditValid || ($fleet['partial'] ?? true) !== false
+        $partial = !$fleetValid || !$ratesValid || !$authRatesValid || !$auditValid || ($fleet['partial'] ?? true) !== false
             || ($audit['partial'] ?? true) !== false || ($ratesValid && $metrics['rate_missing_accounts'] > 0);
+        $partial = $partial || ($authRatesValid && $metrics['auth_rate_missing_accounts'] > 0);
         $findings = [];
 
         if ($fleetValid) {
@@ -166,6 +198,27 @@ final class WhmSecurityReport
                 'Wait for two compatible samples or review whether counters reset or collection gaps exceed 26 hours.');
         }
 
+        if ($authRatesValid && $metrics['auth_rate_accounts'] > 0) {
+            $authWindowStart = gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_earliest_start_at']);
+            $authWindowEnd = gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_latest_end_at']);
+            $authCoverage = $metrics['auth_rate_accounts'] . ' of ' . $fleet['managed_count']
+                . ' managed accounts expose valid authentication-failure counter windows; '
+                . $metrics['auth_rate_missing_accounts'] . ' are unknown.';
+            $findings[] = self::finding('client_authentication_failures', 'info', $metrics['auth_failure_accounts'],
+                $authCoverage . ' ' . $metrics['auth_failure_accounts'] . ' accounts recorded one or more failures; '
+                . 'the largest per-account counter delta was ' . $metrics['max_auth_failures_per_window']
+                . '. These aggregate backend counters do not identify clients or distinguish mistakes from attacks. '
+                . 'Individual intervals were ' . $metrics['auth_rate_window_min_seconds'] . '–'
+                . $metrics['auth_rate_window_max_seconds'] . ' seconds, spanning ' . $authWindowStart
+                . ' through ' . $authWindowEnd . '.' ,
+                'Review application credentials and expected connection behavior; no abuse threshold is configured.',
+                gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_latest_end_at']));
+        } else {
+            $findings[] = self::finding('client_authentication_failures', 'unknown', null,
+                'Backend authentication-failure counter deltas are unavailable for a bounded sample window.',
+                'This signal depends on an optional INFO counter. Wait for two compatible samples; missing fields, resets, and gaps over 26 hours remain unknown.');
+        }
+
         if ($auditValid && ($audit['partial'] ?? true) === false) {
             $authEvents = 0;
             $authFailures = 0;
@@ -196,7 +249,6 @@ final class WhmSecurityReport
         }
 
         $unmeasured = [
-            'client_authentication_failures' => 'Redis client authentication attempts are not available from a safe verified source.',
             'credential_strength' => 'Weak or reused passwords are not inspected.',
         ];
         return [

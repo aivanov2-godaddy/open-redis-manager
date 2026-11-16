@@ -580,6 +580,32 @@ $invalidRateSummary = new BrokerClient(static fn (string $request): string =>
     json_encode($invalidRateSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
 $assert($invalidRateSummary->requestFleetSummary() === null,
     'Reject inconsistent measured and missing counter-rate account counts.');
+$authExtendedSummaryPayload = $extendedSummaryPayload;
+$authExtendedSummaryPayload['metrics'] = array_replace($authExtendedSummaryPayload['metrics'], [
+    'auth_failure_accounts' => 1, 'auth_rate_accounts' => 1, 'auth_rate_missing_accounts' => 1,
+    'auth_rate_window_earliest_start_at' => 1794756400, 'auth_rate_window_latest_end_at' => 1794760000,
+    'auth_rate_window_max_seconds' => 3600, 'auth_rate_window_min_seconds' => 3600,
+    'max_auth_failures_per_window' => 3,
+]);
+$authExtendedSummaryResponse = json_encode($authExtendedSummaryPayload, JSON_THROW_ON_ERROR) . "\n";
+$authExtendedSummaryClient = new BrokerClient(static fn (string $request): string => $authExtendedSummaryResponse);
+$authExtendedSummaryResult = $authExtendedSummaryClient->requestFleetSummary();
+$assert(($authExtendedSummaryResult['metrics']['auth_rate_accounts'] ?? null) === 1
+    && $authExtendedSummaryResult['metrics']['max_auth_failures_per_window'] === 3
+    && $authExtendedSummaryResult['partial'] === true,
+    'Parse bounded optional authentication-failure evidence while preserving rate-only and legacy broker schemas.');
+$invalidAuthSummaryPayload = $authExtendedSummaryPayload;
+$invalidAuthSummaryPayload['metrics']['auth_rate_accounts'] = 2;
+$invalidAuthSummary = new BrokerClient(static fn (string $request): string =>
+    json_encode($invalidAuthSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($invalidAuthSummary->requestFleetSummary() === null,
+    'Reject inconsistent authentication measured and missing account counts.');
+$invalidAuthWindowPayload = $authExtendedSummaryPayload;
+$invalidAuthWindowPayload['metrics']['auth_rate_window_max_seconds'] = 26 * 60 * 60 + 1;
+$invalidAuthWindow = new BrokerClient(static fn (string $request): string =>
+    json_encode($invalidAuthWindowPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($invalidAuthWindow->requestFleetSummary() === null,
+    'Reject authentication evidence outside the 26-hour counter-window bound.');
 
 $batchCreateRequests = [];
 $batchCreateResponse = json_encode([

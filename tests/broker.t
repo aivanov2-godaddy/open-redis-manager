@@ -323,7 +323,7 @@ my $timer_state = 'inactive';
 my $metrics_info = join("\r\n",
     'used_memory:1048576', 'used_memory_peak:2097152', 'connected_clients:3',
     'uptime_in_seconds:3600', 'instantaneous_ops_per_sec:12', 'keyspace_hits:90', 'keyspace_misses:10',
-    'evicted_keys:4', 'total_commands_processed:50000', '');
+    'evicted_keys:4', 'total_commands_processed:50000', 'acl_access_denied_auth:100', '');
 my @metrics_calls;
 my @systemctl_calls;
 my @config_calls;
@@ -846,10 +846,10 @@ is($metrics_stat[5], $<, 'metrics snapshot is not readable through the cPanel ac
 is($metrics_stat[2] & 0777, 0600, 'metrics snapshot permissions are root-only');
 my $security_metrics_path = "$etc_instances/ormtest/security-metrics.json";
 unlink($security_metrics_path) if -e $security_metrics_path;
-my $security_now = time;
+my $security_now = time - 3600;
 ok($manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 7200, uptime_seconds => 3600,
-    evicted_keys => 4, total_commands_processed => 50000,
+    evicted_keys => 4, total_commands_processed => 50000, acl_access_denied_auth => 100,
 }), 'store the first bounded security counter sample as a baseline');
 my $baseline_security_sample = $manager->_read_security_metrics_snapshot($account);
 ok($baseline_security_sample && $baseline_security_sample->{available} == 1
@@ -857,25 +857,33 @@ ok($baseline_security_sample && $baseline_security_sample->{available} == 1
     'keep rate evidence unknown until a second valid counter sample exists');
 ok($manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 3600, uptime_seconds => 7200,
-    evicted_keys => 6, total_commands_processed => 68000,
+    evicted_keys => 6, total_commands_processed => 68000, acl_access_denied_auth => 107,
 }), 'store a later security counter sample');
 my $measured_security_sample = $manager->_read_security_metrics_snapshot($account);
 is_deeply([@{$measured_security_sample}{qw(evicted_keys_delta total_commands_processed_delta window_seconds window_start_at)}],
     [2, 18000, 3600, $security_now - 7200],
     'derive eviction and operation counter deltas over the actual one-hour sample interval');
+is_deeply([@{$measured_security_sample}{qw(auth_failures_delta auth_window_seconds auth_window_start_at)}],
+    [7, 3600, $security_now - 7200],
+    'derive anonymous backend authentication-failure deltas over their own bounded sample window');
 my $measured_fleet_summary = $manager->fleet_summary([$account]);
 ok($measured_fleet_summary && $measured_fleet_summary->{metrics}->{rate_accounts} == 1
     && $measured_fleet_summary->{metrics}->{eviction_activity_accounts} == 1
     && $measured_fleet_summary->{metrics}->{max_evictions_per_window} == 2
     && $measured_fleet_summary->{metrics}->{max_operations_per_second} == 5
-    && $measured_fleet_summary->{metrics}->{rate_window_min_seconds} == 3600,
+    && $measured_fleet_summary->{metrics}->{rate_window_min_seconds} == 3600
+    && $measured_fleet_summary->{metrics}->{auth_rate_accounts} == 1
+    && $measured_fleet_summary->{metrics}->{auth_rate_missing_accounts} == 0
+    && $measured_fleet_summary->{metrics}->{auth_failure_accounts} == 1
+    && $measured_fleet_summary->{metrics}->{max_auth_failures_per_window} == 7
+    && $measured_fleet_summary->{metrics}->{auth_rate_window_min_seconds} == 3600,
     'aggregate only bounded per-account counter rates and their evidence window for root WHM');
 my @security_metrics_stat = stat($security_metrics_path);
 is($security_metrics_stat[4], $<, 'keep the security counter snapshot owned by the privileged manager');
 is($security_metrics_stat[2] & 0777, 0600, 'keep the security counter snapshot private to root');
 ok($manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 1800, uptime_seconds => 10,
-    evicted_keys => 1, total_commands_processed => 200,
+    evicted_keys => 1, total_commands_processed => 200, acl_access_denied_auth => 1,
 }), 'record a lower counter sample as a new post-reset baseline');
 my $reset_security_sample = $manager->_read_security_metrics_snapshot($account);
 ok($reset_security_sample && !defined($reset_security_sample->{window_seconds})
@@ -883,26 +891,70 @@ ok($reset_security_sample && !defined($reset_security_sample->{window_seconds})
     'treat counter decreases and uptime resets as unknown instead of negative rates');
 ok($manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 900, uptime_seconds => 910,
-    evicted_keys => 3, total_commands_processed => 9200,
+    evicted_keys => 3, total_commands_processed => 9200, acl_access_denied_auth => 3,
 }), 'resume rate measurement from the post-reset baseline');
 my $recovered_security_sample = $manager->_read_security_metrics_snapshot($account);
 ok($recovered_security_sample && $recovered_security_sample->{window_seconds} == 900
-    && $recovered_security_sample->{evicted_keys_delta} == 2,
+    && $recovered_security_sample->{evicted_keys_delta} == 2
+    && $recovered_security_sample->{auth_window_seconds} == 900
+    && $recovered_security_sample->{auth_failures_delta} == 2,
     'recover with a valid rate window after a counter reset');
 ok($manager->_write_security_metrics_snapshot($account, {
-    sampled_at => $security_now, uptime_seconds => 3600,
-    evicted_keys => 8, total_commands_processed => 50000,
+    sampled_at => $security_now - 600, uptime_seconds => 1210,
+    evicted_keys => 4, total_commands_processed => 10000, acl_access_denied_auth => 0,
+}), 'record an authentication counter reset without changing the process uptime');
+my $auth_reset_sample = $manager->_read_security_metrics_snapshot($account);
+ok($auth_reset_sample && $auth_reset_sample->{window_seconds} == 300
+    && $auth_reset_sample->{evicted_keys_delta} == 1
+    && !defined($auth_reset_sample->{auth_window_seconds})
+    && !defined($auth_reset_sample->{auth_failures_delta}),
+    'keep unrelated monotonic rates while treating an independently reset auth counter as unknown');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 300, uptime_seconds => 1510,
+    evicted_keys => 5, total_commands_processed => 15000, acl_access_denied_auth => 2,
+}), 'resume auth counter sampling after its reset baseline');
+my $auth_recovered_sample = $manager->_read_security_metrics_snapshot($account);
+ok($auth_recovered_sample && $auth_recovered_sample->{auth_window_seconds} == 300
+    && $auth_recovered_sample->{auth_failures_delta} == 2,
+    'recover anonymous authentication-failure deltas from the new monotonic baseline');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 150, uptime_seconds => 1660,
+    evicted_keys => 6, total_commands_processed => 20000, acl_access_denied_auth => 2,
+}), 'store a compatible authentication sample with no counter increase');
+my $zero_auth_delta_sample = $manager->_read_security_metrics_snapshot($account);
+ok($zero_auth_delta_sample && $zero_auth_delta_sample->{auth_window_seconds} == 150
+    && $zero_auth_delta_sample->{auth_failures_delta} == 0,
+    'distinguish a measured zero authentication-failure delta from unavailable evidence');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now, uptime_seconds => 1810,
+    evicted_keys => 8, total_commands_processed => 50000, acl_access_denied_auth => 4,
 }), 'record the next current security counter sample');
 ok(defined($manager->_read_security_metrics_snapshot($account)),
     'keep the latest root-owned security counter sample readable');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now + 900, uptime_seconds => 30,
+    evicted_keys => 1, total_commands_processed => 100, acl_access_denied_auth => 5,
+}), 'store a post-restart sample when the authentication counter itself increased');
+my $auth_restart_sample = $manager->_read_security_metrics_snapshot($account);
+ok($auth_restart_sample && !defined($auth_restart_sample->{auth_window_seconds})
+    && !defined($auth_restart_sample->{auth_failures_delta}),
+    'invalidate auth deltas across process restart even when the cumulative auth counter increased');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now + 1800, uptime_seconds => 930,
+    evicted_keys => 2, total_commands_processed => 2000, acl_access_denied_auth => 6,
+}), 'record a follow-up sample after the restarted process establishes its baseline');
+my $auth_restart_recovered = $manager->_read_security_metrics_snapshot($account);
+ok($auth_restart_recovered && $auth_restart_recovered->{auth_window_seconds} == 900
+    && $auth_restart_recovered->{auth_failures_delta} == 1,
+    'resume authentication-failure evidence only after a compatible post-restart interval');
 unlink($security_metrics_path) or die "reset security metrics fixture for gap test: $!";
 $manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 27 * 3600, uptime_seconds => 1000,
-    evicted_keys => 8, total_commands_processed => 50000,
+    evicted_keys => 8, total_commands_processed => 50000, acl_access_denied_auth => 8,
 });
 $manager->_write_security_metrics_snapshot($account, {
     sampled_at => $security_now - 60, uptime_seconds => 27 * 3600 + 940,
-    evicted_keys => 9, total_commands_processed => 51000,
+    evicted_keys => 9, total_commands_processed => 51000, acl_access_denied_auth => 9,
 });
 my $gapped_security_sample = $manager->_read_security_metrics_snapshot($account);
 ok($gapped_security_sample && !defined($gapped_security_sample->{window_seconds}),
@@ -912,13 +964,29 @@ $manager->_write_security_metrics_snapshot($account, {
 });
 my $unavailable_security_sample = $manager->_read_security_metrics_snapshot($account);
 ok($unavailable_security_sample && $unavailable_security_sample->{available} == 0
-    && !defined($unavailable_security_sample->{evicted_keys}),
-    'represent missing counter fields explicitly as unavailable');
+    && !defined($unavailable_security_sample->{evicted_keys})
+    && $unavailable_security_sample->{auth_available} == 0,
+    'represent missing Redis counter fields explicitly as unavailable');
+unlink($security_metrics_path) or die "reset security metrics fixture for unsupported-auth test: $!";
+$manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 7200, uptime_seconds => 3600,
+    evicted_keys => 4, total_commands_processed => 50000,
+});
+$manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 3600, uptime_seconds => 7200,
+    evicted_keys => 6, total_commands_processed => 68000,
+});
+my $unsupported_auth_sample = $manager->_read_security_metrics_snapshot($account);
+ok($unsupported_auth_sample && $unsupported_auth_sample->{available} == 1
+    && $unsupported_auth_sample->{window_seconds} == 3600
+    && $unsupported_auth_sample->{auth_available} == 0
+    && !defined($unsupported_auth_sample->{auth_failures_delta}),
+    'preserve supported eviction and operation rates when older Redis lacks the optional auth counter');
 unlink($security_metrics_path) or die "remove security metrics fixture: $!";
 my $last_good_info = $metrics_info;
 $metrics_info = join("\n", 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:7',
     'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
-    'evicted_keys:8', 'total_commands_processed:68000', '');
+    'evicted_keys:8', 'total_commands_processed:68000', 'acl_access_denied_auth:107', '');
 $fail_metrics_commit_once = 1;
 my $uncached_metrics = $manager->dispatch('instance.metrics', $account);
 ok($uncached_metrics->{success} && !$uncached_metrics->{stale} && !$uncached_metrics->{retained}
