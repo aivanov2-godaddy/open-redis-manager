@@ -84,6 +84,7 @@ MOCK
 #!/usr/bin/env bash
 printf 'register_appconfig %s\n' "$*" >>"$TEST_LOG"
 cp -- "$1" "$ORM_APPCONFIG"
+printf '\nname=open_redis_manager\n' >>"$ORM_APPCONFIG"
 chmod 0600 "$ORM_APPCONFIG"
 printf '1\n' >"$TEST_APPCONFIG_STATE"
 MOCK
@@ -277,7 +278,7 @@ assert_current_install_restored() {
         || { printf 'uninstall rollback did not restore the installed-file manifest.\n' >&2; exit 1; }
     [[ "$(cat "$TEST_APPCONFIG_STATE")" == 1 && -f "$ORM_APPCONFIG" ]] \
         || { printf 'uninstall rollback did not restore WHM AppConfig registration.\n' >&2; exit 1; }
-    cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+    orm_appconfig_matches_package "$ORM_APPCONFIG" \
         || { printf 'uninstall rollback changed the WHM AppConfig content.\n' >&2; exit 1; }
     [[ "$(cat "$TEST_CPANEL_MARKER")" == current ]] \
         || { printf 'uninstall rollback did not restore the cPanel plugin.\n' >&2; exit 1; }
@@ -309,7 +310,7 @@ assert_legacy_restored() {
     [[ "$(cat "$TEST_CPANEL_MARKER")" == legacy && "$(cat "$TEST_APPCONFIG_STATE")" == 1 \
         && ! -e "$ORM_INSTALL_MANIFEST" ]] \
         || { printf 'rollback did not restore cPanel registration state.\n' >&2; exit 1; }
-    cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+    orm_appconfig_matches_package "$ORM_APPCONFIG" \
         || { printf 'rollback changed the WHM AppConfig file.\n' >&2; exit 1; }
     [[ "$(stat -c '%i' "$ORM_APPCONFIG")" == "$TEST_APPCONFIG_INODE" ]] \
         || { printf 'rollback replaced the registered WHM AppConfig file.\n' >&2; exit 1; }

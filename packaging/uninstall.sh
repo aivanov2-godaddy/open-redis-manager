@@ -81,7 +81,7 @@ rollback_uninstall() {
             fi
         fi
         orm_registration_state || rollback_failed=1
-        cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" || rollback_failed=1
+        orm_appconfig_matches_package "$ORM_APPCONFIG" || rollback_failed=1
     fi
     if [[ "$files_touched" -eq 1 ]]; then
         "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || rollback_failed=1
@@ -124,7 +124,7 @@ if orm_registration_state; then
     whm_registered=1
     [[ -f "$ORM_APPCONFIG" && ! -L "$ORM_APPCONFIG" ]] \
         || orm_die 'WHM reports ORM registered but its AppConfig file is missing or unsafe.'
-    cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+    orm_appconfig_matches_package "$ORM_APPCONFIG" \
         || orm_die 'the registered WHM AppConfig file differs from this package; refusing uninstall.'
 else
     registration_status=$?

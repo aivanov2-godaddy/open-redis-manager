@@ -113,6 +113,13 @@ orm_legacy_identity_v1_file_map() {
     done < <(orm_package_file_map)
 }
 
+orm_appconfig_matches_package() {
+    local target="${1:-$ORM_APPCONFIG}"
+    [[ -f "$target" && ! -L "$target" ]] || return 1
+    # register_appconfig adds the registered application name after the packaged settings.
+    cmp -s -- "$target" <(cat -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"; printf '\nname=open_redis_manager\n')
+}
+
 orm_validate_legacy_identity_v1() {
     local manifest="$ORM_PACKAGE_ROOT/legacy/identity-v1/install.manifest"
     local key target mode expected_mode expected_digest actual_digest file_owner
@@ -309,7 +316,11 @@ orm_remove_empty_owned_directories() {
 orm_verify_installed_files() {
     local source target mode key
     while IFS='|' read -r key source target mode; do
-        [[ ! -e "$target" ]] && continue
+        [[ ! -e "$target" && ! -L "$target" ]] && continue
+        if [[ "$key" == whm_appconfig ]]; then
+            orm_appconfig_matches_package "$target" || orm_die 'the registered WHM AppConfig file differs from this package; refusing removal.'
+            continue
+        fi
         [[ -f "$target" && -f "$source" ]] || orm_die "refusing to remove an unexpected ORM path: $target"
         cmp -s -- "$source" "$target" || orm_die "installed file differs from this package; refusing removal: $target"
     done < <(orm_package_file_map)

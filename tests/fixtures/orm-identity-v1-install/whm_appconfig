@@ -7,3 +7,5 @@ entryurl=/cgi/addon_open_redis_manager.php
 displayname=Open Redis Manager
 icon=orm-whm.png
 target=_self
+
+name=open_redis_manager

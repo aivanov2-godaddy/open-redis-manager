@@ -26,7 +26,7 @@ appconfig_owner="$(stat -c '%u' -- "$ORM_APPCONFIG")"
 appconfig_mode="$(stat -c '%a' -- "$ORM_APPCONFIG")"
 [[ "$appconfig_owner" == 0 ]] && (( (8#$appconfig_mode & 0022) == 0 )) \
     || orm_die 'the registered WHM AppConfig file has unsafe ownership or permissions.'
-cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+orm_appconfig_matches_package "$ORM_APPCONFIG" \
     || orm_die 'the registered WHM AppConfig file differs from the supported v1 baseline.'
 if orm_registration_state; then
     :
@@ -232,7 +232,7 @@ fi
 
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
     || orm_die 'the upgraded file manifest failed validation.'
-cmp -s -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$ORM_APPCONFIG" \
+orm_appconfig_matches_package "$ORM_APPCONFIG" \
     || orm_die 'the registered WHM AppConfig changed during upgrade.'
 orm_registration_state || orm_die 'the WHM AppConfig registration is missing after upgrade.'
 orm_broker_state_matches_initial || orm_die 'the broker enabled or active state changed during upgrade.'

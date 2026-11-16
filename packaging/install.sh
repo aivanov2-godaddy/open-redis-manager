@@ -31,6 +31,10 @@ cleanup_on_error() {
         if [[ "$installed_files" -eq 1 ]]; then
             local key source target mode
             while IFS='|' read -r key source target mode; do
+                if [[ "$key" == whm_appconfig ]]; then
+                    if orm_appconfig_matches_package "$target"; then rm -f -- "$target"; fi
+                    continue
+                fi
                 if [[ -f "$target" && ! -L "$target" ]] && cmp -s -- "$source" "$target"; then
                     rm -f -- "$target"
                 fi
