@@ -67,7 +67,7 @@ fi
 cp -- "$ORM_INSTALL_MANIFEST" "$test_root/invalid-target-manifest"
 chmod 0600 "$test_root/invalid-target-manifest"
 chown root:root "$test_root/invalid-target-manifest"
-sed -i "s#|$test_root/target$#|$test_root/other-target#" "$test_root/invalid-target-manifest"
+sed -i "s#|${test_root}/target\$#|${test_root}/other-target#" "$test_root/invalid-target-manifest"
 if orm_validate_install_manifest "$test_root/invalid-target-manifest"; then
     printf 'a v3 manifest with a changed install target was accepted.\n' >&2
     exit 1
