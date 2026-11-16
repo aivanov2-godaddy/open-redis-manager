@@ -14,6 +14,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [cPanel live monitoring](cpanel-monitoring.png) | Current memory, clients, uptime, operation rate, cache hit ratio, and optional AUTH posture | 1440 × 1054 |
 | [cPanel hourly metrics history](cpanel-metrics-history.png) | Responsive 24-hour hourly memory, client and hit-ratio trends with range selection | 1440 × 1100 |
 | [cPanel diagnostics](orm-diagnostics.png) | Allowlisted support JSON preview, explicit download, and privacy exclusions | 1440 × 1100; [HTML preview](previews/cpanel-diagnostics.html) |
+| [cPanel health guidance](cpanel-health-guidance.png) | Synthetic advisory warnings for memory, connected clients, and cumulative hit ratio | Static sample-data preview; [HTML source](previews/cpanel-health-guidance.html) |
 | [cPanel stale monitoring preview](previews/cpanel-monitoring-stale.html) | Stopped service with last-known metrics, stale marker and 30-day retention explanation | HTML preview; image capture pending |
 | [cPanel connection details](cpanel-connection-details.png) | Private socket path, optional AUTH status/rotation guidance, and seven account-specific copyable client/application helpers | 1440 × 1505; [HTML preview](previews/connection-details.html) |
 | [WHM fleet](whm-fleet.png) | Root-only account inventory, page-scoped health counts, read-only recovery scans and per-account controls | 1440 × 1387; [HTML preview](previews/whm-fleet.html) |

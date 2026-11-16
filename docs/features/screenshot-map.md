@@ -24,6 +24,7 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | [WHM account action preview](../../screenshots/previews/whm-fleet.html) | Synthetic account table with service controls, snapshot states, restore confirmation and per-account result messaging. |
 | [ORM stale metrics preview](../../screenshots/previews/cpanel-monitoring-stale.html) | Synthetic stopped-service view with last-known values, stale marker and sample age guidance; image capture is pending. |
 | [cPanel connection helpers](../../screenshots/cpanel-connection-details.png) | Synthetic account page with seven socket-based client and application settings, per-example copy controls, and security/runtime notes. |
+| [ORM health guidance](../../screenshots/cpanel-health-guidance.png) | Synthetic account-scoped advisory for configured memory/client limits and cumulative hit ratio; thresholds are not performance guarantees. |
 | [ORM diagnostics preview](../../screenshots/orm-diagnostics.png) | Synthetic cPanel support panel with a credential-redacted JSON preview and explicit download action. |
 
 ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). The connection-details capture demonstrates the private Unix-socket path and PhpRedis example with synthetic data; it does not connect to a live cPanel account or cache service. Other prototype screens also use demonstration data.
