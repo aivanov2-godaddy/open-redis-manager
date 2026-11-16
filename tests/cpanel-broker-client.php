@@ -364,6 +364,49 @@ $controlWithoutAudit = new BrokerClient(static fn (string $request): string =>
 );
 $assert($controlWithoutAudit->controlFleetAccount('demo', 'start')['audit_logged'] === false,
     'Keep an unconfirmed audit status separate from a successful service request.');
+
+$diagnosticRequests = [];
+$diagnosticPayload = [
+    'backend' => 'redis', 'blocked_clients' => 0, 'commands_per_second' => 12, 'connected_clients' => 3,
+    'database_keys' => 42, 'evicted_keys' => 2, 'expired_keys' => 4, 'keyspace_hits' => 90,
+    'keyspace_misses' => 10, 'maxclients' => 100, 'maxmemory_bytes' => 67108864,
+    'memory_peak_bytes' => 2097152, 'memory_used_bytes' => 1048576, 'server_version' => '7.2.4', 'uptime_seconds' => 3600,
+];
+$diagnosticClient = new BrokerClient(static function (string $request) use (&$diagnosticRequests, $diagnosticPayload): string {
+    $diagnosticRequests[] = $request;
+    return json_encode([
+        'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+        'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+});
+$diagnosticResult = $diagnosticClient->diagnoseFleetAccount('demo');
+$assert($diagnosticRequests[0] === "{\"operation\":\"fleet.diagnostics\",\"username\":\"demo\",\"version\":1}\n",
+    'Send only the fixed root diagnostics operation and validated account name.');
+$assert(($diagnosticResult['success'] ?? false) && $diagnosticResult['diagnostics']['database_keys'] === 42,
+    'Parse the strict structured diagnostics allowlist.');
+$assert($diagnosticClient->diagnoseFleetAccount('../root') === null && count($diagnosticRequests) === 1,
+    'Reject unsafe diagnostics targets before broker I/O.');
+$badDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
+    'action' => 'diagnostics.read', 'audit_logged' => true,
+    'diagnostics' => [...$diagnosticPayload, 'raw_output' => 'private data'],
+    'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$assert($badDiagnosticClient->diagnoseFleetAccount('demo') === null,
+    'Reject unexpected raw or unbounded fields from diagnostics responses.');
+$diagnosticPayload['database_keys'] = 9_000_000_000_000_000;
+$boundaryDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
+    'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+    'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$assert(($boundaryDiagnosticClient->diagnoseFleetAccount('demo')['diagnostics']['database_keys'] ?? null) === 9_000_000_000_000_000,
+    'Accept diagnostics counters at the shared numeric response boundary.');
+$diagnosticPayload['database_keys']++;
+$tooLargeDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
+    'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+    'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$assert($tooLargeDiagnosticClient->diagnoseFleetAccount('demo') === null,
+    'Reject diagnostics counters above the shared numeric response boundary.');
 $controlFailure = new BrokerClient(static fn (string $request): string =>
     "{\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"version\":1}\n"
 );

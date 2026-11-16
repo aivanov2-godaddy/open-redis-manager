@@ -320,9 +320,9 @@ try {
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/>
-  <path d="M75 205V53h66c35 0 55 18 55 48s-20 48-55 48H75m62 0 60 56" fill="none" stroke="#FFF" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M116 87h24c10 0 16 5 16 14s-6 14-16 14h-24" fill="none" stroke="#FFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="116" cy="87" r="6" fill="#FFF"/><circle cx="140" cy="101" r="6" fill="#FFF"/><circle cx="116" cy="115" r="6" fill="#FFF"/>
+  <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round"/>
+  <path d="M91 105h60M98 128h46M105 151h32M163 128h24" fill="none" stroke="#FFF" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="193" cy="128" r="12" fill="#FFF"/><circle cx="193" cy="128" r="4" fill="#D92D20"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>

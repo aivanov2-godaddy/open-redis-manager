@@ -25,6 +25,7 @@ my %RDB_CHECK_BINARIES = (
 );
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
+my $MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
 my $MAX_METRICS_HISTORY_SAMPLES = 720;
 my $MAX_METRICS_HISTORY_BYTES = 262144;
@@ -216,6 +217,78 @@ sub backend {
     my $manifest = $self->_read_manifest($account);
     return undef if ref($manifest) ne 'HASH' || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
     return $manifest->{backend};
+}
+
+sub read_diagnostics {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $status = $self->status($account);
+    return $status if ref($status) ne 'HASH' || !$status->{success};
+    return _failure('not_configured') if $status->{state} eq 'not_configured';
+    return _failure('not_running') if $status->{state} ne 'running';
+
+    my $manifest = $self->_read_manifest($account);
+    return _failure('diagnostics_unavailable') if ref($manifest) ne 'HASH'
+        || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
+
+    my $backend = $manifest->{backend};
+    my $socket = $manifest->{socket};
+    my $version_field = $backend eq 'valkey' ? 'valkey_version' : 'redis_version';
+    my $ping = $self->_run_redis_cli($backend, $socket, 'PING');
+    return _failure('diagnostics_unavailable') if !defined($ping) || $ping ne "PONG\n";
+
+    my $server = _parse_info_fields(
+        $self->_run_redis_cli($backend, $socket, 'INFO', 'server'),
+        { $version_field => 'version', uptime_in_seconds => 'integer' },
+    );
+    my $memory = _parse_info_fields(
+        $self->_run_redis_cli($backend, $socket, 'INFO', 'memory'),
+        { used_memory => 'integer', used_memory_peak => 'integer', maxmemory => 'integer' },
+    );
+    my $clients = _parse_info_fields(
+        $self->_run_redis_cli($backend, $socket, 'INFO', 'clients'),
+        { connected_clients => 'integer', blocked_clients => 'integer', maxclients => 'integer' },
+    );
+    my $stats = _parse_info_fields(
+        $self->_run_redis_cli($backend, $socket, 'INFO', 'stats'),
+        {
+            instantaneous_ops_per_sec => 'integer', keyspace_hits => 'integer', keyspace_misses => 'integer',
+            expired_keys => 'integer', evicted_keys => 'integer',
+        },
+    );
+    my $database_size = $self->_run_redis_cli($backend, $socket, 'DBSIZE');
+    return _failure('diagnostics_unavailable') if ref($server) ne 'HASH' || ref($memory) ne 'HASH'
+        || ref($clients) ne 'HASH' || ref($stats) ne 'HASH'
+        || !defined($database_size) || $database_size !~ /\A(?:0|[1-9][0-9]{0,15})\n\z/
+        || substr($database_size, 0, -1) > $MAX_DIAGNOSTIC_INTEGER;
+    my $keys = 0 + substr($database_size, 0, -1);
+    my $diagnostics = {
+        backend => $backend,
+        blocked_clients => $clients->{blocked_clients},
+        commands_per_second => $stats->{instantaneous_ops_per_sec},
+        connected_clients => $clients->{connected_clients},
+        database_keys => $keys,
+        evicted_keys => $stats->{evicted_keys},
+        expired_keys => $stats->{expired_keys},
+        keyspace_hits => $stats->{keyspace_hits},
+        keyspace_misses => $stats->{keyspace_misses},
+        maxclients => $clients->{maxclients},
+        maxmemory_bytes => $memory->{maxmemory},
+        memory_peak_bytes => $memory->{used_memory_peak},
+        memory_used_bytes => $memory->{used_memory},
+        server_version => $server->{$version_field},
+        uptime_seconds => $server->{uptime_in_seconds},
+    };
+    return _failure('diagnostics_unavailable')
+        if $diagnostics->{memory_peak_bytes} < $diagnostics->{memory_used_bytes}
+        || $diagnostics->{connected_clients} > $diagnostics->{maxclients}
+        || $diagnostics->{maxclients} < 1 || $diagnostics->{maxclients} > 100000;
+    return {
+        diagnostics => $diagnostics,
+        state => 'running',
+        success => JSON::PP::true,
+        version => 1,
+    };
 }
 
 sub provision {
@@ -786,9 +859,10 @@ sub _redis_config_set {
 
 sub _run_redis_cli {
     my ($self, $backend, $socket, @arguments) = @_;
+    my $output_limit = @arguments && $arguments[0] eq 'INFO' ? $MAX_INFO_BYTES : 1024;
     if (ref($self->{redis_cli_call}) eq 'CODE') {
         my $output = eval { $self->{redis_cli_call}->($backend, $socket, @arguments) };
-        return undef if !$output || ref($output) || length($output) > 1024;
+        return undef if !$output || ref($output) || length($output) > $output_limit;
         return $output;
     }
     my $client_name = $backend eq 'valkey' ? 'valkey' : 'redis';
@@ -809,8 +883,8 @@ sub _run_redis_cli {
         alarm(3);
         if (open(my $pipe, '-|', $path, '-s', $socket, '--raw', @arguments)) {
             $opened = 1;
-            my $read = read($pipe, $output, 1025);
-            $output = '' if !defined($read) || $read == 0 || $read > 1024;
+            my $read = read($pipe, $output, $output_limit + 1);
+            $output = '' if !defined($read) || $read == 0 || $read > $output_limit;
             my $closed = close($pipe);
             $opened = 0;
             die "Redis client command failed\n" if !$closed;
@@ -821,8 +895,36 @@ sub _run_redis_cli {
         1;
     };
     alarm(0);
-    return undef if !$completed || $opened || $output eq '' || length($output) > 1024;
+    return undef if !$completed || $opened || $output eq '' || length($output) > $output_limit;
     return $output;
+}
+
+sub _parse_info_fields {
+    my ($output, $requested) = @_;
+    return undef if !defined($output) || ref($output) || length($output) > $MAX_INFO_BYTES
+        || ref($requested) ne 'HASH';
+    my %values;
+    my @lines = split(/\r?\n/, $output);
+    return undef if @lines > 128;
+    for my $line (@lines) {
+        next if $line eq '' || $line =~ /\A#/;
+        next if $line !~ /\A([A-Za-z0-9_]+):([^\r\n]*)\z/;
+        my ($key, $value) = ($1, $2);
+        next if !exists($requested->{$key});
+        return undef if exists($values{$key});
+        if ($requested->{$key} eq 'integer') {
+            return undef if $value !~ /\A(?:0|[1-9][0-9]{0,15})\z/ || $value > $MAX_DIAGNOSTIC_INTEGER;
+            $values{$key} = 0 + $value;
+        } elsif ($requested->{$key} eq 'version') {
+            return undef if length($value) > 48
+                || $value !~ /\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/;
+            $values{$key} = $value;
+        } else {
+            return undef;
+        }
+    }
+    return undef if grep { !exists($values{$_}) } keys %{$requested};
+    return \%values;
 }
 
 sub metrics {

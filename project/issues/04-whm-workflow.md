@@ -13,4 +13,4 @@ Provide administrators with fleet visibility and scoped maintenance operations.
 
 ## Progress
 
-- PR #19 added a root-only, paginated inventory of configured or unhealthy ORM accounts with normalized service state. The current slice adds root-only start, stop, and restart through a separate fixed broker operation. The broker resolves the target from trusted cPanel account metadata, validates its manifest, logs actor/account/action/result through syslog, and reports the resulting transitional state. WHM command console, recovery scans/repairs, metrics, and migration readiness remain open.
+- GitHub issue #4 is closed. PR #19 added a root-only, paginated inventory of configured or unhealthy ORM accounts with normalized service state. Later slices added scoped service controls, snapshots, restore, and migration. PR #53 adds fixed read-only probes for one selected running account, with a numeric/version response allowlist, per-account throttling, and audited results; arbitrary Redis commands remain unsupported. Recovery scans, repairs, and fleet aggregates are tracked in [issue #52](https://github.com/aivanov2-godaddy/open-redis-manager/issues/52).

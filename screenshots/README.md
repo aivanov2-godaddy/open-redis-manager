@@ -4,7 +4,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 
 | Image | Surface | Capture |
 |---|---|---|
-| [ORM logo redesign](orm-logo.png) | Dimensional white cache stack with a connected status signal on a Redis-red tile, shown at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
+| [ORM logo redesign](orm-logo.png) | Open white ring, three cache rails and a single connection point on a Redis-red tile, shown at full size and interface-icon scale | 1200 × 900; [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel application discovery](cpanel-application-discovery.png) | On-demand app marker results and honest connection preflight | Static sample-data preview; [HTML source](previews/cpanel-application-discovery.html) |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |
@@ -19,6 +19,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [WHM fleet](whm-fleet.png) | Root-only account inventory with service and per-account snapshot controls | 1440 × 1100 |
 | [WHM Redis-to-Valkey migration](whm-redis-valkey-migration.png) | Synthetic root WHM row with source/target versions, writer-quiescence acknowledgement and snapshot rollback guidance | 1440 × 1000; [SVG source](previews/whm-redis-valkey-migration.svg) |
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
+| [WHM read-only diagnostics](whm-fleet-diagnostics.png) | Synthetic root-only account row and the validated read-only metrics result with privacy boundary | 1440 × 1100; [SVG preview](previews/whm-fleet-diagnostics.svg) |
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |
 | [WHM security](whm-security.png) | Security signals and report-only policy | 1500 × 1200 |
@@ -30,3 +31,5 @@ The dashboard and WHM overview/accounts/security images are nonfunctional protot
 The cPanel diagnostics screenshot is a static, synthetic preview rendered from [its HTML fixture](previews/cpanel-diagnostics.html). Its sample JSON does not contain account or service secrets and does not connect to a live cPanel account.
 
 The provider package and reseller policy image is a static UI preview rendered from [its HTML fixture](previews/whm-package-policy.html). Package/reseller names and limits are sample values and are not read from a live WHM server. The exposure comparison is a static preview rendered from [its HTML fixture](previews/cpanel-exposure-tiers.html), with synthetic values.
+
+The WHM diagnostics image is a static synthetic UI composition. It illustrates the guarded per-account action and allowlisted result; it is not a live capture and contains no cPanel account or service data.

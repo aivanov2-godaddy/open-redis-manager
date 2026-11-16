@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1100" viewBox="0 0 1440 1100" role="img" aria-labelledby="title desc">
+  <title id="title">Open Redis Manager WHM read-only diagnostics preview</title>
+  <desc id="desc">Synthetic root-only WHM fleet page with a diagnostics action and validated metrics for one running account. No cPanel host is connected.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FBFCFE"/></linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F04438"/><stop offset="1" stop-color="#B42318"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#172B4D" flood-opacity=".08"/></filter>
+    <style>
+      text { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      .label { fill:#66768A; font-size:13px; font-weight:650; letter-spacing:.06em; }
+      .body { fill:#263548; font-size:16px; }
+      .muted { fill:#68788D; font-size:14px; }
+      .strong { fill:#172435; font-weight:700; }
+      .metric { fill:#172435; font-size:21px; font-weight:700; }
+    </style>
+  </defs>
+  <rect width="1440" height="1100" fill="#F2F5F9"/>
+  <rect width="1440" height="76" fill="#FFFFFF"/>
+  <path d="M0 75.5H1440" stroke="#DCE3EC"/>
+  <g transform="translate(29 15) scale(.18)">
+    <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#red)"/>
+    <path d="M169 80a66 66 0 1 0 0 96" fill="none" stroke="#FFF" stroke-width="14" stroke-linecap="round"/>
+    <path d="M91 105h60M98 128h46M105 151h32M163 128h24" fill="none" stroke="#FFF" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="193" cy="128" r="12" fill="#FFF"/><circle cx="193" cy="128" r="4" fill="#D92D20"/>
+  </g>
+  <text x="83" y="47" class="strong" font-size="18">Open Redis Manager</text>
+  <text x="290" y="47" class="muted">WHM</text>
+  <text x="326" y="47" fill="#A9B4C1" font-size="18">›</text>
+  <text x="346" y="47" class="muted">Managed instances</text>
+  <rect x="1231" y="20" width="177" height="36" rx="18" fill="#EFF7F3" stroke="#C7E7D7"/>
+  <circle cx="1251" cy="38" r="5" fill="#14804A"/>
+  <text x="1264" y="43" fill="#176B45" font-size="13" font-weight="700">ROOT-ONLY VIEW</text>
+
+  <text x="48" y="132" fill="#B42318" font-size="13" font-weight="750" letter-spacing="2">WHM / OPEN REDIS MANAGER</text>
+  <text x="48" y="179" class="strong" font-size="34">Managed instances</text>
+  <text x="48" y="210" class="muted" font-size="16">Inspect one account at a time. Diagnostics read live, allowlisted metrics without exposing cache data.</text>
+
+  <rect x="48" y="238" width="1344" height="58" rx="10" fill="#EFF6FF" stroke="#C9DCF5"/>
+  <circle cx="74" cy="267" r="11" fill="#D6E7FF"/>
+  <text x="74" y="272" text-anchor="middle" fill="#245B9C" font-size="15" font-weight="800">i</text>
+  <text x="96" y="273" fill="#315477" font-size="14">Read-only probes return counters and configuration metrics only. Keys, values, credentials and raw command output are never returned.</text>
+
+  <rect x="48" y="320" width="1344" height="205" rx="14" fill="url(#panel)" stroke="#D9E1EB" filter="url(#shadow)"/>
+  <text x="76" y="358" class="strong" font-size="19">Account fleet</text>
+  <text x="76" y="382" class="muted">4 configured or unhealthy accounts · Page 1</text>
+  <rect x="1212" y="341" width="148" height="32" rx="16" fill="#EAF7F1" stroke="#C7E7D7"/>
+  <text x="1286" y="362" text-anchor="middle" fill="#176B45" font-size="12" font-weight="700">● ROOT VERIFIED</text>
+  <path d="M48 399H1392" stroke="#E5EAF0"/>
+  <text x="76" y="427" class="label">CPANEL ACCOUNT</text>
+  <text x="267" y="427" class="label">BACKEND</text>
+  <text x="373" y="427" class="label">STATE</text>
+  <text x="492" y="427" class="label">SERVICE ACTIONS</text>
+  <text x="746" y="427" class="label">READ-ONLY DIAGNOSTICS</text>
+  <text x="971" y="427" class="label">MIGRATION</text>
+  <text x="1169" y="427" class="label">BACKUPS</text>
+  <path d="M48 446H1392" stroke="#EDF0F4"/>
+  <text x="76" y="485" class="body strong">demo</text>
+  <text x="267" y="485" class="body">Redis</text>
+  <circle cx="382" cy="480" r="5" fill="#14804A"/>
+  <text x="396" y="485" fill="#176B45" font-size="14" font-weight="650">Running</text>
+  <rect x="492" y="461" width="68" height="32" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="526" y="482" text-anchor="middle" fill="#34465D" font-size="13">Start</text>
+  <rect x="568" y="461" width="66" height="32" rx="7" fill="#FFF8F7" stroke="#E0B8B5"/>
+  <text x="601" y="482" text-anchor="middle" fill="#962A23" font-size="13">Stop</text>
+  <rect x="642" y="461" width="77" height="32" rx="7" fill="#FFFFFF" stroke="#CBD5E1"/>
+  <text x="680" y="482" text-anchor="middle" fill="#34465D" font-size="13">Restart</text>
+  <rect x="746" y="458" width="180" height="38" rx="8" fill="#B42318"/>
+  <path d="M764 470a7 7 0 1 1 0 14m-4-8 4-4 4 4" fill="none" stroke="#FFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="839" y="483" text-anchor="middle" fill="#FFFFFF" font-size="13" font-weight="700">Run diagnostics</text>
+  <text x="971" y="483" class="muted">Redis → Valkey</text>
+  <text x="1169" y="483" class="muted">2 retained</text>
+  <path d="M48 525H1392" stroke="#E5EAF0"/>
+  <text x="76" y="514" class="muted" font-size="12">Search and state filters apply to the current page · one account per action</text>
+
+  <rect x="48" y="552" width="1344" height="480" rx="14" fill="#FFFFFF" stroke="#D9E1EB" filter="url(#shadow)"/>
+  <path d="M48 566a14 14 0 0 1 14-14h1316a14 14 0 0 1 14 14v57H48Z" fill="#FBFCFE"/>
+  <path d="M48 623H1392" stroke="#E5EAF0"/>
+  <text x="76" y="589" class="strong" font-size="20">Read-only diagnostics</text>
+  <text x="76" y="610" class="muted">Account: demo</text>
+  <rect x="1208" y="572" width="152" height="29" rx="14.5" fill="#EAF7F1" stroke="#C7E7D7"/>
+  <circle cx="1227" cy="586.5" r="4.5" fill="#14804A"/>
+  <text x="1240" y="591" fill="#176B45" font-size="12" font-weight="700">LIVE · READ ONLY</text>
+
+  <g>
+    <text x="76" y="662" class="label">BACKEND</text><text x="76" y="694" class="metric">Redis</text>
+    <text x="340" y="662" class="label">SERVER VERSION</text><text x="340" y="694" class="metric">7.2.4</text>
+    <text x="604" y="662" class="label">UPTIME</text><text x="604" y="694" class="metric">3,600 sec</text>
+    <text x="868" y="662" class="label">MEMORY USED</text><text x="868" y="694" class="metric">1,048,576 B</text>
+    <text x="1132" y="662" class="label">MEMORY PEAK</text><text x="1132" y="694" class="metric">2,097,152 B</text>
+  </g>
+  <path d="M76 719H1364" stroke="#EDF0F4"/>
+  <g>
+    <text x="76" y="758" class="label">MEMORY LIMIT</text><text x="76" y="790" class="metric">67,108,864 B</text>
+    <text x="340" y="758" class="label">CONNECTED CLIENTS</text><text x="340" y="790" class="metric">3 / 100</text>
+    <text x="604" y="758" class="label">BLOCKED CLIENTS</text><text x="604" y="790" class="metric">0</text>
+    <text x="868" y="758" class="label">COMMANDS / SEC</text><text x="868" y="790" class="metric">12</text>
+    <text x="1132" y="758" class="label">KEYS IN DATABASE 0</text><text x="1132" y="790" class="metric">42</text>
+  </g>
+  <path d="M76 815H1364" stroke="#EDF0F4"/>
+  <g>
+    <text x="76" y="854" class="label">KEYSPACE HITS</text><text x="76" y="886" class="metric">90</text>
+    <text x="340" y="854" class="label">KEYSPACE MISSES</text><text x="340" y="886" class="metric">10</text>
+    <text x="604" y="854" class="label">EXPIRED KEYS</text><text x="604" y="886" class="metric">4</text>
+    <text x="868" y="854" class="label">EVICTED KEYS</text><text x="868" y="886" class="metric">2</text>
+    <text x="1132" y="854" class="label">PROBE RATE</text><text x="1132" y="886" class="metric">1 / 5 sec</text>
+  </g>
+  <rect x="76" y="928" width="1288" height="70" rx="9" fill="#FFF8F6" stroke="#F1D2CD"/>
+  <path d="M96 950v26" stroke="#D92D20" stroke-width="3" stroke-linecap="round"/>
+  <text x="112" y="955" fill="#7C2D26" font-size="13" font-weight="700">Privacy boundary</text>
+  <text x="112" y="979" fill="#7A4B46" font-size="13">Fixed PING, INFO and DBSIZE only. No arbitrary commands, raw output, cache keys/values, or credentials are returned or stored.</text>
+  <text x="720" y="1070" text-anchor="middle" fill="#7C8999" font-size="12">Synthetic preview · not connected to a WHM host or Redis/Valkey service</text>
+</svg>
