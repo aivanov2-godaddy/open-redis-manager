@@ -6,6 +6,7 @@ packaging/upgrade.sh
 packaging/release-lib.sh
 packaging/inspect-release-archive.pl
 packaging/preview-release.sh
+packaging/apply-release.sh
 packaging/release-install-map.txt
 packaging/compare-release-preview.pl
 packaging/release-required-files.txt
