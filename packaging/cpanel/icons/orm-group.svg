@@ -1,13 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A custom white R monogram with three cache-control bars on a Redis-red field.</desc>
+  <desc id="orm-desc">A white open hexagonal cache frame with three data layers on a Redis-red field.</desc>
   <defs>
-    <linearGradient id="red" x1="26" y1="20" x2="232" y2="242" gradientUnits="userSpaceOnUse">
+    <linearGradient id="red" x1="24" y1="16" x2="232" y2="244" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F04438"/>
       <stop offset="1" stop-color="#C81E1E"/>
     </linearGradient>
   </defs>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#red)"/>
-  <path d="M83 198V58h62c39 0 57 20 57 49 0 25-14 42-40 48l42 43" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="22"/>
-  <path d="M91 84h47M91 105h57M91 126h37" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="8"/>
+  <path d="m168 68-40-23-70 40v86l70 40 40-23" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="14"/>
+  <path d="m168 68 27 15m0 90-27 15" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="14"/>
+  <path d="M91 101h57M80 128h78M92 155h57" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="12"/>
 </svg>
