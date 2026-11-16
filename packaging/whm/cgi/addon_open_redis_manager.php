@@ -11,6 +11,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php';
 
 $authenticatedUser = $_ENV['REMOTE_USER'] ?? getenv('REMOTE_USER');
 $authenticatedUser = is_string($authenticatedUser) ? $authenticatedUser : null;
@@ -33,6 +34,11 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     $fleetSummaryMessage = $fleetSummary === null
         ? ['type' => 'error', 'text' => 'The fleet summary could not be verified. Refresh the page and try again.']
         : ['type' => 'success', 'text' => 'Fleet summary loaded from verified account records and recent scheduled metric snapshots.'];
+}
+$updatePreview = null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'update.preview') {
+    $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser, $_SERVER);
 }
 $securityReport = null;
 $securityReportMessage = null;
@@ -618,6 +624,50 @@ WHM::header('Open Redis Manager', 0, 0);
   <?php else: ?>
     <p>Live backend discovery from the authenticated WHM session.</p>
     <?php if ($rootAuthorized): ?>
+    <section aria-labelledby="orm-update-preview-title">
+      <h2 id="orm-update-preview-title">Signed update preview</h2>
+      <p>Verify a root-staged ORM release and review its signed version, trusted key, artifact digest, and managed file changes. This preview does not apply the update.</p>
+      <?php if ($updatePreview !== null): ?>
+        <?php if (($updatePreview['ok'] ?? false) !== true): ?>
+          <p role="alert"><?= htmlspecialchars((string) ($updatePreview['message'] ?? 'The update preview could not be verified.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+        <?php else: ?>
+          <p role="status">Signature and compatibility verified. No files were changed.</p>
+          <dl>
+            <dt>Installed version</dt><dd><?= htmlspecialchars($updatePreview['installedVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+            <dt>Candidate version</dt><dd><?= htmlspecialchars($updatePreview['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+            <dt>Release channel</dt><dd><?= htmlspecialchars($updatePreview['release']['channel'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+            <dt>Trusted key ID</dt><dd><?= htmlspecialchars($updatePreview['release']['keyId'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+            <dt>Artifact SHA-256</dt><dd><code><?= htmlspecialchars($updatePreview['release']['artifactSha256'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></dd>
+          </dl>
+          <ul aria-label="Update file change summary">
+            <?php foreach (['add' => 'Add', 'replace' => 'Replace', 'unchanged' => 'Unchanged', 'move' => 'Move', 'conflict' => 'Conflict', 'retire' => 'Retire'] as $action => $label): ?>
+              <li><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>: <?= (int) $updatePreview['summary'][$action] ?></li>
+            <?php endforeach; ?>
+          </ul>
+          <details>
+            <summary>Review managed file actions</summary>
+            <table>
+              <thead><tr><th scope="col">File key</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Review</th></tr></thead>
+              <tbody>
+                <?php foreach ($updatePreview['fileActions'] as $fileAction): ?>
+                  <tr>
+                    <th scope="row"><?= htmlspecialchars($fileAction['key'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
+                    <td><?= htmlspecialchars(ucfirst($fileAction['action']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                    <td><code><?= htmlspecialchars($fileAction['target'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></td>
+                    <td><?= $fileAction['requiresReview'] ? 'Required' : 'No' ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              </tbody>
+            </table>
+          </details>
+        <?php endif; ?>
+      <?php endif; ?>
+      <form method="post">
+        <input type="hidden" name="orm_action" value="update.preview">
+        <button type="submit">Verify staged release</button>
+      </form>
+      <p>The preview reads fixed root-owned paths: <code>/var/cpanel/orm/updates/staged/</code> and <code>/etc/orm/release-keys/</code>. Releases are not downloaded automatically, and this control cannot install one.</p>
+    </section>
     <section aria-labelledby="orm-fleet-title">
       <h2 id="orm-fleet-title">Managed ORM instances</h2>
       <?php if ($fleetControlMessage !== null): ?>

@@ -75,7 +75,7 @@ write_metadata() {
         install_map="$test_root/orm-$version/packaging/release-install-map.txt"
         awk -F'|' -v target="$retired_target" '$3 != target' "$install_map" >"$install_map.tmp"
         mv -- "$install_map.tmp" "$install_map"
-        [[ "$(wc -l <"$install_map")" -eq 34 ]] \
+        [[ "$(wc -l <"$install_map")" -eq 43 ]] \
             || { printf 'retirement fixture did not remove exactly one candidate target.\n' >&2; exit 1; }
         tar -czf "$artifact" -C "$test_root" "orm-${version}"
     fi
@@ -190,7 +190,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     exit 1 unless $preview->{release}{minimumFromVersion} eq "0.1.0-dev";
     exit 1 unless $preview->{release}{maximumFromVersion} eq "0.1.0-dev";
     exit 1 unless ref($preview->{migrationActions}) eq "ARRAY" && !$preview->{migrationPlanAvailable};
-    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 31;
+    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 40;
     exit 1 unless $preview->{summary}{conflict} == 2 && $preview->{summary}{retire} == 1;
     exit 1 unless grep { $_->{key} eq "cpanel_entry" && $_->{action} eq "replace" } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "whm_cgi" && $_->{action} eq "conflict" && $_->{requiresReview} } @{$preview->{fileActions}};

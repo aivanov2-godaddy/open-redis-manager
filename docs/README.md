@@ -21,6 +21,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Disposable-host validation record template](validation/record-template.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
+- [WHM signed update preview operations](guides/update-preview.md)
 - [Interrupted update recovery](guides/update-recovery.md)
 - [Provider package policy](guides/provider-package-policy.md)
 - [cPanel user guide](guides/cpanel.md)
