@@ -53,7 +53,7 @@ orm_acquire_lifecycle_lock() {
     umask 077
     ORM_LIFECYCLE_LOCK_HELD=1
     export ORM_LIFECYCLE_LOCK_HELD
-    if flock -n -E 75 --close "$ORM_LIFECYCLE_LOCK" "$script_path" "$@"; then
+    if flock -n -E 75 --close "$ORM_LIFECYCLE_LOCK" "$BASH" "$script_path" "$@"; then
         status=0
     else
         status=$?
