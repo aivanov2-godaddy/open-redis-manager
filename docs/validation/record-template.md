@@ -35,6 +35,10 @@ Use `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`. Include a short sanitized observati
 | Backup, download, restore, safety snapshot | | |
 | Redis-to-Valkey migration and rollback | | |
 | Recovery scan and fixed repair | | |
+| AUTH disabled by default and status | | |
+| AUTH enable, rotate, client reconnect, and disable | | |
+| AUTH failed restart/probe and previous-state rollback | | |
+| AUTH password visibility, refresh behavior, and redaction | | |
 | Upgrade, including failure rollback | | |
 | Uninstall with populated user data preserved | | |
 | Missing required binary | | |
