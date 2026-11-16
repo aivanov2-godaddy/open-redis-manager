@@ -97,7 +97,8 @@ if (getenv('ORM_TEST_FIXED_QUEUE') === '1') {
         return ['exit_code' => 0, 'stdout' => ''];
     };
     $queued = ReleaseApplyJob::submit('root', $session, $request, $preview, $launchRunner);
-    $assert(($queued['ok'] ?? false) === true, 'a confirmed preview creates an asynchronous job record');
+    $assert(($queued['ok'] ?? false) === true,
+        'a confirmed preview creates an asynchronous job record: ' . (string) ($queued['message'] ?? 'unknown queue error'));
     $assert(is_array($capturedArgv) && in_array('--no-block', $capturedArgv, true)
         && in_array('--collect', $capturedArgv, true)
         && end($capturedArgv) === $queued['jobId'], 'the launcher receives fixed transient-unit arguments and only the opaque job ID');
