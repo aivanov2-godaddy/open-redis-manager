@@ -351,11 +351,10 @@ WHM::header('Open Redis Manager', 0, 0);
 <style>.orm-entry h1{display:flex;align-items:center;gap:10px}</style>
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true">
-  <defs><linearGradient id="orm-title-red" x1="24" y1="18" x2="230" y2="242" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient></defs>
-  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-title-red)"/>
-  <path d="M66 55h81c47 0 76 25 76 64 0 28-16 49-43 59l45 36h-54l-39-31h-19v31H66V55Zm47 39v53h31c20 0 32-10 32-27s-12-26-32-26h-31Z" fill="#fff" fill-rule="evenodd" clip-rule="evenodd"/>
-  <path d="M67 91h36M67 126h36M67 161h36" fill="none" stroke="#B51F1A" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="158" cy="120" r="7" fill="#fff"/><circle cx="158" cy="120" r="2.5" fill="#D72D24"/>
+  <defs><linearGradient id="orm-title-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#EF392D"/><stop offset="1" stop-color="#C81E1E"/></linearGradient><linearGradient id="orm-title-mark" x1="75" y1="45" x2="180" y2="220" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE7E2"/></linearGradient></defs>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-title-red)"/>
+  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-title-mark)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-title-mark)" stroke-width="11" stroke-linecap="round"/>
 </svg>Open Redis Manager</h1>
   <?php if (!$authorized): ?>
     <p role="alert">Access denied. This page requires root-level WHM access.</p>

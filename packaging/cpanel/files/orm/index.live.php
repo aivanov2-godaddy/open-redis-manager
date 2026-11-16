@@ -310,13 +310,12 @@ try {
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true">
   <defs>
-    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="242" gradientUnits="userSpaceOnUse"><stop stop-color="#F04438"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
-    <linearGradient id="orm-mark" x1="80" y1="49" x2="190" y2="211" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFF3F1"/></linearGradient>
+    <linearGradient id="orm-red" x1="24" y1="18" x2="230" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#EF392D"/><stop offset="1" stop-color="#C81E1E"/></linearGradient>
+    <linearGradient id="orm-mark" x1="75" y1="45" x2="180" y2="220" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE7E2"/></linearGradient>
   </defs>
-  <rect x="4" y="4" width="248" height="248" rx="62" fill="url(#orm-red)"/>
-  <path d="M66 55h81c47 0 76 25 76 64 0 28-16 49-43 59l45 36h-54l-39-31h-19v31H66V55Zm47 39v53h31c20 0 32-10 32-27s-12-26-32-26h-31Z" fill="url(#orm-mark)" fill-rule="evenodd" clip-rule="evenodd"/>
-  <path d="M67 91h36M67 126h36M67 161h36" fill="none" stroke="#B51F1A" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="158" cy="120" r="7" fill="#fff"/><circle cx="158" cy="120" r="2.5" fill="#D72D24"/>
+  <rect x="4" y="4" width="248" height="248" rx="58" fill="url(#orm-red)"/>
+  <path d="M162 82a68 68 0 1 0 0 92" fill="none" stroke="url(#orm-mark)" stroke-width="18" stroke-linecap="round"/>
+  <path d="M116 95h92M108 123h100M116 151h92" fill="none" stroke="url(#orm-mark)" stroke-width="11" stroke-linecap="round"/>
 </svg><?php endif; ?><?= htmlspecialchars($providerBranding['product_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h1>
       <?php if (!$brokerVerified): ?>
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
