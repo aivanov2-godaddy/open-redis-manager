@@ -62,7 +62,7 @@ close $required_handle
     or die "ORM release archive: could not finish reading required-file manifest.\n";
 scalar(keys %required) >= 40
     or die "ORM release archive: required-file manifest is incomplete.\n";
-for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/release-required-files.txt)) {
+for my $core_file (qw(VERSION README.md packaging/lib.sh packaging/install.sh packaging/upgrade.sh packaging/release-lib.sh packaging/inspect-release-archive.pl packaging/preview-release.sh packaging/release-install-map.txt packaging/compare-release-preview.pl packaging/release-required-files.txt)) {
     exists($required{$core_file})
         or die "ORM release archive: required-file manifest omits a core package file.\n";
 }
@@ -73,6 +73,7 @@ ref($next) eq 'CODE'
 
 my (%seen, %path_types);
 my @inventory;
+my $install_map_contents;
 my ($members, $expanded_bytes, $root_seen) = (0, 0, 0);
 my ($version_contents, $warning) = (undef, 0);
 local $SIG{__WARN__} = sub { $warning = 1 };
@@ -129,9 +130,14 @@ while (1) {
     if ($is_dir) {
         ($mode == 0755 || $mode == 0775)
             or die "ORM release archive: directory permissions are not canonical.\n";
+        my $expected_directory = grep { index($_, "$relative/") == 0 } keys %required;
+        $expected_directory || !length($relative)
+            or die "ORM release archive: unexpected directory is present.\n";
     } else {
         ($mode == 0644 || $mode == 0664 || $mode == 0755 || $mode == 0775)
             or die "ORM release archive: file permissions are not canonical.\n";
+        exists($required{$relative})
+            or die "ORM release archive: unexpected file is present.\n";
         my $size = $member->size;
         defined($size) && $size >= 0 && $size <= $max_file_bytes
             or die "ORM release archive: file size exceeds the limit.\n";
@@ -144,6 +150,9 @@ while (1) {
             or die "ORM release archive: file content could not be read.\n";
         if ($relative eq 'VERSION') {
             $version_contents = $content;
+        }
+        if ($relative eq 'packaging/release-install-map.txt') {
+            $install_map_contents = $content;
         }
         push @inventory, {
             path => $relative,
@@ -161,12 +170,88 @@ for my $path (keys %required) {
 }
 defined($version_contents) && $version_contents eq "$version\n"
     or die "ORM release archive: packaged version does not match signed metadata.\n";
+defined($install_map_contents)
+    or die "ORM release archive: signed install target map is missing.\n";
+
+my (%inventory_by_path, %install_keys, %install_sources, %install_targets);
+my %allowed_install_targets = map { $_ => 1 } qw(
+    /usr/local/cpanel/base/frontend/jupiter/orm/index.live.php
+    /usr/local/cpanel/whostmgr/docroot/cgi/addon_open_redis_manager.php
+    /usr/local/cpanel/whostmgr/docroot/addon_plugins/orm-whm.png
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAcl.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php
+    /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl
+    /usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher
+    /usr/local/cpanel/3rdparty/orm/bin/orm-metrics-collect.pl
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/AccountResolver.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/BackendPolicy.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/InstanceManager.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/FleetInventory.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PeerCredentials.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Protocol.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Server.pm
+    /etc/systemd/system/orm-broker.service
+    /etc/systemd/system/orm-instance@.service
+    /etc/systemd/system/orm-metrics-collect@.service
+    /etc/systemd/system/orm-metrics-collect@.timer
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderPolicy.pm
+    /var/cpanel/apps/open_redis_manager.conf
+);
+for my $file (@inventory) {
+    $inventory_by_path{$file->{path}} = $file;
+}
+my @install_map;
+$install_map_contents =~ /\A(?:[\x20-\x7E]+\n)+\z/
+    or die "ORM release archive: install target map format is invalid.\n";
+for my $line (split /\n/, $install_map_contents) {
+    next if $line eq q{};
+    my ($key, $source, $target, $mode, $extra) = split /\|/, $line, -1;
+    defined($key) && !defined($extra)
+        or die "ORM release archive: install target map row is invalid.\n";
+    $key =~ /\A[a-z_]+\z/ && !$install_keys{$key}++
+        or die "ORM release archive: install target map repeats or invalidates a key.\n";
+    $source =~ /\A[A-Za-z0-9._\/@-]+\z/ && !$install_sources{$source}++
+        or die "ORM release archive: install target map repeats or invalidates a source.\n";
+    $target =~ m{\A/(?:[A-Za-z0-9._@-]+/)*[A-Za-z0-9._@-]+\z}
+        or die "ORM release archive: install target path is invalid.\n";
+    my @target_parts = split m{/}, substr($target, 1), -1;
+    @target_parts && !grep { $_ eq q{} || $_ eq q{.} || $_ eq q{..} } @target_parts
+        or die "ORM release archive: install target path contains an unsafe component.\n";
+    my $allowed_target = exists $allowed_install_targets{$target};
+    $allowed_target
+        or die "ORM release archive: install target is outside ORM-owned paths.\n";
+    $mode =~ /\A(?:600|644|755)\z/
+        or die "ORM release archive: install target mode is invalid.\n";
+    !$install_targets{$target}++
+        or die "ORM release archive: install target map repeats a destination.\n";
+    exists($inventory_by_path{$source}) && exists($required{$source})
+        or die "ORM release archive: install target map references an absent package file.\n";
+    push @install_map, { key => $key, source => $source, target => $target, mode => $mode };
+}
+scalar(@install_map) >= 30
+    or die "ORM release archive: install target map is incomplete.\n";
 
 if ($output_mode eq '--json') {
     print JSON::PP->new->canonical->encode({
+        version => $version,
         members => 0 + $members,
         totalBytes => 0 + $expanded_bytes,
         files => \@inventory,
+        installMap => \@install_map,
     }), "\n";
 } else {
     print "$members|$expanded_bytes\n";

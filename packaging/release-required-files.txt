@@ -6,6 +6,8 @@ packaging/upgrade.sh
 packaging/release-lib.sh
 packaging/inspect-release-archive.pl
 packaging/preview-release.sh
+packaging/release-install-map.txt
+packaging/compare-release-preview.pl
 packaging/release-required-files.txt
 packaging/cpanel/files/orm/index.live.php
 packaging/whm/cgi/addon_open_redis_manager.php

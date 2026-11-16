@@ -91,20 +91,126 @@ expect_invalid() {
 write_metadata
 [[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
+
+target_root="$test_root/installed-targets"
+installed_manifest="$test_root/installed-manifest"
+mkdir -m 0700 "$target_root"
+IFS='|' read -r first_key first_source first_target first_mode <"$repo_root/packaging/release-install-map.txt"
+first_path="$target_root$first_target"
+mkdir -p "$(dirname -- "$first_path")"
+printf 'installed copy before update\n' >"$first_path"
+chmod "$first_mode" "$first_path"
+first_digest="$(sha256sum -- "$first_path" | awk '{print $1}')"
+IFS='|' read -r second_key second_source second_target second_mode < <(sed -n '2p' "$repo_root/packaging/release-install-map.txt")
+second_path="$target_root$second_target"
+mkdir -p "$(dirname -- "$second_path")"
+printf 'unmanaged file collision\n' >"$second_path"
+chmod "$second_mode" "$second_path"
+IFS='|' read -r third_key third_source third_target third_mode < <(sed -n '3p' "$repo_root/packaging/release-install-map.txt")
+third_path="$target_root$third_target"
+mkdir -p "$(dirname -- "$third_path")"
+printf 'installed file before local edit\n' >"$third_path"
+chmod "$third_mode" "$third_path"
+third_digest="$(sha256sum -- "$third_path" | awk '{print $1}')"
+retired_key='obsolete_module'
+retired_target='/usr/local/cpanel/3rdparty/orm/obsolete/module.php'
+retired_path="$target_root$retired_target"
+mkdir -p "$(dirname -- "$retired_path")"
+printf 'previously managed file\n' >"$retired_path"
+chmod 0644 "$retired_path"
+retired_digest="$(sha256sum -- "$retired_path" | awk '{print $1}')"
+{
+    printf 'orm-install-manifest-v3\nversion|0.1.0-dev\n'
+    printf '%s|%s|%s|%s\n' "$first_key" "$first_mode" "$first_digest" "$first_target"
+    printf '%s|%s|%s|%s\n' "$third_key" "$third_mode" "$third_digest" "$third_target"
+    printf '%s|%s|%s|%s\n' "$retired_key" '644' "$retired_digest" "$retired_target"
+} >"$installed_manifest"
+chmod 0600 "$installed_manifest"
+printf 'operator-edited file\n' >"$third_path"
+third_observed_digest="$(sha256sum -- "$third_path" | awk '{print $1}')"
+target_snapshot() {
+    {
+        find "$target_root" -printf '%P|%y|%u|%g|%m|%s\n' | sort
+        find "$target_root" -type f -print0 | sort -z | xargs -0 -r sha256sum
+    }
+}
+before_preview="$(target_snapshot)"
+
 preview="$(bash "$repo_root/packaging/preview-release.sh" \
-    "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" \
+    "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev' "$installed_manifest" "$target_root")" \
     || { printf 'valid signed release did not produce a preview.\n' >&2; exit 1; }
-printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
+raw_inventory="$("$ORM_PERL" "$repo_root/packaging/inspect-release-archive.pl" "$artifact" '0.2.0' --json)"
+computed_preview="$(printf '%s\n' "$raw_inventory" | "$ORM_PERL" \
+    "$repo_root/packaging/compare-release-preview.pl" "$installed_manifest" '0.1.0-dev' "$metadata" "$target_root")" \
+    || { printf 'raw target comparison could not be computed.\n' >&2; exit 1; }
+printf '%s\n' "$computed_preview" | "$ORM_PERL" -MJSON::PP -e '
     local $/;
     my $preview = decode_json(<STDIN>);
-    exit 1 unless $preview->{schema} eq "orm-update-preview-v1";
+    exit 1 if $preview->{verified} || $preview->{signatureVerified};
+    exit 1 unless $preview->{attestationStatus} eq "unverified-by-comparator";
+    exit 1 unless $preview->{targetComparison} eq "test-fixture-computed";
+' || { printf 'the raw comparator incorrectly asserted release verification.\n' >&2; exit 1; }
+expected_artifact_digest="$(sha256sum -- "$artifact" | awk '{print $1}')"
+expected_artifact_size="$(stat -c '%s' -- "$artifact")"
+expected_artifact="$(awk -F'|' '$1 == "artifact" { print $2 }' "$metadata")"
+expected_channel="$(awk -F'|' '$1 == "channel" { print $2 }' "$metadata")"
+expected_created_at="$(awk -F'|' '$1 == "created_at" { print $2 }' "$metadata")"
+expected_expires_at="$(awk -F'|' '$1 == "expires_at" { print $2 }' "$metadata")"
+after_preview="$(target_snapshot)"
+[[ "$before_preview" == "$after_preview" && -f "$retired_path" ]] \
+    || { printf 'release preview changed an installed fixture.\n' >&2; exit 1; }
+printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
+    local $/;
+    my ($expected_digest, $expected_size, $expected_channel, $expected_artifact,
+        $expected_created_at, $expected_expires_at, $expected_target, $expected_observed_digest) = @ARGV;
+    my $preview = decode_json(<STDIN>);
+    exit 1 unless $preview->{schema} eq "orm-update-preview-v2";
     exit 1 unless $preview->{installedVersion} eq "0.1.0-dev";
     exit 1 unless $preview->{candidateVersion} eq "0.2.0";
     exit 1 unless $preview->{verified} && !$preview->{mutationsApplied};
-    exit 1 unless ref($preview->{migrationActions}) eq "ARRAY";
-    exit 1 unless ref($preview->{archiveInventory}{files}) eq "ARRAY";
-    exit 1 unless grep { $_->{path} eq "packaging/install.sh" } @{$preview->{archiveInventory}{files}};
-' || { printf 'release preview JSON was incomplete or invalid.\n' >&2; exit 1; }
+    exit 1 unless $preview->{targetComparison} eq "test-fixture";
+    exit 1 unless $preview->{manifestSchema} == 3;
+    exit 1 unless $preview->{signatureVerified} && $preview->{signatureAlgorithm} eq "RSA-SHA256";
+    exit 1 unless $preview->{release}{keyId} eq "test-release";
+    exit 1 unless $preview->{release}{channel} eq $expected_channel;
+    exit 1 unless $preview->{release}{artifact} eq $expected_artifact;
+    exit 1 unless $preview->{release}{createdAt} eq $expected_created_at;
+    exit 1 unless $preview->{release}{expiresAt} eq $expected_expires_at;
+    exit 1 unless $preview->{release}{artifactSha256} eq $expected_digest;
+    exit 1 unless $preview->{release}{artifactSize} == $expected_size;
+    exit 1 unless $preview->{release}{minimumFromVersion} eq "0.1.0-dev";
+    exit 1 unless $preview->{release}{maximumFromVersion} eq "0.1.0-dev";
+    exit 1 unless ref($preview->{migrationActions}) eq "ARRAY" && !$preview->{migrationPlanAvailable};
+    exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == 32;
+    exit 1 unless $preview->{summary}{conflict} == 2 && $preview->{summary}{retire} == 1;
+    exit 1 unless grep { $_->{key} eq "cpanel_entry" && $_->{action} eq "replace" } @{$preview->{fileActions}};
+    exit 1 unless grep { $_->{key} eq "whm_cgi" && $_->{action} eq "conflict" && $_->{requiresReview} } @{$preview->{fileActions}};
+    exit 1 unless grep {
+        $_->{key} eq "whm_icon"
+            && $_->{action} eq "conflict"
+            && $_->{conflictReason} eq "digest_changed"
+            && $_->{target} eq $expected_target
+            && $_->{observedSha256} eq $expected_observed_digest
+    } @{$preview->{fileActions}};
+    exit 1 unless grep { $_->{key} eq "obsolete_module" && $_->{action} eq "retire" && $_->{requiresReview} } @{$preview->{fileActions}};
+' "$expected_artifact_digest" "$expected_artifact_size" "$expected_channel" "$expected_artifact" \
+    "$expected_created_at" "$expected_expires_at" "$third_target" "$third_observed_digest" \
+    || { printf 'release preview JSON did not report correct read-only target actions.\n' >&2; exit 1; }
+
+for legacy_schema in v1 v2; do
+    legacy_manifest="$test_root/legacy-$legacy_schema-manifest"
+    if [[ "$legacy_schema" == v1 ]]; then
+        printf 'orm-install-manifest-v1\n%s|%s|%s\n' "$first_key" "$first_mode" "$first_digest" >"$legacy_manifest"
+    else
+        printf 'orm-install-manifest-v2\nversion|0.1.0-dev\n%s|%s|%s\n' "$first_key" "$first_mode" "$first_digest" >"$legacy_manifest"
+    fi
+    chmod 0600 "$legacy_manifest"
+    if bash "$repo_root/packaging/preview-release.sh" \
+        "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev' "$legacy_manifest" "$target_root" >/dev/null 2>&1; then
+        printf 'live update preview accepted a %s manifest without target paths.\n' "$legacy_schema" >&2
+        exit 1
+    fi
+done
 
 if (cd "$test_root" && orm_release_metadata_verify release.metadata release.sig "$artifact" "$key_dir" '0.1.0-dev' >/dev/null 2>&1); then
     printf 'relative release paths were accepted.\n' >&2

@@ -52,6 +52,12 @@ while IFS='|' read -r key source target mode; do
     [[ -n "${release_required[$relative_source]+present}" ]] \
         || { printf 'package file map entry is missing from release-required-files.txt: %s\n' "$relative_source" >&2; exit 1; }
 done < <(orm_package_file_map)
+while IFS='|' read -r key source target mode; do
+    relative_source="${source#"$ORM_REPO_ROOT/"}"
+    printf '%s|%s|%s|%s\n' "$key" "$relative_source" "$target" "$mode"
+done < <(orm_package_file_map) >"$test_root/expected-install-map"
+cmp -s -- "$test_root/expected-install-map" "$repo_root/packaging/release-install-map.txt" \
+    || { printf 'signed release install map is out of sync with the package file map.\n' >&2; exit 1; }
 
 prepare_release
 make_archive
@@ -60,11 +66,9 @@ summary="$(perl "$repo_root/packaging/inspect-release-archive.pl" "$archive" "$v
     || { printf 'valid archive did not return bounded inventory counts.\n' >&2; exit 1; }
 
 prepare_release
-long_component="$(printf '%120s' '' | tr ' ' x)"
-printf 'PAX path fixture\n' >"$release_root/$long_component"
-tar --format=pax -czf "$archive" -C "$test_root" "orm-$version"
+tar --format=pax --pax-option='comment=ORM structure fixture' -czf "$archive" -C "$test_root" "orm-$version"
 perl "$repo_root/packaging/inspect-release-archive.pl" "$archive" "$version" >/dev/null \
-    || { printf 'valid PAX path entry was rejected.\n' >&2; exit 1; }
+    || { printf 'valid PAX metadata entry was rejected.\n' >&2; exit 1; }
 
 prepare_release
 truncate -s 67108865 "$release_root/oversized-member"
@@ -96,6 +100,23 @@ if mkfifo "$release_root/fifo" 2>/dev/null; then
 else
     printf 'Skipping FIFO fixture: this platform cannot create POSIX FIFOs.\n'
 fi
+
+prepare_release
+printf 'unlisted payload\n' >"$release_root/unexpected-file"
+make_archive
+expect_rejected 'an unlisted archive file'
+
+prepare_release
+sed -i '1s#|/usr/local/cpanel/base/frontend/jupiter/orm/index.live.php|644$#|/etc/passwd|644#' \
+    "$release_root/packaging/release-install-map.txt"
+make_archive
+expect_rejected 'an install target outside ORM-owned files'
+
+prepare_release
+sed -i '1s#|/usr/local/cpanel/base/frontend/jupiter/orm/index.live.php|644$#|/usr/local/cpanel/3rdparty/orm/bin/orm-unmanaged.pl|644#' \
+    "$release_root/packaging/release-install-map.txt"
+make_archive
+expect_rejected 'an unmanaged file inside the ORM install tree'
 
 prepare_release
 tar -czf "$archive" -C "$test_root" \
