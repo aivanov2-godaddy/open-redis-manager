@@ -65,7 +65,15 @@ orm_acquire_lifecycle_lock() {
 }
 
 orm_safe_target_parent_chain() {
-    local parent="$(dirname -- "$1")"
+    local target="${1:-}" parent rest component
+    local -a components=()
+    [[ "$target" == /* && "$target" != *//* ]] || return 1
+    rest="${target#/}"
+    IFS='/' read -r -a components <<<"$rest"
+    for component in "${components[@]}"; do
+        [[ "$component" != . && "$component" != .. ]] || return 1
+    done
+    parent="$(dirname -- "$target")"
     while [[ "$parent" != / ]]; do
         [[ ! -L "$parent" && ( ! -e "$parent" || -d "$parent" ) ]] || return 1
         parent="$(dirname -- "$parent")"
