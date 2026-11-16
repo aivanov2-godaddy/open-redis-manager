@@ -20,7 +20,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 
 ## Experimental
 
-- Manual development installer, authenticated cPanel/WHM entry points, and root-owned broker integration.
+- Manual development installer, authenticated cPanel/WHM entry points, and root-owned broker integration. Linux CI exercises fresh-install success and rollback with isolated mock cPanel registration utilities; a live cPanel install is still unvalidated.
 - Lifecycle, metrics, backups/restore, migration, WHM diagnostics, provider controls, and recovery behavior on real cPanel systems.
 - Host support across cPanel/WHM versions, supported OS releases, internal PHP versions, EasyApache/Alt-PHP, handlers, CageFS, and PHP Selector.
 
