@@ -24,15 +24,20 @@ orm_package_file_map() {
 }
 
 orm_write_install_manifest "$ORM_INSTALL_MANIFEST"
-[[ "$(head -n 1 "$ORM_INSTALL_MANIFEST")" == orm-install-manifest-v2 ]] \
-    || { printf 'writer did not create a v2 manifest.\n' >&2; exit 1; }
+[[ "$(head -n 1 "$ORM_INSTALL_MANIFEST")" == orm-install-manifest-v3 ]] \
+    || { printf 'writer did not create a v3 manifest.\n' >&2; exit 1; }
 [[ "$(orm_install_manifest_version "$ORM_INSTALL_MANIFEST")" == '0.1.0-rc.2+test.1' ]] \
-    || { printf 'v2 manifest version was not readable.\n' >&2; exit 1; }
+    || { printf 'v3 manifest version was not readable.\n' >&2; exit 1; }
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
-    || { printf 'valid v2 manifest did not validate.\n' >&2; exit 1; }
+    || { printf 'valid v3 manifest did not validate.\n' >&2; exit 1; }
 
-cp -- "$ORM_INSTALL_MANIFEST" "$test_root/legacy-manifest"
-{ printf 'orm-install-manifest-v1\n'; tail -n +3 "$test_root/legacy-manifest"; } >"$test_root/legacy.tmp"
+{ printf 'orm-install-manifest-v2\nversion|0.1.0-rc.2+test.1\n'; tail -n +3 "$ORM_INSTALL_MANIFEST" | cut -d '|' -f 1-3; } >"$test_root/v2-manifest"
+chmod 0600 "$test_root/v2-manifest"
+chown root:root "$test_root/v2-manifest"
+orm_validate_install_manifest "$test_root/v2-manifest" \
+    || { printf 'compatible v2 manifest was rejected.\n' >&2; exit 1; }
+
+{ printf 'orm-install-manifest-v1\n'; tail -n +3 "$ORM_INSTALL_MANIFEST" | cut -d '|' -f 1-3; } >"$test_root/legacy.tmp"
 chmod 0600 "$test_root/legacy.tmp"
 chown root:root "$test_root/legacy.tmp"
 mv -- "$test_root/legacy.tmp" "$test_root/legacy-manifest"
@@ -56,6 +61,15 @@ chown root:root "$test_root/invalid-version.tmp"
 mv -- "$test_root/invalid-version.tmp" "$test_root/invalid-version-manifest"
 if orm_validate_install_manifest "$test_root/invalid-version-manifest"; then
     printf 'invalid version in v2 manifest was accepted.\n' >&2
+    exit 1
+fi
+
+cp -- "$ORM_INSTALL_MANIFEST" "$test_root/invalid-target-manifest"
+chmod 0600 "$test_root/invalid-target-manifest"
+chown root:root "$test_root/invalid-target-manifest"
+sed -i "s#|$test_root/target$#|$test_root/other-target#" "$test_root/invalid-target-manifest"
+if orm_validate_install_manifest "$test_root/invalid-target-manifest"; then
+    printf 'a v3 manifest with a changed install target was accepted.\n' >&2
     exit 1
 fi
 
