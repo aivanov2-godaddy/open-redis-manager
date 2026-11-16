@@ -1,0 +1,36 @@
+[Unit]
+Description=Open Redis Manager identity broker
+After=local-fs.target
+ConditionPathIsDirectory=/var/cpanel/users
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/perl /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl
+Restart=on-failure
+RestartSec=2s
+RuntimeDirectory=orm
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=no
+UMask=0111
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=64M
+CPUQuota=10%
+TasksMax=64
+LimitNOFILE=128
+
+[Install]
+WantedBy=multi-user.target

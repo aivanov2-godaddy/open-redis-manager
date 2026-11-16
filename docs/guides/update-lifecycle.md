@@ -8,7 +8,13 @@ The reference site also describes a special cleanup path for its own pre-v2.0.3 
 
 ## ORM status
 
-ORM has no in-panel updater, migration engine, release feed, or supported upgrade path yet. The development installer in [`packaging/`](../../packaging/README.md) is not an updater. Never use it to overwrite an existing installation: it deliberately refuses existing target files.
+ORM has no in-panel updater, migration engine, release feed, or general release updater. `packaging/upgrade.sh` provides a narrowly scoped compatibility bridge from the identity-only v1 installation captured by [`packaging/legacy/identity-v1/install.manifest`](../../packaging/legacy/identity-v1/install.manifest). It accepts only an exact file and mode match, a matching registered WHM AppConfig file, and absent instance roots. Any changed file, unknown ORM file, symlink, registration mismatch, or existing instance root causes a refusal before mutation.
+
+After preflight, the transaction creates only the empty root-owned, mode-0711 metadata and data directories required by the broker's systemd write allowlist. It does not create an account instance or touch Redis/Valkey data. If rollback is needed, it removes those directories only when they still match the transaction's recorded identity and remain empty; otherwise recovery stops and preserves them.
+
+The bridge serializes install lifecycle operations, snapshots package files, prevents new broker connections while existing requests drain, reapplies the same cPanel feature IDs through cPanel's `install_plugin` utility, atomically replaces managed files, writes a root-owned file hash manifest, and restores the prior broker enabled/active state. It leaves the already-registered WHM AppConfig file in place and includes its validated hash in the manifest. It rolls back file and cPanel registration changes when a step fails, retaining recovery files if rollback itself is incomplete. It never creates an account instance or changes Redis/Valkey data. It is not a general updater for releases after this bridge; those releases still need a versioned updater and recovery path. See the [package guide](../../packaging/README.md).
+
+cPanel documents `install_plugin` as the supported way to register a plugin and `uninstall_plugin` as the supported way to remove that registration; the ORM bridge uses both for a reversible replacement ([cPanel plugin installation guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins), [`install_plugin` reference](https://docs.cpanel.net/whm/scripts/the-install_plugin-script/), [cPanel plugin uninstall guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-uninstall-plugins)).
 
 ## Required ORM update design
 

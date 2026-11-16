@@ -12,7 +12,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. This repositor
 - cPanel and WHM entry points, a root-owned backend choice, and account-scoped Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker; lifecycle validation is still required on a disposable cPanel host.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
-- The ORM red cache-prism mark with integrated controls is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
+- The ORM red hexagonal cache mark is available as [`assets/orm-mark.svg`](assets/orm-mark.svg), included in the cPanel and WHM integrations, and shown in the [logo preview](screenshots/orm-logo.png).
 - Original screenshots of the prototype in [`screenshots/`](screenshots/).
 - An implementation roadmap and GitHub issue drafts in [`project/`](project/).
 
