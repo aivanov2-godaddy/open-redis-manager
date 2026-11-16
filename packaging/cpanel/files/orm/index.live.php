@@ -9,6 +9,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.ph
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
 $cpanel = new CPANEL();
@@ -16,6 +17,9 @@ $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
 $brokerVerified = $account !== null
     && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
 $instanceClient = new \Orm\Cpanel\BrokerClient();
+$podmanCaches = $account !== null
+    ? \Orm\Cpanel\PodmanCacheDiscovery::forCurrentAccount($account->username())
+    : [];
 $providerExposureResult = $brokerVerified ? $instanceClient->request('provider.exposure') : null;
 $providerBrandingResult = $brokerVerified ? $instanceClient->request('provider.branding') : null;
 $providerBranding = is_array($providerBrandingResult) && ($providerBrandingResult['success'] ?? false) === true
@@ -421,6 +425,58 @@ try {
                 <?php endif; ?>
               <?php endif; ?>
             </section>
+            <?php if ($podmanCaches !== []): ?>
+              <section class="orm-card" aria-labelledby="orm-podman-title">
+                <h3 id="orm-podman-title">Existing cPanel Podman caches</h3>
+                <p>ORM found cache sockets owned by this cPanel account. These remain managed by cPanel’s EA Podman tools; ORM only checks the private socket and provides application connection settings. It does not change container settings or data.</p>
+                <?php foreach ($podmanCaches as $podmanIndex => $podmanCache): ?>
+                  <?php $podmanDetails = \Orm\Cpanel\ConnectionDetails::forSocket($account->username(), $podmanCache['socket_path']); ?>
+                  <?php if ($podmanDetails !== null): ?>
+                    <article class="orm-preset-card">
+                      <h4><?= htmlspecialchars(ucfirst($podmanCache['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> · cPanel container <?= htmlspecialchars($podmanCache['container'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
+                      <p><strong>Status:</strong> <?= htmlspecialchars(ucfirst(str_replace('-', ' ', $podmanCache['status'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $podmanCache['version'] !== null ? ' · version ' . htmlspecialchars($podmanCache['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?></p>
+                      <p><strong>Private socket:</strong> <code><?= htmlspecialchars($podmanCache['socket_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
+                      <?php if ($podmanCache['status'] === 'reachable'): ?>
+                        <p class="orm-note">The PHP Redis extension completed a read-only PING. No keys or values were read.</p>
+                      <?php elseif ($podmanCache['status'] === 'unavailable'): ?>
+                        <p class="orm-note">The account-owned socket exists, but the read-only health probe could not connect. Check the container in cPanel before using it.</p>
+                      <?php else: ?>
+                        <p class="orm-note">The socket was found, but this PHP runtime does not provide the Redis extension for a read-only health probe.</p>
+                      <?php endif; ?>
+                      <details>
+                        <summary>PHP with PhpRedis</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>Laravel</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['laravel_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>WordPress / WooCommerce</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['wordpress_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>LiteSpeed Cache</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['litespeed_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>Magento / Adobe Commerce</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['magento_values'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>Node.js with node-redis</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['node_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <details>
+                        <summary>Python with redis-py</summary>
+                        <pre><code><?= htmlspecialchars($podmanDetails['python_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
+                      </details>
+                      <p class="orm-note">The cPanel Redis and Valkey container packages require a normal, non-jailed shell account. <a href="https://docs.cpanel.net/ea4/containers/redis-via-containers/">Redis guide</a> · <a href="https://docs.cpanel.net/ea4/containers/valkey-via-containers/">Valkey guide</a>.</p>
+                    </article>
+                  <?php endif; ?>
+                <?php endforeach; ?>
+              </section>
+            <?php endif; ?>
             <section class="orm-health" aria-labelledby="orm-health-title" aria-live="polite">
               <h3 id="orm-health-title">Health guidance <span class="orm-health-severity">Advisory</span></h3>
               <ul class="orm-health-list">

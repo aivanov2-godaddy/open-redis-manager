@@ -18,6 +18,9 @@ sub parse_request {
     if ($frame =~ /\A\{"offset":(0|[1-9][0-9]{0,5}),"operation":"fleet\.list","version":1\}\n\z/) {
         return { offset => 0 + $1, operation => 'fleet.list', version => 1 };
     }
+    if ($frame =~ /\A\{"operation":"fleet\.summary","version":1\}\n\z/) {
+        return { operation => 'fleet.summary', version => 1 };
+    }
     if ($frame =~ /\A\{"operation":"fleet\.diagnostics","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.diagnostics', username => $1, version => 1 };
     }
@@ -35,6 +38,19 @@ sub parse_request {
     }
     if ($frame =~ /\A\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","operation":"fleet\.backup\.restore","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { backup_id => $1, operation => 'fleet.backup.restore', username => $2, version => 1 };
+    }
+    if ($frame =~ /\A\{"operation":"fleet\.backup\.batch\.create","targets":\["([a-zA-Z0-9_-]{1,16})"(?:,"([a-zA-Z0-9_-]{1,16})")?\],"version":1\}\n\z/) {
+        my @usernames = grep { defined($_) } ($1, $2);
+        my %seen;
+        return undef if grep { $seen{$_}++ } @usernames;
+        return { operation => 'fleet.backup.batch.create', targets => [map { { username => $_ } } @usernames], version => 1 };
+    }
+    if ($frame =~ /\A\{"operation":"fleet\.backup\.batch\.restore","targets":\[\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","username":"([a-zA-Z0-9_-]{1,16})"\}(?:,\{"backup_id":"(snapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb)","username":"([a-zA-Z0-9_-]{1,16})"\})?\],"version":1\}\n\z/) {
+        my @targets = ({ backup_id => $1, username => $2 });
+        push @targets, { backup_id => $3, username => $4 } if defined($3);
+        my %seen;
+        return undef if grep { $seen{$_->{username}}++ } @targets;
+        return { operation => 'fleet.backup.batch.restore', targets => \@targets, version => 1 };
     }
     if ($frame =~ /\A\{"operation":"fleet\.migrate","target_backend":"valkey","username":"([a-zA-Z0-9_-]{1,16})","version":1,"writes_quiesced":true\}\n\z/) {
         return { operation => 'fleet.migrate', target_backend => 'valkey', username => $1, version => 1, writes_quiesced => 1 };

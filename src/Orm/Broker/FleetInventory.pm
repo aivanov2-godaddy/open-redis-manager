@@ -9,6 +9,9 @@ use Sys::Syslog qw(:standard :macros);
 my $PAGE_SIZE = 4;
 my $MAX_METADATA_ENTRIES = 10_000;
 my $MAX_BACKUPS_PER_ACCOUNT = 3;
+my $MAX_BACKUP_BATCH_TARGETS = 2;
+my $BACKUP_BATCH_COOLDOWN_SECONDS = 5;
+my $BACKUP_ACCOUNT_COOLDOWN_SECONDS = 60;
 my $MAX_BACKUP_BYTES = 134_217_728;
 
 sub new {
@@ -25,6 +28,9 @@ sub new {
         },
         read_names => $args{read_names},
         audit => $args{audit},
+        clock => $args{clock} // sub { time },
+        backup_account_last_at => {},
+        backup_batch_last_at => undef,
     }, $class;
 }
 
@@ -136,6 +142,58 @@ sub backup {
     my $safety_id = _valid_backup_id($result->{safety_backup_id}) ? $result->{safety_backup_id} : undef;
     my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
     return _fleet_failure($error, $username, $action, $audited, $safety_id);
+}
+
+sub backup_batch {
+    my ($self, $action, $targets, $rate_limited_targets) = @_;
+    return _failure('invalid_request') if !defined($action) || ref($action)
+        || $action !~ /\A(?:create|restore)\z/ || ref($targets) ne 'ARRAY'
+        || @{$targets} < 1 || @{$targets} > $MAX_BACKUP_BATCH_TARGETS;
+    my %seen;
+    for my $target (@{$targets}) {
+        return _failure('invalid_request') if ref($target) ne 'HASH'
+            || !defined($target->{username}) || ref($target->{username})
+            || $target->{username} !~ /\A[a-zA-Z0-9_-]{1,16}\z/
+            || $seen{$target->{username}}++
+            || ($action eq 'create' && join(',', sort keys %{$target}) ne 'username')
+            || ($action eq 'restore' && (join(',', sort keys %{$target}) ne 'backup_id,username'
+                || !_valid_backup_id($target->{backup_id})));
+    }
+    my $now = eval { $self->{clock}->() };
+    return _failure('operation_failed') if !defined($now) || ref($now) || $now !~ /\A[0-9]+(?:\.[0-9]+)?\z/;
+    my $globallyLimited = defined($self->{backup_batch_last_at})
+        && $now - $self->{backup_batch_last_at} < $BACKUP_BATCH_COOLDOWN_SECONDS;
+    $self->{backup_batch_last_at} = $now if !$globallyLimited;
+
+    my $eventAction = 'backup.' . $action;
+    my @results;
+    for my $target (@{$targets}) {
+        my $username = $target->{username};
+        my $previous = $self->{backup_account_last_at}->{$username};
+        my $serverLimited = ref($rate_limited_targets) eq 'HASH' && $rate_limited_targets->{$username};
+        if ($serverLimited || $globallyLimited || (defined($previous) && $now - $previous < $BACKUP_ACCOUNT_COOLDOWN_SECONDS)) {
+            my $audited = _audit_event($self, 0, $username, $eventAction, 'rate_limited', 'unavailable');
+            push @results, _fleet_failure('rate_limited', $username, $eventAction, $audited);
+            next;
+        }
+        $self->{backup_account_last_at}->{$username} = $now;
+        my $result = eval { $self->backup($username, $eventAction, $target->{backup_id}) };
+        if (ref($result) ne 'HASH') {
+            my $audited = _audit_event($self, 0, $username, $eventAction, 'operation_failed', 'unavailable');
+            $result = _fleet_failure('operation_failed', $username, $eventAction, $audited);
+        }
+        push @results, $result;
+    }
+    my $succeeded = scalar grep { $_->{success} } @results;
+    return {
+        action => $eventAction,
+        partial => $succeeded != @results ? JSON::PP::true : JSON::PP::false,
+        requested_count => scalar(@results),
+        results => \@results,
+        succeeded_count => $succeeded,
+        success => JSON::PP::true,
+        version => 1,
+    };
 }
 
 sub diagnostics {
@@ -353,49 +411,10 @@ sub page {
     my ($self, $offset) = @_;
     return _failure('invalid_request') if !defined($offset) || ref($offset)
         || $offset !~ /\A(?:0|[1-9][0-9]{0,5})\z/;
-    return _failure('operation_failed') if !eval { $self->{resolver}->can('resolve_account') }
-        || !eval { $self->{instance_manager}->can('status') }
-        || !eval { $self->{instance_manager}->can('backups') };
-
-    my @root_stat = lstat($self->{instance_root});
-    return _failure('operation_failed') if !@root_stat || !S_ISDIR($root_stat[2])
-        || $root_stat[4] != $self->{expected_owner_uid} || ($root_stat[2] & 0022) != 0;
-
-    my @names;
-    if (ref($self->{read_names}) eq 'CODE') {
-        @names = eval { $self->{read_names}->($self->{instance_root}) };
-        return _failure('operation_failed') if $@;
-    } else {
-        opendir(my $directory, $self->{instance_root}) or return _failure('operation_failed');
-        while (my $name = readdir($directory)) {
-            next if $name eq '.' || $name eq '..';
-            push @names, $name;
-            if (@names > $MAX_METADATA_ENTRIES) {
-                closedir($directory);
-                return _failure('operation_failed');
-            }
-        }
-        closedir($directory) or return _failure('operation_failed');
-    }
-    return _failure('operation_failed') if @names > $MAX_METADATA_ENTRIES;
-
-    my @accounts;
-    for my $name (@names) {
-        next if !defined($name) || ref($name) || $name !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
-        my @directory_stat = lstat("$self->{instance_root}/$name");
-        next if !@directory_stat || !S_ISDIR($directory_stat[2])
-            || $directory_stat[4] != $self->{expected_owner_uid} || ($directory_stat[2] & 0027) != 0;
-
-        my $identity = eval { $self->{lookup_name}->($name) };
-        next if ref($identity) ne 'HASH' || !defined($identity->{uid})
-            || ref($identity->{uid}) || $identity->{uid} !~ /\A[1-9][0-9]*\z/;
-        my $account = eval { $self->{resolver}->resolve_account($identity->{uid}) };
-        next if ref($account) ne 'HASH' || $account->{name} ne $name || $account->{uid} != $identity->{uid};
-
-        push @accounts, { account => $account, username => $name };
-    }
-
-    @accounts = sort { $a->{username} cmp $b->{username} } @accounts;
+    return _failure('operation_failed') if !eval { $self->{instance_manager}->can('backups') };
+    my ($accounts, $scanError) = $self->_verified_accounts();
+    return _failure($scanError) if defined($scanError);
+    my @accounts = @{$accounts};
     my $total = scalar @accounts;
     return _failure('invalid_request') if $offset > $total;
     my $end = $offset + $PAGE_SIZE;
@@ -448,6 +467,78 @@ sub page {
         total => $total,
         version => 1,
     };
+}
+
+sub summary {
+    my ($self) = @_;
+    return _failure('operation_failed') if !eval { $self->{instance_manager}->can('fleet_summary') };
+    my ($accounts, $scanError, $unverified) = $self->_verified_accounts();
+    return _failure($scanError) if defined($scanError);
+    my @resolved = map { $_->{account} } @{$accounts};
+    my $summary = eval { $self->{instance_manager}->fleet_summary(\@resolved) };
+    return _failure('operation_failed') if ref($summary) ne 'HASH' || !$summary->{success};
+    $summary->{unverified_count} += $unverified;
+    $summary->{account_count} += $unverified;
+    $summary->{partial} = JSON::PP::true if $unverified > 0;
+    return $summary;
+}
+
+sub _verified_accounts {
+    my ($self) = @_;
+    return (undef, 'operation_failed', 0) if !eval { $self->{resolver}->can('resolve_account') };
+    my @root_stat = lstat($self->{instance_root});
+    return (undef, 'operation_failed', 0) if !@root_stat || !S_ISDIR($root_stat[2])
+        || $root_stat[4] != $self->{expected_owner_uid} || ($root_stat[2] & 0022) != 0;
+    my @names;
+    if (ref($self->{read_names}) eq 'CODE') {
+        @names = eval { $self->{read_names}->($self->{instance_root}) };
+        return (undef, 'operation_failed', 0) if $@;
+    } else {
+        opendir(my $directory, $self->{instance_root}) or return (undef, 'operation_failed', 0);
+        while (my $name = readdir($directory)) {
+            next if $name eq '.' || $name eq '..';
+            push @names, $name;
+            if (@names > $MAX_METADATA_ENTRIES) {
+                closedir($directory);
+                return (undef, 'operation_failed', 0);
+            }
+        }
+        closedir($directory) or return (undef, 'operation_failed', 0);
+    }
+    return (undef, 'operation_failed', 0) if @names > $MAX_METADATA_ENTRIES;
+    my @accounts;
+    my $unverified = 0;
+    for my $name (@names) {
+        if (!defined($name) || ref($name) || $name !~ /\A[a-zA-Z0-9_-]{1,16}\z/) {
+            ++$unverified if defined($name) && !ref($name) && $name ne '.orm-reseller-quota.lock';
+            next;
+        }
+        my @directory_stat = lstat("$self->{instance_root}/$name");
+        if (!@directory_stat || !S_ISDIR($directory_stat[2])
+            || $directory_stat[4] != $self->{expected_owner_uid} || ($directory_stat[2] & 0027) != 0) {
+            ++$unverified;
+            next;
+        }
+        my $identity = eval { $self->{lookup_name}->($name) };
+        if (ref($identity) ne 'HASH' || !defined($identity->{uid}) || ref($identity->{uid})
+            || $identity->{uid} !~ /\A[1-9][0-9]*\z/) {
+            ++$unverified;
+            next;
+        }
+        my $account = eval { $self->{resolver}->resolve_account($identity->{uid}) };
+        if (ref($account) ne 'HASH' || ($account->{name} // '') ne $name
+            || ($account->{uid} // -1) != $identity->{uid}) {
+            ++$unverified;
+            next;
+        }
+        push @accounts, { account => $account, username => $name };
+    }
+    my %seen;
+    for my $candidate (@accounts) {
+        return (undef, 'operation_failed', 0) if $seen{$candidate->{username}}++;
+    }
+    @accounts = sort { $a->{username} cmp $b->{username} } @accounts;
+    return (\@accounts, undef, $unverified);
 }
 
 sub _failure {
@@ -518,7 +609,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|migration\.to-valkey|diagnostics\.read|recovery\.scan|recovery\.start)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.read|recovery\.scan|recovery\.start)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 

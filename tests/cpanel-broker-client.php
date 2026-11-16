@@ -541,4 +541,74 @@ $unsafeMigrationReceipt = new BrokerClient(static fn (string $request): string =
 $assert($unsafeMigrationReceipt->migrateFleetAccount('demo', 'valkey', true) === null,
     'Reject a migration receipt containing an unsafe safety snapshot identifier.');
 
+$summaryRequests = [];
+$summaryResponse = json_encode([
+    'account_count' => 3, 'managed_count' => 2, 'unconfigured_count' => 1, 'unverified_count' => 0,
+    'state_counts' => ['failed' => 0, 'running' => 1, 'starting' => 0, 'stopped' => 1, 'stopping' => 0, 'unavailable' => 0],
+    'metrics' => ['alert_accounts' => 0, 'connected_clients' => 2, 'fresh_accounts' => 1,
+        'high_client_accounts' => 0, 'high_memory_accounts' => 0, 'latest_sampled_at' => 1794760000,
+        'low_hit_ratio_accounts' => 0, 'memory_used_bytes' => 8192, 'missing_accounts' => 1, 'stale_accounts' => 0],
+    'partial' => true, 'success' => true, 'version' => 1,
+], JSON_THROW_ON_ERROR) . "\n";
+$summaryClient = new BrokerClient(static function (string $request) use (&$summaryRequests, $summaryResponse): string {
+    $summaryRequests[] = $request;
+    return $summaryResponse;
+});
+$summaryResult = $summaryClient->requestFleetSummary();
+$assert($summaryRequests[0] === "{\"operation\":\"fleet.summary\",\"version\":1}\n"
+    && ($summaryResult['partial'] ?? false) && $summaryResult['metrics']['missing_accounts'] === 1,
+    'Request the root fleet summary and preserve missing data as explicitly partial.');
+$unsafeSummary = new BrokerClient(static fn (string $request): string =>
+    str_replace('"partial":true', '"partial":true,"secret":"x"', $summaryResponse));
+$assert($unsafeSummary->requestFleetSummary() === null, 'Reject extra fields in the fleet summary response.');
+
+$batchCreateRequests = [];
+$batchCreateResponse = json_encode([
+    'action' => 'backup.create', 'partial' => true, 'requested_count' => 2,
+    'results' => [
+        ['action' => 'backup.create', 'audit_logged' => true,
+            'backup' => ['id' => 'snapshot-1794760000-a1b2c3d4.rdb', 'created_at' => 1794760000, 'size_bytes' => 4096],
+            'success' => true, 'username' => 'demo'],
+        ['action' => 'backup.create', 'audit_logged' => true, 'error' => 'account_unavailable',
+            'success' => false, 'username' => 'demo2'],
+    ],
+    'succeeded_count' => 1, 'success' => true, 'version' => 1,
+], JSON_THROW_ON_ERROR) . "\n";
+$batchCreateClient = new BrokerClient(static function (string $request) use (&$batchCreateRequests, $batchCreateResponse): string {
+    $batchCreateRequests[] = $request;
+    return $batchCreateResponse;
+});
+$batchCreateResult = $batchCreateClient->backupFleetBatch('create', [
+    ['username' => 'demo'], ['username' => 'demo2'],
+]);
+$assert($batchCreateRequests[0] === "{\"operation\":\"fleet.backup.batch.create\",\"targets\":[\"demo\",\"demo2\"],\"version\":1}\n"
+    && ($batchCreateResult['partial'] ?? false) && $batchCreateResult['succeeded_count'] === 1,
+    'Send a capped batch snapshot request and validate each account outcome.');
+$assert($batchCreateClient->backupFleetBatch('create', [['username' => 'demo'], ['username' => 'demo']]) === null
+    && $batchCreateClient->backupFleetBatch('create', [['username' => 'demo'], ['username' => 'demo2'], ['username' => 'demo3']]) === null
+    && count($batchCreateRequests) === 1,
+    'Reject duplicate or over-limit batch selections before broker I/O.');
+
+$batchRestoreResponse = json_encode([
+    'action' => 'backup.restore', 'partial' => false, 'requested_count' => 1,
+    'results' => [[
+        'action' => 'backup.restore', 'audit_logged' => true,
+        'backup_id' => 'snapshot-1794760000-a1b2c3d4.rdb',
+        'safety_backup_id' => 'snapshot-1794760001-b2c3d4e5.rdb', 'state' => 'running',
+        'success' => true, 'username' => 'demo',
+    ]],
+    'succeeded_count' => 1, 'success' => true, 'version' => 1,
+], JSON_THROW_ON_ERROR) . "\n";
+$batchRestoreRequests = [];
+$batchRestoreClient = new BrokerClient(static function (string $request) use (&$batchRestoreRequests, $batchRestoreResponse): string {
+    $batchRestoreRequests[] = $request;
+    return $batchRestoreResponse;
+});
+$batchRestoreResult = $batchRestoreClient->backupFleetBatch('restore', [[
+    'username' => 'demo', 'backup_id' => 'snapshot-1794760000-a1b2c3d4.rdb',
+]]);
+$assert($batchRestoreRequests[0] === "{\"operation\":\"fleet.backup.batch.restore\",\"targets\":[{\"backup_id\":\"snapshot-1794760000-a1b2c3d4.rdb\",\"username\":\"demo\"}],\"version\":1}\n"
+    && ($batchRestoreResult['results'][0]['safety_backup_id'] ?? null) === 'snapshot-1794760001-b2c3d4e5.rdb',
+    'Validate that a batch restore is account-scoped and returns its safety snapshot.');
+
 fwrite(STDOUT, "cPanel broker client checks passed: {$checks}\n");

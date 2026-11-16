@@ -23,6 +23,18 @@ for my $operation (qw(instance.status instance.auth.status instance.auth.rotate 
     my $frame = '{"operation":"' . $operation . '","version":1}' . "\n";
 is(parse_request($frame)->{operation}, $operation, "accept fixed operation $operation");
 }
+is(parse_request('{"operation":"fleet.summary","version":1}' . "\n")->{operation},
+    'fleet.summary', 'accept the fixed root fleet summary request');
+my $batch_create = parse_request('{"operation":"fleet.backup.batch.create","targets":["acct01","acct02"],"version":1}' . "\n");
+ok($batch_create && $batch_create->{operation} eq 'fleet.backup.batch.create'
+    && $batch_create->{targets}[1]->{username} eq 'acct02', 'accept a bounded batch snapshot request');
+my $batch_restore = parse_request('{"operation":"fleet.backup.batch.restore","targets":[{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","username":"acct01"}],"version":1}' . "\n");
+ok($batch_restore && $batch_restore->{targets}[0]->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb',
+    'accept only account-scoped snapshot IDs in a batch restore');
+ok(!parse_request('{"operation":"fleet.backup.batch.create","targets":["acct01","acct01"],"version":1}' . "\n")
+    && !parse_request('{"operation":"fleet.backup.batch.restore","targets":[{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","username":"acct01"},{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","username":"acct01"}],"version":1}' . "\n")
+    && !parse_request('{"operation":"fleet.backup.batch.create","targets":["acct01","acct02","acct03"],"version":1}' . "\n"),
+    'reject duplicate and oversized fleet batch targets');
 is(parse_request('{"operation":"instance.metrics","version":1}' . "\n")->{operation},
     'instance.metrics', 'accept the fixed instance metrics request');
 for my $operation (qw(backup.list backup.create)) {
@@ -72,6 +84,8 @@ for my $invalid (
     '{"operation":"instance.configure","maxclients":50,"maxmemory_policy":"allkeys-lru","memory_mib":48,"timeout":0,"version":1}' . "\n",
     '{"backup_id":"../other.rdb","operation":"backup.restore","version":1}' . "\n",
     '{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n",
+    '{"operation":"fleet.summary","version":1,"scope":"all"}' . "\n",
+    '{"operation":"fleet.backup.batch.create","targets":["acct01","../root"],"version":1}' . "\n",
     '{"command":"CONFIG SET dir /tmp","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n",
     '{"backup_id":"../x.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n",
     '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",

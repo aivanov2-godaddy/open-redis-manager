@@ -28,6 +28,9 @@ my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
 my $MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
+my $FLEET_METRICS_FRESH_SECONDS = 15 * 60;
+my $MAX_FLEET_SUMMARY_ACCOUNTS = 10_000;
+my $MAX_FLEET_STATE_OUTPUT_BYTES = 262144;
 my $MAX_METRICS_HISTORY_SAMPLES = 720;
 my $MAX_METRICS_HISTORY_BYTES = 262144;
 my $MAX_BACKUPS_PER_ACCOUNT = 3;
@@ -69,6 +72,7 @@ sub new {
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
         systemctl => $args{systemctl} // '/usr/bin/systemctl',
         systemctl_call => $args{systemctl_call},
+        systemctl_states_call => $args{systemctl_states_call},
         binary_paths => $args{binary_paths} // \%SERVER_BINARIES,
         binary_probe => $args{binary_probe},
         client_paths => $args{client_paths} // \%CLIENT_BINARIES,
@@ -216,6 +220,154 @@ sub status {
     return _state('failed', $manifest) if $state eq 'failed';
     return _state('stopped', $manifest) if $state eq 'inactive';
     return _failure('instance_unavailable');
+}
+
+sub fleet_summary {
+    my ($self, $accounts) = @_;
+    return undef if ref($accounts) ne 'ARRAY' || @{$accounts} > $MAX_FLEET_SUMMARY_ACCOUNTS;
+    my %seen;
+    my @managed;
+    my $unconfigured = 0;
+    my $unverified = 0;
+    for my $account (@{$accounts}) {
+        return undef if !_valid_account($account) || $seen{$account->{name}}++;
+        my $manifest = $self->_read_manifest($account);
+        if (ref($manifest) ne 'HASH') {
+            my $manifest_path = $self->_manifest_path($account->{name});
+            my $config_dir = $self->_account_config_dir($account->{name});
+            my $data_dir = $self->_account_data_dir($account->{name});
+            if (!-e $manifest_path && !-l $manifest_path && !-e $config_dir && !-l $config_dir
+                && !-e $data_dir && !-l $data_dir) {
+                ++$unconfigured;
+            } else {
+                ++$unverified;
+            }
+            next;
+        }
+        push @managed, { account => $account, manifest => $manifest };
+    }
+
+    my @names = map { $_->{account}->{name} } @managed;
+    my $rawStates = $self->_fleet_systemctl_states(\@names);
+    my %states = (running => 0, stopped => 0, starting => 0, stopping => 0, failed => 0, unavailable => 0);
+    my %metrics = (
+        fresh_accounts => 0, stale_accounts => 0, missing_accounts => 0,
+        memory_used_bytes => 0, connected_clients => 0,
+        high_memory_accounts => 0, high_client_accounts => 0, low_hit_ratio_accounts => 0,
+        alert_accounts => 0, latest_sampled_at => 0,
+    );
+    my $stateUnavailable = 0;
+    my $now = time;
+    for my $item (@managed) {
+        my $account = $item->{account};
+        my $raw = ref($rawStates) eq 'HASH' ? $rawStates->{$account->{name}} : undef;
+        my $state = defined($raw) ? _normalize_fleet_state($raw) : 'unavailable';
+        ++$stateUnavailable if $state eq 'unavailable';
+        ++$states{$state};
+
+        my $sample = $self->_read_metrics_snapshot($account);
+        if (ref($sample) ne 'HASH') {
+            ++$metrics{missing_accounts};
+            next;
+        }
+        if ($sample->{sampled_at} > $now || $sample->{sampled_at} < $now - $FLEET_METRICS_FRESH_SECONDS) {
+            ++$metrics{stale_accounts};
+            next;
+        }
+        ++$metrics{fresh_accounts};
+        $metrics{memory_used_bytes} += $sample->{memory_used_bytes};
+        $metrics{connected_clients} += $sample->{connected_clients};
+        $metrics{latest_sampled_at} = $sample->{sampled_at}
+            if $sample->{sampled_at} > $metrics{latest_sampled_at};
+        my $settings = $item->{manifest}->{settings};
+        my $highMemory = ref($settings) eq 'HASH' && $settings->{memory_mib} > 0
+            && $sample->{memory_used_bytes} >= $settings->{memory_mib} * 1024 * 1024 * 0.85;
+        my $highClients = ref($settings) eq 'HASH' && $settings->{maxclients} > 0
+            && $sample->{connected_clients} >= $settings->{maxclients} * 0.85;
+        my $lookups = $sample->{keyspace_hits} + $sample->{keyspace_misses};
+        my $lowHitRatio = $lookups >= 100 && $sample->{keyspace_hits} / $lookups < 0.5;
+        ++$metrics{high_memory_accounts} if $highMemory;
+        ++$metrics{high_client_accounts} if $highClients;
+        ++$metrics{low_hit_ratio_accounts} if $lowHitRatio;
+        ++$metrics{alert_accounts} if $highMemory || $highClients || $lowHitRatio;
+    }
+    my $partial = $unverified > 0 || $stateUnavailable > 0
+        || $metrics{stale_accounts} > 0 || $metrics{missing_accounts} > 0;
+    return {
+        account_count => scalar(@{$accounts}),
+        managed_count => scalar(@managed),
+        unconfigured_count => $unconfigured,
+        unverified_count => $unverified,
+        state_counts => \%states,
+        metrics => \%metrics,
+        partial => $partial ? JSON::PP::true : JSON::PP::false,
+        success => JSON::PP::true,
+        version => 1,
+    };
+}
+
+sub _fleet_systemctl_states {
+    my ($self, $names) = @_;
+    return {} if ref($names) ne 'ARRAY' || @{$names} > $MAX_FLEET_SUMMARY_ACCOUNTS;
+    return {} if !@{$names};
+    if (ref($self->{systemctl_states_call}) eq 'CODE') {
+        my $states = eval { $self->{systemctl_states_call}->([@{$names}]) };
+        return undef if ref($states) ne 'HASH';
+        my %expected = map { $_ => 1 } @{$names};
+        for my $name (keys %{$states}) {
+            return undef if !$expected{$name} || !defined($states->{$name}) || ref($states->{$name})
+                || $states->{$name} !~ /\A(?:active|inactive|activating|reloading|deactivating|failed)\z/;
+        }
+        return $states;
+    }
+    return undef if $self->{systemctl} ne '/usr/bin/systemctl'
+        || grep { !defined($_) || ref($_) || $_ !~ /\A[a-zA-Z0-9_-]{1,16}\z/ } @{$names};
+    my @units = map { $self->_unit_name($_) } @{$names};
+    my ($output, $completed) = ('', 0);
+    my $opened = eval {
+        local $SIG{ALRM} = sub { die "fleet state timeout\n" };
+        alarm(5);
+        if (open(my $pipe, '-|', $self->{systemctl}, '--no-pager', 'is-active', @units)) {
+            my $valid = 1;
+            while (1) {
+                my $chunk = '';
+                my $read = read($pipe, $chunk, 8192);
+                if (!defined($read)) {
+                    $valid = 0;
+                    last;
+                }
+                last if $read == 0;
+                $output .= $chunk;
+                if (length($output) > $MAX_FLEET_STATE_OUTPUT_BYTES) {
+                    $valid = 0;
+                    last;
+                }
+            }
+            $completed = $valid;
+            close($pipe); # is-active returns non-zero when any requested unit is inactive.
+        }
+        alarm(0);
+        1;
+    };
+    alarm(0);
+    return undef if !$opened || !$completed;
+    my @states = split(/\r?\n/, $output, -1);
+    pop @states if @states && $states[-1] eq '';
+    return undef if @states != @{$names};
+    return undef if grep { $_ !~ /\A(?:active|inactive|activating|reloading|deactivating|failed)\z/ } @states;
+    my %result;
+    @result{@{$names}} = @states;
+    return \%result;
+}
+
+sub _normalize_fleet_state {
+    my ($raw) = @_;
+    return 'running' if $raw eq 'active';
+    return 'stopped' if $raw eq 'inactive';
+    return 'starting' if $raw eq 'activating' || $raw eq 'reloading';
+    return 'stopping' if $raw eq 'deactivating';
+    return 'failed' if $raw eq 'failed';
+    return 'unavailable';
 }
 
 sub auth_status {

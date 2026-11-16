@@ -1,4 +1,4 @@
-# Add fleet aggregates and batched snapshot operations
+# Add fleet aggregates and bounded batched snapshot operations
 
 Live issue: [#68](https://github.com/aivanov2-godaddy/open-redis-manager/issues/68), milestone 0.2.0.
 
