@@ -29,6 +29,9 @@ $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecuri
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');
+$assert(str_contains($whm, 'Counter-rate samples') && str_contains($whm, 'resets, and missing baselines')
+    && str_contains($whm, 'actual sample times') && str_contains($whm, 'without an abuse threshold'),
+    'explain bounded rate evidence, unknown resets, and neutral operation-rate interpretation');
 $assert(str_contains($cpanel, 'PodmanCacheDiscovery::forCurrentAccount')
     && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches'),
     'show only verified current-account Podman cache sockets and their read-only probe status');

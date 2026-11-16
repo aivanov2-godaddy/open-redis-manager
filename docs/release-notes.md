@@ -21,7 +21,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
 - Account-scoped discovery of existing cPanel EA Podman Redis/Valkey sockets with optional PhpRedis PING, safe version reporting, and application connection examples. cPanel retains container lifecycle and data ownership.
 - On-demand fleet status and fresh scheduled-metrics aggregates, plus sequential create/restore batches capped at two visible running accounts with independent audited outcomes.
-- Root-only report-only security review for fresh fleet memory/client/hit-ratio aggregates and recent normalized AUTH management outcomes. Requests are limited to one per minute and report events contain fixed metadata only. Eviction-rate, operation-rate, Redis client-authentication failures, and credential-strength findings remain unavailable and are identified as such.
+- Root-only report-only security review for fresh fleet memory/client/hit-ratio aggregates, bounded evicted-key and processed-command counter deltas, and recent normalized AUTH management outcomes. Counter rates require compatible consecutive samples with uptime continuity and actual intervals no longer than 26 hours; reports show interval bounds, treat gaps/resets as unknown, and do not label operation volume as abuse. Requests are limited to one per minute and report events contain fixed metadata only. Redis client-authentication failures and credential-strength findings remain unavailable and are identified as such.
 
 ## Experimental
 
@@ -38,7 +38,7 @@ Live cPanel identity evidence consists of two smoke runs during private testing.
 
 - A general in-panel updater; the identity-v1 compatibility bridge is narrowly scoped.
 - Automatic whole-fleet backup/restore/repair batches; current WHM snapshot batches intentionally cover at most two selected accounts per request.
-- Complete eviction and operation-rate abuse signals, plus any safe verified source for Redis client-authentication failures.
+- Any safe verified source for Redis client-authentication failures; report-only eviction and operation-rate evidence is implemented, but still needs disposable-host validation.
 - A production-supported cPanel/OS/PHP matrix. No ORM host combination has completed the full validation gate.
 
 ## Release gate

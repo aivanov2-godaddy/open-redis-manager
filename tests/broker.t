@@ -322,7 +322,8 @@ my $unit_state = 'inactive';
 my $timer_state = 'inactive';
 my $metrics_info = join("\r\n",
     'used_memory:1048576', 'used_memory_peak:2097152', 'connected_clients:3',
-    'uptime_in_seconds:3600', 'instantaneous_ops_per_sec:12', 'keyspace_hits:90', 'keyspace_misses:10', '');
+    'uptime_in_seconds:3600', 'instantaneous_ops_per_sec:12', 'keyspace_hits:90', 'keyspace_misses:10',
+    'evicted_keys:4', 'total_commands_processed:50000', '');
 my @metrics_calls;
 my @systemctl_calls;
 my @config_calls;
@@ -843,9 +844,81 @@ my @metrics_stat = stat($metrics_path);
 is($metrics_stat[4], $<, 'metrics snapshot is owned by the privileged manager');
 is($metrics_stat[5], $<, 'metrics snapshot is not readable through the cPanel account group');
 is($metrics_stat[2] & 0777, 0600, 'metrics snapshot permissions are root-only');
+my $security_metrics_path = "$etc_instances/ormtest/security-metrics.json";
+unlink($security_metrics_path) if -e $security_metrics_path;
+my $security_now = time;
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 7200, uptime_seconds => 3600,
+    evicted_keys => 4, total_commands_processed => 50000,
+}), 'store the first bounded security counter sample as a baseline');
+my $baseline_security_sample = $manager->_read_security_metrics_snapshot($account);
+ok($baseline_security_sample && $baseline_security_sample->{available} == 1
+    && !defined($baseline_security_sample->{window_seconds}),
+    'keep rate evidence unknown until a second valid counter sample exists');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 3600, uptime_seconds => 7200,
+    evicted_keys => 6, total_commands_processed => 68000,
+}), 'store a later security counter sample');
+my $measured_security_sample = $manager->_read_security_metrics_snapshot($account);
+is_deeply([@{$measured_security_sample}{qw(evicted_keys_delta total_commands_processed_delta window_seconds window_start_at)}],
+    [2, 18000, 3600, $security_now - 7200],
+    'derive eviction and operation counter deltas over the actual one-hour sample interval');
+my $measured_fleet_summary = $manager->fleet_summary([$account]);
+ok($measured_fleet_summary && $measured_fleet_summary->{metrics}->{rate_accounts} == 1
+    && $measured_fleet_summary->{metrics}->{eviction_activity_accounts} == 1
+    && $measured_fleet_summary->{metrics}->{max_evictions_per_window} == 2
+    && $measured_fleet_summary->{metrics}->{max_operations_per_second} == 5
+    && $measured_fleet_summary->{metrics}->{rate_window_min_seconds} == 3600,
+    'aggregate only bounded per-account counter rates and their evidence window for root WHM');
+my @security_metrics_stat = stat($security_metrics_path);
+is($security_metrics_stat[4], $<, 'keep the security counter snapshot owned by the privileged manager');
+is($security_metrics_stat[2] & 0777, 0600, 'keep the security counter snapshot private to root');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 1800, uptime_seconds => 10,
+    evicted_keys => 1, total_commands_processed => 200,
+}), 'record a lower counter sample as a new post-reset baseline');
+my $reset_security_sample = $manager->_read_security_metrics_snapshot($account);
+ok($reset_security_sample && !defined($reset_security_sample->{window_seconds})
+    && $reset_security_sample->{evicted_keys} == 1,
+    'treat counter decreases and uptime resets as unknown instead of negative rates');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 900, uptime_seconds => 910,
+    evicted_keys => 3, total_commands_processed => 9200,
+}), 'resume rate measurement from the post-reset baseline');
+my $recovered_security_sample = $manager->_read_security_metrics_snapshot($account);
+ok($recovered_security_sample && $recovered_security_sample->{window_seconds} == 900
+    && $recovered_security_sample->{evicted_keys_delta} == 2,
+    'recover with a valid rate window after a counter reset');
+ok($manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now, uptime_seconds => 3600,
+    evicted_keys => 8, total_commands_processed => 50000,
+}), 'record the next current security counter sample');
+ok(defined($manager->_read_security_metrics_snapshot($account)),
+    'keep the latest root-owned security counter sample readable');
+unlink($security_metrics_path) or die "reset security metrics fixture for gap test: $!";
+$manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 27 * 3600, uptime_seconds => 1000,
+    evicted_keys => 8, total_commands_processed => 50000,
+});
+$manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now - 60, uptime_seconds => 27 * 3600 + 940,
+    evicted_keys => 9, total_commands_processed => 51000,
+});
+my $gapped_security_sample = $manager->_read_security_metrics_snapshot($account);
+ok($gapped_security_sample && !defined($gapped_security_sample->{window_seconds}),
+    'leave rate evidence unknown when the sample gap exceeds the 26-hour bound');
+$manager->_write_security_metrics_snapshot($account, {
+    sampled_at => $security_now, uptime_seconds => 3601,
+});
+my $unavailable_security_sample = $manager->_read_security_metrics_snapshot($account);
+ok($unavailable_security_sample && $unavailable_security_sample->{available} == 0
+    && !defined($unavailable_security_sample->{evicted_keys}),
+    'represent missing counter fields explicitly as unavailable');
+unlink($security_metrics_path) or die "remove security metrics fixture: $!";
 my $last_good_info = $metrics_info;
 $metrics_info = join("\n", 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:7',
-    'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20', '');
+    'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
+    'evicted_keys:8', 'total_commands_processed:68000', '');
 $fail_metrics_commit_once = 1;
 my $uncached_metrics = $manager->dispatch('instance.metrics', $account);
 ok($uncached_metrics->{success} && !$uncached_metrics->{stale} && !$uncached_metrics->{retained}

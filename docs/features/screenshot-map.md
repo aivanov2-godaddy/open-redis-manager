@@ -27,5 +27,6 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | [ORM health guidance](../../screenshots/cpanel-health-guidance.png) | Synthetic account-scoped advisory for configured memory/client limits and cumulative hit ratio; thresholds are not performance guarantees. |
 | [ORM diagnostics preview](../../screenshots/orm-diagnostics.png) | Synthetic cPanel support panel with a credential-redacted JSON preview and explicit download action. |
 | [WHM audit log](../../screenshots/whm-audit-log.png) | Root-only UTC filters, source coverage, normalized events, and JSON export using synthetic sample data. |
+| [WHM security report](../../screenshots/whm-security-report.png) | Synthetic report-only findings with counter-rate windows, partial coverage, and explicitly unknown authentication signals. |
 
 ORM prototype captures are original implementations in [`/screenshots`](../../screenshots/README.md). The connection-details capture demonstrates the private Unix-socket path and PhpRedis example with synthetic data; it does not connect to a live cPanel account or cache service. Other prototype screens also use demonstration data.

@@ -29,6 +29,8 @@ my $MAX_INFO_BYTES = 32768;
 my $MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
 my $FLEET_METRICS_FRESH_SECONDS = 15 * 60;
+my $MAX_SECURITY_METRICS_AGE_SECONDS = 26 * 60 * 60;
+my $MAX_SECURITY_METRICS_BYTES = 2048;
 my $MAX_FLEET_SUMMARY_ACCOUNTS = 10_000;
 my $MAX_FLEET_STATE_OUTPUT_BYTES = 262144;
 my $MAX_METRICS_HISTORY_SAMPLES = 720;
@@ -255,6 +257,10 @@ sub fleet_summary {
         memory_used_bytes => 0, connected_clients => 0,
         high_memory_accounts => 0, high_client_accounts => 0, low_hit_ratio_accounts => 0,
         alert_accounts => 0, latest_sampled_at => 0,
+        rate_accounts => 0, rate_missing_accounts => 0, eviction_activity_accounts => 0,
+        max_evictions_per_window => 0, max_operations_per_second => 0,
+        rate_window_min_seconds => 0, rate_window_max_seconds => 0,
+        rate_window_earliest_start_at => 0, rate_window_latest_end_at => 0,
     );
     my $stateUnavailable = 0;
     my $now = time;
@@ -264,6 +270,31 @@ sub fleet_summary {
         my $state = defined($raw) ? _normalize_fleet_state($raw) : 'unavailable';
         ++$stateUnavailable if $state eq 'unavailable';
         ++$states{$state};
+
+        my $securitySample = $self->_read_security_metrics_snapshot($account);
+        if (ref($securitySample) eq 'HASH' && $securitySample->{available} == 1
+            && defined($securitySample->{window_seconds})
+            && $securitySample->{sampled_at} <= $now
+            && $securitySample->{sampled_at} >= $now - $MAX_SECURITY_METRICS_AGE_SECONDS) {
+            ++$metrics{rate_accounts};
+            ++$metrics{eviction_activity_accounts} if $securitySample->{evicted_keys_delta} > 0;
+            $metrics{max_evictions_per_window} = $securitySample->{evicted_keys_delta}
+                if $securitySample->{evicted_keys_delta} > $metrics{max_evictions_per_window};
+            my $operationsPerSecond = int($securitySample->{total_commands_processed_delta}
+                / $securitySample->{window_seconds});
+            $metrics{max_operations_per_second} = $operationsPerSecond
+                if $operationsPerSecond > $metrics{max_operations_per_second};
+            $metrics{rate_window_min_seconds} = $securitySample->{window_seconds}
+                if !$metrics{rate_window_min_seconds}
+                    || $securitySample->{window_seconds} < $metrics{rate_window_min_seconds};
+            $metrics{rate_window_max_seconds} = $securitySample->{window_seconds}
+                if $securitySample->{window_seconds} > $metrics{rate_window_max_seconds};
+            $metrics{rate_window_earliest_start_at} = $securitySample->{window_start_at}
+                if !$metrics{rate_window_earliest_start_at}
+                    || $securitySample->{window_start_at} < $metrics{rate_window_earliest_start_at};
+            $metrics{rate_window_latest_end_at} = $securitySample->{sampled_at}
+                if $securitySample->{sampled_at} > $metrics{rate_window_latest_end_at};
+        }
 
         my $sample = $self->_read_metrics_snapshot($account);
         if (ref($sample) ne 'HASH') {
@@ -290,9 +321,12 @@ sub fleet_summary {
         ++$metrics{high_client_accounts} if $highClients;
         ++$metrics{low_hit_ratio_accounts} if $lowHitRatio;
         ++$metrics{alert_accounts} if $highMemory || $highClients || $lowHitRatio;
+
     }
+    $metrics{rate_missing_accounts} = scalar(@managed) - $metrics{rate_accounts};
     my $partial = $unverified > 0 || $stateUnavailable > 0
-        || $metrics{stale_accounts} > 0 || $metrics{missing_accounts} > 0;
+        || $metrics{stale_accounts} > 0 || $metrics{missing_accounts} > 0
+        || $metrics{rate_missing_accounts} > 0;
     return {
         account_count => scalar(@{$accounts}),
         managed_count => scalar(@managed),
@@ -1354,6 +1388,12 @@ sub metrics {
     my $sample = { %metrics, sampled_at => time };
     my $retained = $self->_write_metrics_snapshot($account, $sample);
     $self->_write_metrics_history($account, $sample);
+    my %securityCounters = (sampled_at => $sample->{sampled_at}, uptime_seconds => $sample->{uptime_seconds});
+    for my $field (qw(evicted_keys total_commands_processed)) {
+        my ($value) = $info =~ /^\Q$field\E:([0-9]+)\r?$/m;
+        $securityCounters{$field} = 0 + $value if defined($value) && length($value) <= 15;
+    }
+    $self->_write_security_metrics_snapshot($account, \%securityCounters);
     return {
         %{$sample}, retained => $retained ? JSON::PP::true : JSON::PP::false,
         stale => JSON::PP::false, success => JSON::PP::true, version => 1,
@@ -1956,6 +1996,123 @@ sub _write_metrics_snapshot {
     my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'metrics.json');
     my $snapshot = JSON::PP->new->canonical(1)->encode($sample) . "\n";
     return $self->_atomic_write($path, $snapshot, 0600, $self->{expected_owner_uid}, $self->{expected_owner_uid});
+}
+
+sub _write_security_metrics_snapshot {
+    my ($self, $account, $raw) = @_;
+    return 0 if ref($raw) ne 'HASH' || !_is_integer($raw->{sampled_at})
+        || $raw->{sampled_at} > 9_999_999_999 || !_is_integer($raw->{uptime_seconds})
+        || $raw->{uptime_seconds} > 9_999_999_999;
+    my $lock = $self->_metrics_history_lock($account);
+    return 0 if !defined($lock);
+    my $previous = $self->_read_security_metrics_snapshot($account);
+    my $sampledAt = 0 + $raw->{sampled_at};
+    if (ref($previous) eq 'HASH' && $sampledAt <= $previous->{sampled_at}) {
+        close($lock);
+        return 0;
+    }
+
+    my $available = _is_integer($raw->{evicted_keys}) && length($raw->{evicted_keys}) <= 15
+        && _is_integer($raw->{total_commands_processed}) && length($raw->{total_commands_processed}) <= 15;
+    my $snapshot = {
+        available => $available ? 1 : 0,
+        evicted_keys => $available ? 0 + $raw->{evicted_keys} : undef,
+        evicted_keys_delta => undef,
+        sampled_at => $sampledAt,
+        total_commands_processed => $available ? 0 + $raw->{total_commands_processed} : undef,
+        total_commands_processed_delta => undef,
+        uptime_seconds => $available ? 0 + $raw->{uptime_seconds} : undef,
+        version => 1,
+        window_seconds => undef,
+        window_start_at => undef,
+    };
+    if ($available && ref($previous) eq 'HASH' && $previous->{available} == 1) {
+        my $window = $sampledAt - $previous->{sampled_at};
+        my $uptimeDelta = $snapshot->{uptime_seconds} - $previous->{uptime_seconds};
+        my $tolerance = int($window / 10);
+        $tolerance = 300 if $tolerance < 300;
+        if ($window >= 1 && $window <= $MAX_SECURITY_METRICS_AGE_SECONDS
+            && $uptimeDelta > 0 && abs($uptimeDelta - $window) <= $tolerance
+            && $snapshot->{evicted_keys} >= $previous->{evicted_keys}
+            && $snapshot->{total_commands_processed} >= $previous->{total_commands_processed}) {
+            $snapshot->{evicted_keys_delta} = $snapshot->{evicted_keys} - $previous->{evicted_keys};
+            $snapshot->{total_commands_processed_delta} = $snapshot->{total_commands_processed}
+                - $previous->{total_commands_processed};
+            $snapshot->{window_seconds} = $window;
+            $snapshot->{window_start_at} = $previous->{sampled_at};
+        }
+    }
+
+    my $path = File::Spec->catfile($self->_account_config_dir($account->{name}), 'security-metrics.json');
+    my $encoded = JSON::PP->new->canonical(1)->encode($snapshot) . "\n";
+    my $saved = length($encoded) <= $MAX_SECURITY_METRICS_BYTES
+        && $self->_atomic_write($path, $encoded, 0600, $self->{expected_owner_uid}, $self->{expected_owner_uid});
+    close($lock);
+    return $saved ? 1 : 0;
+}
+
+sub _read_security_metrics_snapshot {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $directory = $self->_account_config_dir($account->{name});
+    my @directoryStat = lstat($directory);
+    return undef if !@directoryStat || !S_ISDIR($directoryStat[2])
+        || $directoryStat[4] != $self->{expected_owner_uid}
+        || $directoryStat[5] != $account->{gid} || ($directoryStat[2] & 0027) != 0;
+    my $path = File::Spec->catfile($directory, 'security-metrics.json');
+    my @pathStat = lstat($path);
+    return undef if !@pathStat || !S_ISREG($pathStat[2])
+        || $pathStat[4] != $self->{expected_owner_uid} || $pathStat[5] != $self->{expected_owner_uid}
+        || $pathStat[3] != 1 || ($pathStat[2] & 0777) != 0600 || $pathStat[7] > $MAX_SECURITY_METRICS_BYTES;
+    my $handle;
+    return undef if !sysopen($handle, $path, O_RDONLY | O_NOFOLLOW);
+    my @opened = stat($handle);
+    if (!@opened || $opened[0] != $pathStat[0] || $opened[1] != $pathStat[1]
+        || !S_ISREG($opened[2]) || $opened[4] != $self->{expected_owner_uid}
+        || $opened[5] != $self->{expected_owner_uid} || $opened[3] != 1
+        || ($opened[2] & 0777) != 0600 || $opened[7] > $MAX_SECURITY_METRICS_BYTES) {
+        close($handle);
+        return undef;
+    }
+    my $json = '';
+    my $read = read($handle, $json, $MAX_SECURITY_METRICS_BYTES + 1);
+    my $closed = close($handle);
+    return undef if !defined($read) || !$closed || length($json) > $MAX_SECURITY_METRICS_BYTES || $json !~ /\n\z/;
+    my $snapshot = eval { JSON::PP->new->decode(substr($json, 0, -1)) };
+    return undef if ref($snapshot) ne 'HASH'
+        || join(',', sort keys %{$snapshot}) ne join(',', qw(
+            available evicted_keys evicted_keys_delta sampled_at total_commands_processed
+            total_commands_processed_delta uptime_seconds version window_seconds window_start_at
+        ))
+        || !_is_integer($snapshot->{available}) || $snapshot->{available} > 1
+        || !_is_integer($snapshot->{version}) || $snapshot->{version} != 1
+        || !_is_integer($snapshot->{sampled_at}) || $snapshot->{sampled_at} > 9_999_999_999
+        || $snapshot->{sampled_at} > time + 300;
+    if ($snapshot->{available} == 0) {
+        return undef if grep { defined($snapshot->{$_}) } qw(
+            evicted_keys evicted_keys_delta total_commands_processed total_commands_processed_delta
+            uptime_seconds window_seconds window_start_at
+        );
+        return $snapshot;
+    }
+    for my $field (qw(evicted_keys total_commands_processed uptime_seconds)) {
+        return undef if !_is_integer($snapshot->{$field}) || length($snapshot->{$field}) > 15;
+    }
+    my @rateFields = qw(evicted_keys_delta total_commands_processed_delta window_seconds window_start_at);
+    my $rateFieldCount = scalar grep { defined($snapshot->{$_}) } @rateFields;
+    return undef if $rateFieldCount != 0 && $rateFieldCount != @rateFields;
+    if ($rateFieldCount) {
+        for my $field (@rateFields) {
+            return undef if !_is_integer($snapshot->{$field}) || length($snapshot->{$field}) > 15;
+        }
+        return undef if $snapshot->{window_seconds} < 1
+            || $snapshot->{window_seconds} > $MAX_SECURITY_METRICS_AGE_SECONDS
+            || $snapshot->{window_start_at} > $snapshot->{sampled_at}
+            || $snapshot->{sampled_at} - $snapshot->{window_start_at} != $snapshot->{window_seconds}
+            || $snapshot->{evicted_keys_delta} > $snapshot->{evicted_keys}
+            || $snapshot->{total_commands_processed_delta} > $snapshot->{total_commands_processed};
+    }
+    return $snapshot;
 }
 
 sub _metrics_timer_unit {

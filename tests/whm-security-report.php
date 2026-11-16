@@ -17,12 +17,22 @@ $now = 1794850000;
 $fleet = [
     'success' => true,
     'partial' => false,
+    'managed_count' => 5,
     'metrics' => [
         'fresh_accounts' => 5,
         'high_memory_accounts' => 1,
         'high_client_accounts' => 2,
         'low_hit_ratio_accounts' => 1,
         'latest_sampled_at' => $now - 60,
+        'rate_accounts' => 5,
+        'rate_missing_accounts' => 0,
+        'eviction_activity_accounts' => 2,
+        'max_evictions_per_window' => 7,
+        'max_operations_per_second' => 120,
+        'rate_window_min_seconds' => 3600,
+        'rate_window_max_seconds' => 7200,
+        'rate_window_earliest_start_at' => $now - 7200,
+        'rate_window_latest_end_at' => $now - 60,
     ],
 ];
 $audit = [
@@ -43,6 +53,13 @@ $assert(($byCategory['memory_pressure']['count'] ?? null) === 1
     && ($byCategory['client_pressure']['count'] ?? null) === 2
     && ($byCategory['low_hit_ratio']['count'] ?? null) === 1,
     'report bounded memory, client, and low-hit-ratio evidence');
+$assert(($byCategory['eviction_rate']['count'] ?? null) === 2
+    && str_contains($byCategory['eviction_rate']['evidence'], '3600–7200 seconds')
+    && str_contains($byCategory['eviction_rate']['evidence'], gmdate('Y-m-d\TH:i:s\Z', $now - 7200))
+    && ($byCategory['operation_rate']['count'] ?? null) === 5
+    && str_contains($byCategory['operation_rate']['evidence'], '120 operations per second')
+    && str_contains($byCategory['operation_rate']['evidence'], 'not an abuse verdict'),
+    'report measured counter rates with their actual window bounds and neutral interpretation');
 $assert(($byCategory['auth_management_events']['count'] ?? null) === 3
     && str_contains($byCategory['auth_management_events']['evidence'], '1 unsuccessful')
     && str_contains($byCategory['auth_management_events']['evidence'], 'not Redis client login attempts'),
@@ -52,8 +69,31 @@ $assert(!str_contains($encoded, 'testacct') && !str_contains($encoded, 'report-s
     'omit account names and secret-like input from the report');
 $assert(isset($report['unmeasured']['credential_strength'])
     && isset($report['unmeasured']['client_authentication_failures'])
-    && isset($report['unmeasured']['eviction_rate']) && isset($report['unmeasured']['operation_rate']),
+    && !isset($report['unmeasured']['eviction_rate']) && !isset($report['unmeasured']['operation_rate']),
     'explicitly disclose signal categories that are not measured');
+
+$legacyFleet = $fleet;
+foreach (['rate_accounts', 'rate_missing_accounts', 'eviction_activity_accounts', 'max_evictions_per_window',
+    'max_operations_per_second', 'rate_window_min_seconds', 'rate_window_max_seconds',
+    'rate_window_earliest_start_at', 'rate_window_latest_end_at'] as $field) {
+    unset($legacyFleet['metrics'][$field]);
+}
+$legacyReport = WhmSecurityReport::build($legacyFleet, $audit, $now);
+$legacyCategories = array_column($legacyReport['findings'], null, 'category');
+$assert($legacyReport['partial'] && $legacyCategories['eviction_rate']['count'] === null
+    && $legacyCategories['operation_rate']['count'] === null,
+    'keep older brokers readable and show new counter signals as unknown until the extended schema is available');
+$staleFleet = $fleet;
+$staleFleet['metrics']['fresh_accounts'] = 0;
+$staleFleet['metrics']['latest_sampled_at'] = 0;
+$staleFleet['metrics']['high_memory_accounts'] = 0;
+$staleFleet['metrics']['high_client_accounts'] = 0;
+$staleFleet['metrics']['low_hit_ratio_accounts'] = 0;
+$staleReport = WhmSecurityReport::build($staleFleet, $audit, $now);
+$staleCategories = array_column($staleReport['findings'], null, 'category');
+$assert($staleReport['partial'] && $staleCategories['metrics_unavailable']['count'] === null
+    && $staleCategories['operation_rate']['count'] === 5,
+    'preserve valid historical counter-rate evidence when the separate fresh metrics source is unavailable');
 
 $partialAudit = $audit;
 $partialAudit['partial'] = true;
