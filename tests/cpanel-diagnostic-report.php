@@ -132,9 +132,10 @@ $uninstaller = file_get_contents(dirname(__DIR__) . '/packaging/uninstall.sh');
 $assert(is_string($packageLib) && is_string($installer) && is_string($uninstaller), 'read the packaging lifecycle scripts');
 $assert(str_contains($packageLib, 'src/Orm/Cpanel/DiagnosticReport.php'),
     'guard and track the diagnostics class as an exact installed file');
-$assert(str_contains($installer, 'install -m 0644 "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php"'),
+$assert(str_contains($packageLib, 'diagnostic_report "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php" "$ORM_3RDPARTY/src/Orm/Cpanel/DiagnosticReport.php" 644')
+    && str_contains($installer, 'done < <(orm_package_file_map)'),
     'install the report helper for the cPanel page');
-$assert(str_contains($uninstaller, 'src/Orm/Cpanel/DiagnosticReport.php'),
+$assert(str_contains($uninstaller, 'done < <(orm_package_file_map)'),
     'remove the report helper through the exact-file uninstall lifecycle');
 
 fwrite(STDOUT, "cPanel diagnostic report checks passed: {$checks}\n");

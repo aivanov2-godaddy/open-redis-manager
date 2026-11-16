@@ -150,11 +150,9 @@ case "${1:-}" in
             printf 'failed\n' >"$active_file"
             exit 45
         fi
-        perl -MIO::Socket::UNIX -MSocket=SOCK_STREAM -e '$s=IO::Socket::UNIX->new(Type=>SOCK_STREAM,Local=>$ARGV[0],Listen=>64) or die $!; chmod 0666,$ARGV[0] or die $!; $SIG{TERM}=sub { close $s; exit }; sleep 3600' "$TEST_SOCKET" >/dev/null 2>&1 </dev/null &
-        printf '%s\n' "$!" >"$TEST_ROOT/socket.pid"
-        for attempt in {1..50}; do [[ -S "$TEST_SOCKET" ]] && break; sleep 0.02; done
-        [[ -S "$TEST_SOCKET" ]]
         printf 'active\n' >"$active_file"
+        perl -MIO::Socket::UNIX -MSocket=SOCK_STREAM -e 'sleep 0.25; $s=IO::Socket::UNIX->new(Type=>SOCK_STREAM,Local=>$ARGV[0],Listen=>64) or die $!; chmod 0666,$ARGV[0] or die $!; $SIG{TERM}=sub { close $s; exit }; sleep 3600' "$TEST_SOCKET" >/dev/null 2>&1 </dev/null &
+        printf '%s\n' "$!" >"$TEST_ROOT/socket.pid"
         ;;
     *) exit 2 ;;
 esac
@@ -214,6 +212,7 @@ MOCK
     ORM_BROKER_UNIT="$test_root/etc/systemd/system/orm-broker.service"
     ORM_INSTANCE_ROOT="$test_root/etc/orm-instances"
     ORM_INSTANCE_DATA="$test_root/var/lib/orm-instances"
+    mkdir -p -- "$test_root/var/lib"
     ORM_INSTANCE_UNIT="$test_root/etc/systemd/system/orm-instance@.service"
     ORM_INSTANCE_LAUNCHER="$ORM_3RDPARTY/bin/orm-instance-launcher"
     ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
@@ -305,6 +304,9 @@ assert_legacy_restored() {
     actual_files="$(find "$ORM_3RDPARTY" \( -type f -o -type l \) -print | sort)"
     if [[ "$allow_unexpected" != 1 ]]; then
         [[ "$expected_files" == "$actual_files" ]] || { printf 'rollback left unexpected files in the ORM package tree.\n' >&2; exit 1; }
+        [[ ! -e "$ORM_INSTANCE_ROOT" && ! -L "$ORM_INSTANCE_ROOT" \
+            && ! -e "$ORM_INSTANCE_DATA" && ! -L "$ORM_INSTANCE_DATA" ]] \
+            || { printf 'rollback left transaction-created instance roots behind.\n' >&2; exit 1; }
     fi
     [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == "$EXPECTED_ENABLED" && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == "$EXPECTED_ACTIVE" ]] \
         || { printf 'rollback did not restore broker service state.\n' >&2; exit 1; }
@@ -336,8 +338,12 @@ EXPECTED_ACTIVE=active
 export EXPECTED_ENABLED EXPECTED_ACTIVE
 run_upgrade_expect_success
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'new install manifest did not validate.\n' >&2; exit 1; }
-[[ -S "$TEST_SOCKET" && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" ]] \
-    || { printf 'successful upgrade changed an instance root or failed to restart the broker.\n' >&2; exit 1; }
+[[ -S "$TEST_SOCKET" && -d "$ORM_INSTANCE_ROOT" && ! -L "$ORM_INSTANCE_ROOT" \
+    && -d "$ORM_INSTANCE_DATA" && ! -L "$ORM_INSTANCE_DATA" \
+    && "$(stat -c '%u:%a' "$ORM_INSTANCE_ROOT")" == 0:711 \
+    && "$(stat -c '%u:%a' "$ORM_INSTANCE_DATA")" == 0:711 \
+    && -z "$(find "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" -mindepth 1 -print -quit)" ]] \
+    || { printf 'successful upgrade did not create only secure, empty instance roots or failed to restart the broker.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active ]] \
     || { printf 'successful upgrade changed broker enabled or active state.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_CPANEL_MARKER")" == current && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \

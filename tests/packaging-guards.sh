@@ -24,7 +24,7 @@ grep -Fxq 'OnCalendar=hourly' "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.ti
     printf 'metrics history must use a bounded hourly schedule.\n' >&2
     exit 1
 }
-grep -Fq 'orm-metrics-collect@.timer|$ORM_METRICS_TIMER' "$ORM_PACKAGE_ROOT/lib.sh" || {
+grep -Fq 'metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "$ORM_METRICS_TIMER" 644' "$ORM_PACKAGE_ROOT/lib.sh" || {
     printf 'installer tracking must include the hourly metrics timer.\n' >&2
     exit 1
 }

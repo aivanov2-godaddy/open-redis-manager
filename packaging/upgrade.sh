@@ -88,6 +88,7 @@ legacy_archive="$(mktemp "${TMPDIR:-/tmp}/orm-legacy-plugin.XXXXXXXX.tar.gz")"
 cpanel_changed=0
 broker_stopped=0
 socket_quarantined=0
+instance_roots_prepared=0
 files_touched=0
 upgrade_succeeded=0
 keep_backup=0
@@ -140,9 +141,15 @@ rollback_upgrade() {
             inactive|failed) "$ORM_SYSTEMCTL" start orm-broker.service >/dev/null 2>&1 || rollback_failed=1 ;;
             *) rollback_failed=1 ;;
         esac
+        if [[ "$rollback_failed" -eq 0 ]]; then
+            orm_wait_for_broker_socket || rollback_failed=1
+        fi
+    fi
+    if [[ "$rollback_failed" -eq 0 && "$instance_roots_prepared" -eq 1 ]]; then
+        orm_remove_prepared_instance_directories || rollback_failed=1
     fi
     if [[ "$rollback_failed" -ne 0 ]]; then
-        printf 'ORM upgrader: rollback was incomplete; the broker was left stopped. Keep the instance roots untouched and inspect cPanel registration and ORM package files before use.\n' >&2
+        printf 'ORM upgrader: rollback was incomplete; keep any instance roots and recovery data untouched while inspecting cPanel registration and ORM package files.\n' >&2
         return 1
     fi
     printf 'ORM upgrader: the verified identity-only v1 installation was restored.\n' >&2
@@ -175,6 +182,9 @@ while IFS='|' read -r key target mode; do
     [[ -f "$target" && ! -L "$target" ]] || orm_die "legacy file changed after preflight: $target"
     cp -a -- "$target" "$backup_root/$key"
 done < <(orm_legacy_identity_v1_file_map)
+
+instance_roots_prepared=1
+orm_prepare_instance_directories
 
 if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
     broker_pid="$("$ORM_SYSTEMCTL" show -p MainPID --value orm-broker.service 2>/dev/null)"
@@ -246,6 +256,8 @@ orm_write_install_manifest "$ORM_INSTALL_MANIFEST"
 "$ORM_SYSTEMCTL" daemon-reload
 if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
     "$ORM_SYSTEMCTL" start orm-broker.service
+    orm_wait_for_broker_socket \
+        || orm_die 'the upgraded broker did not become ready with its expected Unix socket.'
 fi
 
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
@@ -253,11 +265,10 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
 orm_appconfig_matches_package "$ORM_APPCONFIG" \
     || orm_die 'the registered WHM AppConfig changed during upgrade.'
 orm_registration_state || orm_die 'the WHM AppConfig registration is missing after upgrade.'
-orm_broker_state_matches_initial || orm_die 'the broker enabled or active state changed during upgrade.'
-if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
-    [[ -S "$ORM_BROKER_SOCKET" && ! -L "$ORM_BROKER_SOCKET" ]] \
-        || orm_die 'the upgraded broker did not recreate its Unix socket.'
+if ! orm_broker_state_matches_initial; then
+    enabled_after="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
+    active_after="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    orm_die "broker state changed (expected enabled=$ORM_BROKER_ENABLED_BEFORE, active=$ORM_BROKER_ACTIVE_BEFORE; observed enabled=$enabled_after, active=$active_after)."
 fi
-
 upgrade_succeeded=1
-printf 'Open Redis Manager identity-only v1 installation upgraded. The broker service state was preserved; instance roots were not created or changed.\n'
+printf 'Open Redis Manager identity-only v1 installation upgraded. Broker state was preserved; only empty, root-owned instance roots were prepared.\n'

@@ -41,7 +41,7 @@ cleanup_on_error() {
             done < <(orm_package_file_map)
             [[ ! -f "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]] || rm -f -- "$ORM_INSTALL_MANIFEST"
             "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || true
-            rmdir -- "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" 2>/dev/null || true
+            orm_remove_prepared_instance_directories || true
             orm_remove_empty_owned_directories
         fi
     fi

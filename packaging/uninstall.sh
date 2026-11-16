@@ -25,6 +25,7 @@ cpanel_changed=0
 files_touched=0
 whm_registered=0
 broker_stopped=0
+instance_roots_removed=0
 
 restore_uninstalled_files() {
     local key source target mode saved rollback_failed=0
@@ -83,12 +84,18 @@ rollback_uninstall() {
         orm_registration_state || rollback_failed=1
         orm_appconfig_matches_package "$ORM_APPCONFIG" || rollback_failed=1
     fi
+    if [[ "$instance_roots_removed" -eq 1 ]]; then
+        orm_restore_empty_instance_directories || rollback_failed=1
+    fi
     if [[ "$files_touched" -eq 1 ]]; then
         "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || rollback_failed=1
     fi
     if [[ "$rollback_failed" -eq 0 ]]; then
         if [[ "$broker_stopped" -eq 1 ]] || ! orm_broker_state_matches_initial; then
             orm_restore_broker_state >/dev/null 2>&1 || rollback_failed=1
+        fi
+        if [[ "$rollback_failed" -eq 0 && "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
+            orm_wait_for_broker_socket || rollback_failed=1
         fi
     elif [[ -f "$ORM_BROKER_UNIT" ]]; then
         "$ORM_SYSTEMCTL" disable --now orm-broker.service >/dev/null 2>&1 || true
@@ -187,6 +194,9 @@ if [[ "$whm_registered" -eq 1 ]]; then
 fi
 
 orm_remove_empty_owned_directories
+instance_roots_removed=1
+orm_remove_empty_instance_directories \
+    || orm_die 'could not remove the empty, root-owned ORM instance directories.'
 uninstall_succeeded=1
 transaction_started=0
 printf 'Open Redis Manager panel files and registrations removed. Redis/Valkey services, data, and configuration were left untouched.\n'

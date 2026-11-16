@@ -30,6 +30,7 @@ ORM_INSTANCE_LAUNCHER="$ORM_3RDPARTY/bin/orm-instance-launcher"
 ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
 ORM_METRICS_SERVICE=/etc/systemd/system/orm-metrics-collect@.service
 ORM_METRICS_TIMER=/etc/systemd/system/orm-metrics-collect@.timer
+ORM_CREATED_INSTANCE_ROOTS=()
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
@@ -276,28 +277,34 @@ orm_install_paths_are_clear() {
 }
 
 orm_prepare_instance_directories() {
-    local path owner mode
+    local path identity
+    ORM_CREATED_INSTANCE_ROOTS=()
     for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
-        if [[ ! -e "$path" && ! -L "$path" ]]; then
-            mkdir -m 0711 -- "$path" || orm_die "could not create the ORM runtime directory: $path"
-            chown root:root -- "$path" || orm_die "could not secure the ORM runtime directory: $path"
-            chmod 0711 -- "$path" || orm_die "could not set private traversal permissions on: $path"
-            continue
-        fi
-        [[ -d "$path" && ! -L "$path" ]] || orm_die "refusing an unsafe ORM runtime path: $path"
-        owner="$(stat -c '%u' -- "$path")"
-        mode="$(stat -c '%a' -- "$path")"
-        [[ "$owner" == 0 ]] || orm_die "the ORM runtime directory is not root-owned: $path"
-        (( (8#$mode & 0022) == 0 )) || orm_die "the ORM runtime directory is writable by another user: $path"
+        [[ ! -e "$path" && ! -L "$path" ]] || orm_die "refusing to replace an existing ORM runtime path: $path"
+        mkdir -m 0711 -- "$path" || orm_die "could not create the ORM runtime directory: $path"
+        identity="$(stat -c '%d:%i:%u:%a' -- "$path")" || orm_die "could not verify the new ORM runtime directory: $path"
+        ORM_CREATED_INSTANCE_ROOTS+=("$path|$identity")
+        chown root:root -- "$path" || orm_die "could not secure the ORM runtime directory: $path"
         chmod 0711 -- "$path" || orm_die "could not set private traversal permissions on: $path"
     done
+}
+
+orm_remove_prepared_instance_directories() {
+    local entry path identity current_identity
+    for entry in "${ORM_CREATED_INSTANCE_ROOTS[@]}"; do
+        IFS='|' read -r path identity <<< "$entry"
+        [[ ! -e "$path" && ! -L "$path" ]] && continue
+        [[ -d "$path" && ! -L "$path" ]] || return 1
+        current_identity="$(stat -c '%d:%i:%u:%a' -- "$path" 2>/dev/null)" || return 1
+        [[ "$current_identity" == "$identity" ]] || return 1
+        rmdir -- "$path" || return 1
+    done
+    ORM_CREATED_INSTANCE_ROOTS=()
 }
 
 orm_remove_empty_owned_directories() {
     local path
     for path in \
-        "$ORM_INSTANCE_ROOT" \
-        "$ORM_INSTANCE_DATA" \
         "$ORM_3RDPARTY/src/Orm/Backend" \
         "$ORM_3RDPARTY/src/Orm/Security" \
         "$ORM_3RDPARTY/src/Orm/Cpanel" \
@@ -310,6 +317,34 @@ orm_remove_empty_owned_directories() {
         "$ORM_3RDPARTY" \
         "$ORM_CPanel_LIVE"; do
         rmdir -- "$path" 2>/dev/null || true
+    done
+}
+
+orm_remove_empty_instance_directories() {
+    local path owner mode entries
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        [[ -d "$path" && ! -L "$path" ]] || return 1
+        owner="$(stat -c '%u' -- "$path" 2>/dev/null)" || return 1
+        mode="$(stat -c '%a' -- "$path" 2>/dev/null)" || return 1
+        [[ "$owner" == 0 && "$mode" == 711 ]] || return 1
+        entries="$(find "$path" -mindepth 1 -print -quit 2>/dev/null)" || return 1
+        [[ -z "$entries" ]] || return 1
+        rmdir -- "$path" || return 1
+    done
+}
+
+orm_restore_empty_instance_directories() {
+    local path
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        if [[ ! -e "$path" && ! -L "$path" ]]; then
+            mkdir -m 0711 -- "$path" || return 1
+            chown root:root -- "$path" || return 1
+            chmod 0711 -- "$path" || return 1
+            continue
+        fi
+        [[ -d "$path" && ! -L "$path" \
+            && "$(stat -c '%u:%a' -- "$path" 2>/dev/null)" == 0:711 ]] || return 1
+        [[ -z "$(find "$path" -mindepth 1 -print -quit 2>/dev/null)" ]] || return 1
     done
 }
 
@@ -367,6 +402,25 @@ orm_broker_state_matches_initial() {
     esac
     [[ "$enabled" == "${ORM_BROKER_ENABLED_BEFORE:-}" \
         && "$active" == "${ORM_BROKER_ACTIVE_BEFORE:-}" ]]
+}
+
+orm_wait_for_broker_socket() {
+    local attempt active socket_identity runtime_identity
+    for ((attempt = 0; attempt < 100; attempt += 1)); do
+        active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+        case "$active" in
+            failed|inactive) return 1 ;;
+        esac
+        if [[ -e "$ORM_BROKER_SOCKET" || -L "$ORM_BROKER_SOCKET" ]]; then
+            [[ -S "$ORM_BROKER_SOCKET" && ! -L "$ORM_BROKER_SOCKET" ]] || return 1
+            [[ -d "$(dirname -- "$ORM_BROKER_SOCKET")" && ! -L "$(dirname -- "$ORM_BROKER_SOCKET")" ]] || return 1
+            socket_identity="$(stat -c '%u:%a' -- "$ORM_BROKER_SOCKET" 2>/dev/null)" || return 1
+            runtime_identity="$(stat -c '%u:%a' -- "$(dirname -- "$ORM_BROKER_SOCKET")" 2>/dev/null)" || return 1
+            [[ "$active" == active && "$socket_identity" == 0:666 && "$runtime_identity" == 0:755 ]] && return 0
+        fi
+        sleep 0.1
+    done
+    return 1
 }
 
 orm_restore_broker_state() {

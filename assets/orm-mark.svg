@@ -1,26 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A white, faceted cache prism with integrated control channels on a red rounded square.</desc>
-  <defs>
-    <linearGradient id="tile" x1="32" y1="22" x2="224" y2="238" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F04438"/>
-      <stop offset="1" stop-color="#C81E18"/>
-    </linearGradient>
-  </defs>
-
-  <rect x="4" y="4" width="248" height="248" rx="68" fill="url(#tile)"/>
-
-  <!-- One continuous, faceted cache mark replaces the separate stack and settings badge. -->
-  <path d="m128 42 70 38v83l-70 49-70-49V80l70-38Z" fill="#fff"/>
-  <path d="m128 57 49 27-49 27-49-27 49-27Z" fill="#D92D20"/>
-
-  <!-- Three cache channels meet at the central spine. -->
-  <path d="m58 105 70 39 70-39v18l-70 39-70-39v-18Z" fill="#D92D20"/>
-  <path d="m58 139 70 39 70-39v18l-70 39-70-39v-18Z" fill="#D92D20"/>
-
-  <!-- Compact sliders sit inside the top face as an integrated management cue. -->
-  <path d="M105 81h43m-36 8h36m-43 8h43" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
-  <circle cx="119" cy="81" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
-  <circle cx="139" cy="89" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
-  <circle cx="124" cy="97" r="3.5" fill="#D92D20" stroke="#fff" stroke-width="2"/>
+  <desc id="orm-desc">Three white cache tiers with red status ports inside a white hexagonal frame on a red rounded square.</desc>
+  <rect x="4" y="4" width="248" height="248" rx="68" fill="#D92D20"/>
+  <path d="M128 39 198 79v98l-70 40-70-40V79l70-40Z" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="11"/>
+  <path d="M91 81h55l17 13-17 13H91L74 94l17-13Z" fill="#fff"/>
+  <path d="M91 115h55l17 13-17 13H91l-17-13 17-13Z" fill="#fff"/>
+  <path d="M91 149h55l17 13-17 13H91l-17-13 17-13Z" fill="#fff"/>
+  <circle cx="96" cy="94" r="4" fill="#D92D20"/>
+  <circle cx="96" cy="128" r="4" fill="#D92D20"/>
+  <circle cx="96" cy="162" r="4" fill="#D92D20"/>
 </svg>
