@@ -319,7 +319,8 @@ chmod(0600, $provider_policy_path) or die "chmod resource ceiling policy: $!";
 my $resource_effective = $provider_policy->effective_for($policy_account);
 is($resource_effective->{max_clients}, 40, 'resolve package-specific client ceilings from trusted package identity');
 is($resource_effective->{max_databases}, 6, 'resolve package-specific database ceilings from trusted package identity');
-my $resource_provision = $provider_policy->provision_decision($policy_account, 64);
+my $resource_provision = $provider_policy->provision_decision($policy_account, 64,
+    sub { return { instances => 0, memory_mib => 0 }; });
 ok($resource_provision->{allowed} && $resource_provision->{provision_max_clients} == 40
     && $resource_provision->{provision_databases} == 6,
     'bound new instance client and database defaults by the package ceilings');
@@ -680,7 +681,7 @@ my $custom_defaults_policy = {
         metrics_history_retention_days => 7,
     },
     packages => { starter => {
-        enabled => JSON::PP::true, max_memory_mib => 16, backup_retention => 2,
+        enabled => JSON::PP::true, max_memory_mib => 24, backup_retention => 2,
         max_clients => 40, max_databases => 3,
     } },
     resellers => {},
@@ -694,7 +695,7 @@ open(my $custom_defaults_file, '>', $custom_defaults_path) or die "write custom 
 print {$custom_defaults_file} JSON::PP->new->canonical(1)->encode($custom_defaults_policy) . "\n";
 close($custom_defaults_file) or die "close custom defaults policy: $!";
 chmod(0600, $custom_defaults_path) or die "chmod custom defaults policy: $!";
-my $defaults_account = { name => 'ormdefaults', uid => $<, gid => $test_gid };
+my $defaults_account = { name => 'ormdefaults', uid => $<, gid => $test_gid, plan => 'starter' };
 my $defaults_provisioned = $manager->provision($defaults_account, 'generic');
 ok($defaults_provisioned->{success} && $defaults_provisioned->{config}->{memory_mib} == 24
     && $defaults_provisioned->{config}->{maxmemory_policy} eq 'allkeys-lfu'
@@ -734,6 +735,11 @@ is($existing_config_after_defaults, $existing_config_before_defaults,
 is_deeply($manager->_read_manifest($account)->{provisioned_defaults}, {
     backup_retention => 3, databases => 16, metrics_history_retention_days => 30,
 }, 'leave an existing instance snapshot, database, and history defaults unchanged after a global default change');
+$custom_defaults_policy->{instance_defaults}->{memory_mib} = 32;
+open($custom_defaults_file, '>', $custom_defaults_path) or die "rewrite package memory ceiling policy: $!";
+print {$custom_defaults_file} JSON::PP->new->canonical(1)->encode($custom_defaults_policy) . "\n";
+close($custom_defaults_file) or die "close package memory ceiling policy: $!";
+chmod(0600, $custom_defaults_path) or die "chmod package memory ceiling policy: $!";
 my $capped_account = { name => 'ormcapped', uid => $<, gid => $test_gid, plan => 'starter' };
 is($manager->provision($capped_account, 'generic')->{error}, 'provider_policy_denied',
     'continue enforcing the package memory ceiling against global defaults');
