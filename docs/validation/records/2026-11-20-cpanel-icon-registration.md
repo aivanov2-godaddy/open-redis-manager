@@ -109,3 +109,11 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - Updated the installed 32×32 group and 48×48 launcher PNG fallback files to match the packaged v3 artwork by SHA-256. The registered SVGs and both PNG fallbacks now match the repository assets.
 - Added [`cpanel-jupiter-live-sprite-preview.png`](../../../screenshots/previews/cpanel-jupiter-live-sprite-preview.png), rendered locally from the two icon viewBoxes in the generated cPanel sprite. It shows the actual server-generated icon paths, not a browser capture.
 - Authenticated browser appearance after the cache refresh remains unverified. No ORM service, Redis/Valkey instance, account data, or unrelated cPanel configuration was changed. A root-only rollback archive was retained outside the repository; no host, account, credential, session URL, or raw operational output is recorded here.
+
+## Approved-mark cPanel refresh — 2026-11-20
+
+- The owner supplied a cPanel screenshot in which the ORM entries appeared as solid red blocks. The repo's then-current cPanel assets and generated sprite contained the intended transparent outline, so that source rendering did not explain the screenshot.
+- Added versioned v4 group and launcher SVGs with direct pixel-space paths, plus matching 48×48 PNG fallbacks, rendered from the already-approved ORM mark. The README logo itself was not changed.
+- The cPanel `install_plugin` script accepted the v4 icon package. Its group icon must be SVG; a PNG-only group package was rejected and was not used as the final registration.
+- Regenerated the Jupiter sprite synchronously and updated the stylesheet cache key to the SHA-256 digest of that exact sprite. The generated sprite contains the full v4 red tile and white cache cube for both group and launcher. Installed group SVG, launcher SVG, and launcher PNG hashes match the packaged assets.
+- The repo includes a local [v4 asset preview](../../../screenshots/previews/cpanel-icons-v4-preview.png). An authenticated cPanel browser screenshot after the refresh was not available, so the actual browser view remains to be visually confirmed. No ORM service, Redis/Valkey instance, account data, or unrelated cPanel settings were changed.
