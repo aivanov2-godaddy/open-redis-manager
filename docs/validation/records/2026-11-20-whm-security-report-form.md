@@ -20,9 +20,17 @@
 | Redis keys, values, or credentials | NOT READ | The request path uses aggregate ORM metrics and normalized audit events only. |
 | Rate limiter | CONSUMED | The report POST used the one-minute report throttle. |
 
+## Follow-up reproduction
+
+A second source-matched SSO run reproduced the same behavior. The POST response was HTTP 200 HTML classified as the generic WHM shell, with no ORM heading, report form, generated timestamp, or visible PHP error marker. The report action again produced a normalized audit event. The response body and session data were discarded.
+
+As a read-only control, invoking the same installed CGI directly with a synthetic authenticated `fleet.summary` POST rendered the expected verified-summary heading. The installed CGI, report builder, and broker client matched the repository files byte-for-byte during this comparison. This narrows the difference to the HTTP/WHM request path; it does not yet identify its cause or prove browser form behavior.
+
+The test records no response body and does not retain credentials, cookies, host identifiers, account data, report data, or raw logs. The report POST consumed the one-minute throttle and wrote one metadata-only audit event.
+
 ## Result
 
-The engine and authenticated report action ran, but the WHM response did not render the expected ORM report. The fleet-summary control response also lacked its expected markup, so the problem may extend beyond report construction. This test does not establish successful end-user rendering or production support. Repeat with an authenticated WHM browser and compare its request/response behavior before changing the report engine.
+The engine and authenticated report action ran, but the HTTP response did not render the expected ORM report. The fleet-summary POST also lacked its expected markup, while direct invocation of the same installed CGI rendered that summary. The transport/request-path difference remains unresolved; this does not establish successful end-user rendering or production support. Issue [#71](https://github.com/aivanov2-godaddy/open-redis-manager/issues/71) is open while the defect is investigated.
 
 ## Sanitization review
 
