@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Open Redis Manager",
+    "icon": "orm-group.svg",
+    "order": 75,
+    "type": "group",
+    "id": "orm_cache_control"
+  },
+  {
+    "icon": "orm-feature.svg",
+    "group_id": "orm_cache_control",
+    "order": 1,
+    "name": "Open Redis Manager",
+    "type": "link",
+    "id": "open_redis_manager",
+    "key": "open_redis_manager",
+    "uri": "orm/index.live.php",
+    "featuremanager": 1,
+    "feature": "open_redis_manager",
+    "description": "Open the account-scoped Redis and Valkey manager."
+  }
+]

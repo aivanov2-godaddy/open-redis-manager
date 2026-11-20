@@ -18,20 +18,32 @@ for candidate in "${TMPDIR:-/tmp}" /var/tmp /run /root; do
 done
 [[ -n "$BASE_TMPDIR" ]] || { printf 'packaging tests require a writable executable temporary filesystem.\n' >&2; exit 1; }
 fixture_root="$repo_root/tests/fixtures/orm-identity-v1-install"
+managed_v1_root="$repo_root/packaging/legacy/managed-v1"
 REAL_INSTALL="$(command -v install)"
 REAL_CP="$(command -v cp)"
 test_root=''
 active_socket_pid=''
+managed_fixture_expected="$(orm_legacy_managed_v1_file_map | awk -F'|' '{ print "files/" $1 }' | LC_ALL=C sort)"
+managed_fixture_actual="$(tar -tzf "$managed_v1_root/fixtures.tar.gz" | LC_ALL=C sort)"
+[[ "$managed_fixture_expected" == "$managed_fixture_actual" ]] \
+    || { printf 'managed-v1 test fixture archive does not exactly match its 28-file map.\n' >&2; exit 1; }
+cmp -s -- "$managed_v1_root/install.manifest" <(orm_legacy_managed_v1_expected_manifest) \
+    || { printf 'managed-v1 install manifest does not match its immutable file map.\n' >&2; exit 1; }
 cleanup_test_root() {
+    local cleanup_status=$?
     if [[ -n "$test_root" && -f "$test_root/socket.pid" ]]; then kill "$(cat "$test_root/socket.pid")" 2>/dev/null || true; fi
     if [[ -n "$test_root" && -f "$test_root/initial-socket.pid" ]]; then kill "$(cat "$test_root/initial-socket.pid")" 2>/dev/null || true; fi
     if [[ -n "$active_socket_pid" ]]; then kill "$active_socket_pid" 2>/dev/null || true; fi
+    if [[ "${TEST_KEEP_FAILED_ROOT:-0}" == 1 && "$cleanup_status" -ne 0 && -n "$test_root" ]]; then
+        printf 'packaging test artifacts retained at %s\n' "$test_root" >&2
+        return 0
+    fi
     if [[ -n "$test_root" ]]; then rm -rf -- "$test_root"; fi
 }
 trap cleanup_test_root EXIT
 
 prepare_case() {
-    local case_name="$1" initial_enabled="${2:-enabled}" initial_active="${3:-active}" key target mode
+    local case_name="$1" initial_enabled="${2:-enabled}" initial_active="${3:-active}" baseline="${4:-identity}" key source target mode
     test_root="$(mktemp -d "$BASE_TMPDIR/orm-upgrade-${case_name}.XXXXXXXX")"
     trap cleanup_test_root EXIT
     active_socket_pid=''
@@ -45,6 +57,10 @@ prepare_case() {
     export TEST_REAL_CP="$REAL_CP"
     export TEST_CURRENT_FEATURE_SHA="$(sha256sum "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.svg" | awk '{print $1}')"
     export TEST_LEGACY_FEATURE_SHA="$(sha256sum "$ORM_PACKAGE_ROOT/legacy/identity-v1/cpanel/icons/orm-feature.svg" | awk '{print $1}')"
+    export TEST_MANAGED_FEATURE_SHA="$(sha256sum "$managed_v1_root/cpanel/orm-feature.svg" | awk '{print $1}')"
+    export TEST_UPGRADE_BASELINE="$baseline"
+    export TEST_MANAGED_FIXTURE_ROOT="$test_root/managed-v1-fixture"
+    export TEST_PODMAN_ROOT="$test_root/home/test-account/ea-podman.d/ea-redis62.test-account.01"
     export TMPDIR="$test_root/tmp"
     export PATH="$test_root/bin:$BASE_PATH"
     mkdir -p "$test_root/bin" "$test_root/cpanel/php" "$test_root/cpanel/scripts" \
@@ -58,6 +74,8 @@ printf 'install_plugin %s\n' "$*" >>"$TEST_LOG"
 feature_sha="$(tar -xOzf "$1" orm-feature.svg | sha256sum | awk '{print $1}')"
 if [[ "$feature_sha" == "$TEST_CURRENT_FEATURE_SHA" ]]; then
     plugin_state=current
+elif [[ "$feature_sha" == "$TEST_MANAGED_FEATURE_SHA" ]]; then
+    plugin_state=legacy-managed
 elif [[ "$feature_sha" == "$TEST_LEGACY_FEATURE_SHA" ]]; then
     plugin_state=legacy
 else
@@ -188,6 +206,7 @@ MOCK
     chmod 0755 "$test_root/bin/"*
     printf '%s\n' "$initial_enabled" >"$TEST_SYSTEMCTL_STATE.enabled"
     printf '%s\n' "$initial_active" >"$TEST_SYSTEMCTL_STATE.active"
+    export TEST_INITIAL_ENABLED="$initial_enabled" TEST_INITIAL_ACTIVE="$initial_active"
     printf 'legacy\n' >"$TEST_CPANEL_MARKER"
     printf '1\n' >"$TEST_APPCONFIG_STATE"
     cp -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf" "$test_root/var/cpanel/apps/open_redis_manager.conf"
@@ -224,10 +243,33 @@ MOCK
     export ORM_LIFECYCLE_LOCK ORM_SYSTEMCTL ORM_BROKER_BIN ORM_BROKER_LIB ORM_BROKER_UNIT ORM_INSTANCE_ROOT
     export ORM_INSTANCE_DATA ORM_INSTANCE_UNIT ORM_INSTANCE_LAUNCHER ORM_METRICS_COLLECTOR ORM_METRICS_SERVICE
     export ORM_METRICS_TIMER ORM_BROKER_SOCKET
-    while IFS='|' read -r key target mode; do
-        mkdir -p -- "$(dirname -- "$target")"
-        install -m "$mode" "$fixture_root/$key" "$target"
-    done < <(orm_legacy_identity_v1_file_map)
+    if [[ "$baseline" == managed ]]; then
+        mkdir -p -- "$TEST_MANAGED_FIXTURE_ROOT"
+        tar -xzf "$managed_v1_root/fixtures.tar.gz" -C "$TEST_MANAGED_FIXTURE_ROOT"
+        while IFS='|' read -r key source target mode digest; do
+            mkdir -p -- "$(dirname -- "$target")"
+            install -m "$mode" "$TEST_MANAGED_FIXTURE_ROOT/files/$key" "$target"
+        done < <(orm_legacy_managed_v1_file_map)
+        install -m 0600 "$managed_v1_root/install.manifest" "$ORM_INSTALL_MANIFEST"
+        printf 'legacy-managed\n' >"$TEST_CPANEL_MARKER"
+        mkdir -m 0711 -- "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"
+        mkdir -p -- "$ORM_INSTANCE_ROOT/accounts/test-account" "$ORM_INSTANCE_DATA/test-account/data" "$TEST_PODMAN_ROOT"
+        printf 'instance metadata sentinel\n' >"$ORM_INSTANCE_ROOT/accounts/test-account/metadata.json"
+        printf 'instance data sentinel\n' >"$ORM_INSTANCE_DATA/test-account/data/dump.rdb"
+        printf 'cPanel Podman sentinel\n' >"$TEST_PODMAN_ROOT/container.json"
+        chmod 0600 -- "$ORM_INSTANCE_ROOT/accounts/test-account/metadata.json" \
+            "$ORM_INSTANCE_DATA/test-account/data/dump.rdb" "$TEST_PODMAN_ROOT/container.json"
+        export TEST_INSTANCE_ROOT_ID="$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_ROOT")"
+        export TEST_INSTANCE_DATA_ID="$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_DATA")"
+        export TEST_INSTANCE_METADATA_SHA="$(sha256sum "$ORM_INSTANCE_ROOT/accounts/test-account/metadata.json" | awk '{print $1}')"
+        export TEST_INSTANCE_DATA_SHA="$(sha256sum "$ORM_INSTANCE_DATA/test-account/data/dump.rdb" | awk '{print $1}')"
+        export TEST_PODMAN_SENTINEL_SHA="$(sha256sum "$TEST_PODMAN_ROOT/container.json" | awk '{print $1}')"
+    else
+        while IFS='|' read -r key target mode; do
+            mkdir -p -- "$(dirname -- "$target")"
+            install -m "$mode" "$fixture_root/$key" "$target"
+        done < <(orm_legacy_identity_v1_file_map)
+    fi
     export TEST_APPCONFIG_INODE="$(stat -c '%i' "$ORM_APPCONFIG")"
     if [[ "$initial_active" == active ]]; then
         perl -MIO::Socket::UNIX -MSocket=SOCK_STREAM -e '$s=IO::Socket::UNIX->new(Type=>SOCK_STREAM,Local=>$ARGV[0],Listen=>64) or die $!; chmod 0666,$ARGV[0] or die $!; sleep 3600' "$TEST_SOCKET" >/dev/null 2>&1 </dev/null &
@@ -319,6 +361,72 @@ assert_legacy_restored() {
         || { printf 'rollback replaced the registered WHM AppConfig file.\n' >&2; exit 1; }
     [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
         || { printf 'rollback left a transaction temporary file behind.\n' >&2; exit 1; }
+}
+
+assert_managed_legacy_restored() {
+    orm_validate_legacy_managed_v1 \
+        || { printf 'rollback did not restore the exact managed-v1 file set and manifest.\n' >&2; exit 1; }
+    [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == "$TEST_INITIAL_ENABLED" \
+        && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == "$TEST_INITIAL_ACTIVE" ]] \
+        || { printf 'managed-v1 rollback changed broker service state.\n' >&2; exit 1; }
+    if [[ "$TEST_INITIAL_ACTIVE" == active ]]; then
+        [[ -S "$TEST_SOCKET" ]] || { printf 'managed-v1 rollback did not restore the broker socket.\n' >&2; exit 1; }
+    else
+        [[ ! -e "$TEST_SOCKET" && ! -L "$TEST_SOCKET" ]] \
+            || { printf 'managed-v1 rollback created an inactive broker socket.\n' >&2; exit 1; }
+    fi
+    [[ "$(cat "$TEST_CPANEL_MARKER")" == legacy-managed \
+        && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \
+        || { printf 'managed-v1 rollback did not restore the exact cPanel and WHM registration.\n' >&2; exit 1; }
+    [[ "$(stat -c '%i' "$ORM_APPCONFIG")" == "$TEST_APPCONFIG_INODE" ]] \
+        || { printf 'managed-v1 rollback replaced the unchanged WHM AppConfig file.\n' >&2; exit 1; }
+    [[ "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_ROOT")" == "$TEST_INSTANCE_ROOT_ID" \
+        && "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_DATA")" == "$TEST_INSTANCE_DATA_ID" ]] \
+        || { printf 'managed-v1 rollback changed an existing instance root.\n' >&2; exit 1; }
+    [[ "$(sha256sum "$ORM_INSTANCE_ROOT/accounts/test-account/metadata.json" | awk '{print $1}')" == "$TEST_INSTANCE_METADATA_SHA" \
+        && "$(sha256sum "$ORM_INSTANCE_DATA/test-account/data/dump.rdb" | awk '{print $1}')" == "$TEST_INSTANCE_DATA_SHA" \
+        && "$(sha256sum "$TEST_PODMAN_ROOT/container.json" | awk '{print $1}')" == "$TEST_PODMAN_SENTINEL_SHA" ]] \
+        || { printf 'managed-v1 rollback changed instance or cPanel Podman data.\n' >&2; exit 1; }
+    [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
+        || { printf 'managed-v1 rollback left transaction temporary files behind.\n' >&2; exit 1; }
+}
+
+managed_preflight_snapshot() {
+    local path
+    local -a roots=()
+    for path in "$ORM_3RDPARTY" "$ORM_CPanel_LIVE" "$ORM_INSTANCE_ROOT" \
+        "$ORM_INSTANCE_DATA" "$TEST_PODMAN_ROOT" "$TEST_ROOT/instance-root-saved"; do
+        [[ -e "$path" || -L "$path" ]] && roots+=("$path")
+    done
+    {
+        find "${roots[@]}" -print0
+        printf '%s\0' "$ORM_INSTALL_MANIFEST" "$ORM_APPCONFIG" "$TEST_SOCKET" \
+            "$TEST_CPANEL_MARKER" "$TEST_APPCONFIG_STATE" "$TEST_SYSTEMCTL_STATE.enabled" \
+            "$TEST_SYSTEMCTL_STATE.active" "$TEST_LOG"
+    } | LC_ALL=C sort -zu | while IFS= read -r -d '' path; do
+        if [[ ! -e "$path" && ! -L "$path" ]]; then
+            printf 'missing|%s\n' "$path"
+            continue
+        fi
+        stat -c 'meta|%F|%u:%g|%a|%d:%i|%n' -- "$path"
+        if [[ -f "$path" && ! -L "$path" ]]; then
+            sha256sum -- "$path"
+        elif [[ -L "$path" ]]; then
+            printf 'link|%s|%s\n' "$path" "$(readlink -- "$path")"
+        fi
+    done
+}
+
+expect_managed_preflight_refusal() {
+    local before after
+    before="$(managed_preflight_snapshot)"
+    if bash "$test_root/upgrade-test.sh"; then
+        printf 'expected managed-v1 preflight refusal in %s.\n' "$test_root" >&2
+        exit 1
+    fi
+    after="$(managed_preflight_snapshot)"
+    [[ "$before" == "$after" && ! -s "$TEST_LOG" ]] \
+        || { printf 'managed-v1 preflight refusal changed protected state or ran a mutating command.\n' >&2; exit 1; }
 }
 
 expect_preflight_refusal() {
@@ -594,5 +702,79 @@ expect_preflight_refusal
 cleanup_test_root
 trap - EXIT
 unset TEST_FAIL_REGISTRATION_CHECK
+
+prepare_case managed-success enabled active managed
+run_upgrade_expect_success
+orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
+    || { printf 'managed-v1 upgrade did not create a valid current manifest.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_CPANEL_MARKER")" == current && "$(cat "$TEST_APPCONFIG_STATE")" == 1 \
+    && "$(stat -c '%i' "$ORM_APPCONFIG")" == "$TEST_APPCONFIG_INODE" \
+    && "$(sha256sum "$ORM_APPCONFIG" | awk '{print $1}')" == "$(sha256sum "$TEST_MANAGED_FIXTURE_ROOT/files/whm_appconfig" | awk '{print $1}')" ]] \
+    || { printf 'managed-v1 upgrade changed WHM or cPanel registration unexpectedly.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == enabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active && -S "$TEST_SOCKET" ]] \
+    || { printf 'managed-v1 upgrade failed to preserve enabled broker state.\n' >&2; exit 1; }
+[[ "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_ROOT")" == "$TEST_INSTANCE_ROOT_ID" \
+    && "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_DATA")" == "$TEST_INSTANCE_DATA_ID" \
+    && "$(sha256sum "$ORM_INSTANCE_ROOT/accounts/test-account/metadata.json" | awk '{print $1}')" == "$TEST_INSTANCE_METADATA_SHA" \
+    && "$(sha256sum "$ORM_INSTANCE_DATA/test-account/data/dump.rdb" | awk '{print $1}')" == "$TEST_INSTANCE_DATA_SHA" \
+    && "$(sha256sum "$TEST_PODMAN_ROOT/container.json" | awk '{print $1}')" == "$TEST_PODMAN_SENTINEL_SHA" ]] \
+    || { printf 'managed-v1 upgrade changed existing instance or cPanel Podman data.\n' >&2; exit 1; }
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
+    || { printf 'managed-v1 upgrade left transaction temporary files behind.\n' >&2; exit 1; }
+cleanup_test_root
+trap - EXIT
+
+prepare_case managed-inactive disabled inactive managed
+run_upgrade_expect_success
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive \
+    && ! -e "$TEST_SOCKET" && ! -L "$TEST_SOCKET" \
+    && "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_ROOT")" == "$TEST_INSTANCE_ROOT_ID" \
+    && "$(stat -c '%d:%i:%u:%a' "$ORM_INSTANCE_DATA")" == "$TEST_INSTANCE_DATA_ID" \
+    && "$(sha256sum "$TEST_PODMAN_ROOT/container.json" | awk '{print $1}')" == "$TEST_PODMAN_SENTINEL_SHA" ]] \
+    || { printf 'managed-v1 upgrade changed inactive broker or existing data state.\n' >&2; exit 1; }
+cleanup_test_root
+trap - EXIT
+
+for failure in plugin file reload start; do
+    printf 'Testing managed-v1 rollback after %s failure.\n' "$failure"
+    prepare_case "managed-rollback-$failure" enabled active managed
+    case "$failure" in
+        plugin) export TEST_FAIL_CURRENT_PLUGIN_ONCE=1 ;;
+        file) export TEST_FAIL_FILE_INSTALL_ONCE=1 ;;
+        reload) export TEST_FAIL_RELOAD_ONCE=1 ;;
+        start) export TEST_FAIL_START_ONCE=1 ;;
+    esac
+    if bash "$test_root/upgrade-test.sh"; then
+        printf 'expected managed-v1 injected upgrade failure at %s.\n' "$failure" >&2
+        exit 1
+    fi
+    assert_managed_legacy_restored
+    cleanup_test_root
+    trap - EXIT
+    unset TEST_FAIL_CURRENT_PLUGIN_ONCE TEST_FAIL_FILE_INSTALL_ONCE TEST_FAIL_RELOAD_ONCE TEST_FAIL_START_ONCE
+done
+
+for drift in manifest target extra-file empty-directory appconfig appconfig-mode cpanel-entry instance-mode instance-symlink; do
+    prepare_case "managed-drift-$drift" disabled inactive managed
+    case "$drift" in
+        manifest) printf 'tampered\n' >>"$ORM_INSTALL_MANIFEST" ;;
+        target) printf 'tampered\n' >>"$ORM_3RDPARTY/bin/orm-broker.pl" ;;
+        extra-file) printf 'unowned\n' >"$ORM_3RDPARTY/unexpected-file" ;;
+        empty-directory) mkdir -p -- "$ORM_3RDPARTY/unexpected/empty" ;;
+        appconfig) printf 'tampered\n' >>"$ORM_APPCONFIG" ;;
+        appconfig-mode) chmod 0644 -- "$ORM_APPCONFIG" ;;
+        cpanel-entry) printf 'extra\n' >"$ORM_CPanel_LIVE/unexpected.php" ;;
+        instance-mode) chmod 0700 -- "$ORM_INSTANCE_ROOT" ;;
+        instance-symlink)
+            mv -- "$ORM_INSTANCE_ROOT" "$TEST_ROOT/instance-root-saved"
+            ln -s -- "$TEST_ROOT/instance-root-saved" "$ORM_INSTANCE_ROOT"
+            ;;
+    esac
+    expect_managed_preflight_refusal
+    cleanup_test_root
+    trap - EXIT
+done
 
 printf 'Packaging upgrade integrity and rollback tests passed.\n'

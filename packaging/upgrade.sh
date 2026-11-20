@@ -3,22 +3,26 @@ set -Eeuo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/lib.sh"
 
 if [[ "${1:-}" == --help ]]; then
-    printf 'Usage: sudo bash packaging/upgrade.sh\nUpgrades only the verified identity-only ORM v1 install to this repository revision.\n'
+    printf 'Usage: sudo bash packaging/upgrade.sh\nUpgrades only an exact supported ORM v1 install to this repository revision.\n'
     exit 0
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
 orm_acquire_lifecycle_lock "$0" "$@"
 
-[[ ! -e "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" ]] \
-    || orm_die 'this install already has a managed manifest; this bridge only upgrades the verified identity-only v1 install.'
-orm_validate_legacy_identity_v1 \
-    || orm_die 'installed files do not exactly match the supported identity-only v1 baseline; no files were changed.'
-
-for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
-    [[ ! -e "$path" && ! -L "$path" ]] \
-        || orm_die "the identity-only v1 upgrade requires absent instance roots; refusing to touch: $path"
-done
+legacy_install_kind=identity
+if [[ -e "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]]; then
+    orm_validate_legacy_managed_v1 \
+        || orm_die 'the installed managed v1 package does not exactly match the supported baseline; no files were changed.'
+    legacy_install_kind=managed
+else
+    orm_validate_legacy_identity_v1 \
+        || orm_die 'installed files do not exactly match the supported identity-only v1 baseline; no files were changed.'
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        [[ ! -e "$path" && ! -L "$path" ]] \
+            || orm_die "the identity-only v1 upgrade requires absent instance roots; refusing to touch: $path"
+    done
+fi
 
 [[ -f "$ORM_APPCONFIG" && ! -L "$ORM_APPCONFIG" ]] \
     || orm_die 'the registered WHM AppConfig file is missing or unsafe.'
@@ -26,8 +30,10 @@ appconfig_owner="$(stat -c '%u' -- "$ORM_APPCONFIG")"
 appconfig_mode="$(stat -c '%a' -- "$ORM_APPCONFIG")"
 [[ "$appconfig_owner" == 0 ]] && (( (8#$appconfig_mode & 0022) == 0 )) \
     || orm_die 'the registered WHM AppConfig file has unsafe ownership or permissions.'
-orm_appconfig_matches_package "$ORM_APPCONFIG" \
-    || orm_die 'the registered WHM AppConfig file differs from the supported v1 baseline.'
+if [[ "$legacy_install_kind" == identity ]]; then
+    orm_appconfig_matches_package "$ORM_APPCONFIG" \
+        || orm_die 'the registered WHM AppConfig file differs from the supported v1 baseline.'
+fi
 if orm_registration_state; then
     :
 else
@@ -38,7 +44,14 @@ else
 fi
 
 declare -A legacy_targets=()
-while IFS='|' read -r key target mode; do legacy_targets[$target]=1; done < <(orm_legacy_identity_v1_file_map)
+if [[ "$legacy_install_kind" == managed ]]; then
+    while IFS='|' read -r key source target mode expected_digest; do legacy_targets[$target]=1; done \
+        < <(orm_legacy_managed_v1_file_map)
+    legacy_targets[$ORM_INSTALL_MANIFEST]=1
+else
+    while IFS='|' read -r key target mode; do legacy_targets[$target]=1; done \
+        < <(orm_legacy_identity_v1_file_map)
+fi
 while IFS='|' read -r key source target mode; do
     [[ -f "$source" && ! -L "$source" ]] || orm_die "package file is missing or unsafe: $source"
     if [[ -n "${legacy_targets[$target]+present}" ]]; then
@@ -85,6 +98,8 @@ umask 077
 backup_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-upgrade.XXXXXXXX")"
 current_archive="$(mktemp "${TMPDIR:-/tmp}/orm-current-plugin.XXXXXXXX.tar.gz")"
 legacy_archive="$(mktemp "${TMPDIR:-/tmp}/orm-legacy-plugin.XXXXXXXX.tar.gz")"
+managed_legacy_archive="$(mktemp "${TMPDIR:-/tmp}/orm-managed-legacy-plugin.XXXXXXXX.tar.gz")"
+rollback_archive="$legacy_archive"
 cpanel_changed=0
 broker_stopped=0
 socket_quarantined=0
@@ -112,6 +127,14 @@ rollback_upgrade() {
         socket_quarantined=0
     fi
     if [[ "$files_touched" -eq 1 ]]; then
+        if [[ -n "${temporary:-}" ]]; then
+            if [[ -f "$temporary" && ! -L "$temporary" ]]; then
+                rm -f -- "$temporary" || rollback_failed=1
+            elif [[ -e "$temporary" || -L "$temporary" ]]; then
+                rollback_failed=1
+            fi
+            temporary=''
+        fi
         while IFS='|' read -r key source target mode; do
             [[ "$key" == whm_appconfig ]] && continue
             if [[ -f "$backup_root/$key" && ! -L "$backup_root/$key" ]]; then
@@ -126,10 +149,40 @@ rollback_upgrade() {
                 fi
             fi
         done < <(orm_package_file_map)
-        [[ ! -f "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]] || rm -f -- "$ORM_INSTALL_MANIFEST" || rollback_failed=1
+        if [[ "$legacy_install_kind" == managed ]]; then
+            if [[ -f "$backup_root/install-manifest-v1" && ! -L "$backup_root/install-manifest-v1" ]]; then
+                saved="$(mktemp "$(dirname -- "$ORM_INSTALL_MANIFEST")/.orm-rollback-manifest.XXXXXXXX")" \
+                    || { rollback_failed=1; saved=''; }
+                if [[ -n "$saved" ]]; then
+                    cp -a -- "$backup_root/install-manifest-v1" "$saved" \
+                        && mv -f -- "$saved" "$ORM_INSTALL_MANIFEST" || rollback_failed=1
+                fi
+            else
+                rollback_failed=1
+            fi
+            if [[ -f "$backup_root/whm_appconfig" && ! -L "$backup_root/whm_appconfig" ]] \
+                && ! cmp -s -- "$backup_root/whm_appconfig" "$ORM_APPCONFIG"; then
+                saved="$(mktemp "$(dirname -- "$ORM_APPCONFIG")/.orm-rollback-appconfig.XXXXXXXX")" \
+                    || { rollback_failed=1; saved=''; }
+                if [[ -n "$saved" ]]; then
+                    cp -a -- "$backup_root/whm_appconfig" "$saved" \
+                        && mv -f -- "$saved" "$ORM_APPCONFIG" || rollback_failed=1
+                fi
+            fi
+            orm_remove_upgrade_created_managed_directories \
+                "$backup_root/managed-directory-created-v1" \
+                || { printf 'ORM upgrader: rollback could not remove a transaction-created empty directory.\n' >&2; rollback_failed=1; }
+        else
+            [[ ! -f "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]] \
+                || rm -f -- "$ORM_INSTALL_MANIFEST" || rollback_failed=1
+        fi
     fi
     if [[ "$cpanel_changed" -eq 1 ]]; then
-        "$ORM_INSTALL_PLUGIN" "$legacy_archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
+        "$ORM_INSTALL_PLUGIN" "$rollback_archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
+    fi
+    if [[ "$legacy_install_kind" == managed ]]; then
+        orm_validate_legacy_managed_v1 \
+            || { printf 'ORM upgrader: rollback did not restore the exact managed v1 baseline.\n' >&2; rollback_failed=1; }
     fi
     if [[ "$files_touched" -eq 1 || "$broker_stopped" -eq 1 ]]; then
         "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || rollback_failed=1
@@ -152,7 +205,11 @@ rollback_upgrade() {
         printf 'ORM upgrader: rollback was incomplete; keep any instance roots and recovery data untouched while inspecting cPanel registration and ORM package files.\n' >&2
         return 1
     fi
-    printf 'ORM upgrader: the verified identity-only v1 installation was restored.\n' >&2
+    if [[ "$legacy_install_kind" == managed ]]; then
+        printf 'ORM upgrader: the verified managed v1 installation was restored.\n' >&2
+    else
+        printf 'ORM upgrader: the verified identity-only v1 installation was restored.\n' >&2
+    fi
 }
 
 cleanup_upgrade() {
@@ -166,6 +223,7 @@ cleanup_upgrade() {
         fi
     fi
     rm -f -- "$current_archive" "$legacy_archive"
+    rm -f -- "$managed_legacy_archive"
     [[ -z "${temporary:-}" || ! -f "$temporary" || -L "$temporary" ]] || rm -f -- "$temporary"
     [[ ! -f "${ORM_INSTALL_MANIFEST}.tmp.$$" || -L "${ORM_INSTALL_MANIFEST}.tmp.$$" ]] \
         || rm -f -- "${ORM_INSTALL_MANIFEST}.tmp.$$"
@@ -178,13 +236,30 @@ trap 'exit 143' TERM
 
 orm_make_cpanel_archive "$current_archive"
 orm_make_legacy_identity_v1_cpanel_archive "$legacy_archive"
-while IFS='|' read -r key target mode; do
-    [[ -f "$target" && ! -L "$target" ]] || orm_die "legacy file changed after preflight: $target"
-    cp -a -- "$target" "$backup_root/$key"
-done < <(orm_legacy_identity_v1_file_map)
+if [[ "$legacy_install_kind" == managed ]]; then
+    orm_make_legacy_managed_v1_cpanel_archive "$managed_legacy_archive"
+    rollback_archive="$managed_legacy_archive"
+    while IFS='|' read -r key source target mode expected_digest; do
+        [[ -f "$target" && ! -L "$target" ]] || orm_die 'a managed v1 package file changed after preflight.'
+        cp -a -- "$target" "$backup_root/$key"
+    done < <(orm_legacy_managed_v1_file_map)
+    cp -a -- "$ORM_INSTALL_MANIFEST" "$backup_root/install-manifest-v1"
+    find "$ORM_3RDPARTY" -mindepth 1 -type d -print | LC_ALL=C sort \
+        >"$backup_root/managed-directory-inventory-v1"
+    : >"$backup_root/managed-directory-created-v1"
+else
+    while IFS='|' read -r key target mode; do
+        [[ -f "$target" && ! -L "$target" ]] || orm_die "legacy file changed after preflight: $target"
+        cp -a -- "$target" "$backup_root/$key"
+    done < <(orm_legacy_identity_v1_file_map)
+fi
 
 instance_roots_prepared=1
-orm_prepare_instance_directories
+if [[ "$legacy_install_kind" == managed ]]; then
+    orm_prepare_upgrade_instance_directories
+else
+    orm_prepare_instance_directories
+fi
 
 if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
     broker_pid="$("$ORM_SYSTEMCTL" show -p MainPID --value orm-broker.service 2>/dev/null)"
@@ -246,6 +321,12 @@ while IFS='|' read -r key source target mode; do
     # but cPanel recommends changing AppConfig only through its utilities.
     [[ "$key" == whm_appconfig ]] && continue
     mkdir -p -- "$(dirname -- "$target")"
+    if [[ "$legacy_install_kind" == managed ]]; then
+        orm_record_upgrade_created_managed_directories \
+            "$backup_root/managed-directory-inventory-v1" \
+            "$backup_root/managed-directory-created-v1" \
+            || orm_die 'could not track transaction-created ORM package directories.'
+    fi
     temporary="$(mktemp "$(dirname -- "$target")/.orm-upgrade.XXXXXXXX")"
     install -m "$mode" "$source" "$temporary"
     chown root:root -- "$temporary"
@@ -262,8 +343,13 @@ fi
 
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
     || orm_die 'the upgraded file manifest failed validation.'
-orm_appconfig_matches_package "$ORM_APPCONFIG" \
-    || orm_die 'the registered WHM AppConfig changed during upgrade.'
+if [[ "$legacy_install_kind" == managed ]]; then
+    cmp -s -- "$backup_root/whm_appconfig" "$ORM_APPCONFIG" \
+        || orm_die 'the registered WHM AppConfig changed during upgrade.'
+else
+    orm_appconfig_matches_package "$ORM_APPCONFIG" \
+        || orm_die 'the registered WHM AppConfig changed during upgrade.'
+fi
 orm_registration_state || orm_die 'the WHM AppConfig registration is missing after upgrade.'
 if ! orm_broker_state_matches_initial; then
     enabled_after="$("$ORM_SYSTEMCTL" is-enabled orm-broker.service 2>/dev/null || true)"
@@ -271,4 +357,8 @@ if ! orm_broker_state_matches_initial; then
     orm_die "broker state changed (expected enabled=$ORM_BROKER_ENABLED_BEFORE, active=$ORM_BROKER_ACTIVE_BEFORE; observed enabled=$enabled_after, active=$active_after)."
 fi
 upgrade_succeeded=1
-printf 'Open Redis Manager identity-only v1 installation upgraded. Broker state was preserved; only empty, root-owned instance roots were prepared.\n'
+if [[ "$legacy_install_kind" == managed ]]; then
+    printf 'Open Redis Manager managed v1 installation upgraded. Broker state, existing instance data, and cPanel-managed containers were preserved.\n'
+else
+    printf 'Open Redis Manager identity-only v1 installation upgraded. Broker state was preserved; only empty, root-owned instance roots were prepared.\n'
+fi
