@@ -60,11 +60,14 @@ source_commit="$(git -C "$repo_root" rev-parse --verify HEAD)" || orm_die 'could
 [[ "$source_commit" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || orm_die 'source commit ID is invalid.'
 
 orm_path_permissions_are_private() {
-    local path="$1" kind="$2" mode acl_result
+    local path="$1" kind="$2" mode acl_result powershell_executable powershell_module_path
     if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
-        local windows_path
+        local windows_path powershell_directory
         windows_path="$(cygpath -w -- "$path")" || return 1
-        acl_result="$(ORM_ACL_PATH="$windows_path" ORM_ACL_KIND="$kind" powershell.exe \
+        powershell_executable="$(command -v powershell.exe)" || return 1
+        powershell_directory="$(dirname -- "$powershell_executable")"
+        powershell_module_path="$(cygpath -w -- "$powershell_directory/Modules")" || return 1
+        acl_result="$(PSModulePath="$powershell_module_path" ORM_ACL_PATH="$windows_path" ORM_ACL_KIND="$kind" "$powershell_executable" \
             -NoLogo -NoProfile -NonInteractive -Command '
                 $ErrorActionPreference = "Stop"
                 try {
