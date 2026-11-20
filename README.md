@@ -9,7 +9,7 @@ An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages di
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM entry points, a root-owned backend choice, and account-scoped direct Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker. The account page discovers the current account's EA Podman Redis/Valkey containers and offers start/stop/restart through cPanel's fixed account-level tool. WHM diagnostics and fleet metrics use fixed, validated reads. Podman lifecycle validation remains in progress on the disposable cPanel host.
+- cPanel and WHM entry points, a root-owned backend choice, and account-scoped direct Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker. The account page discovers the current account's EA Podman Redis/Valkey containers and offers start/stop/restart through cPanel's fixed account-level tool. The authenticated Podman web lifecycle passed a single-account Redis smoke on one disposable host; Valkey web actions and the broader host matrix remain unverified. WHM diagnostics and fleet metrics use fixed, validated reads.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Current implementation maturity, cPanel vendor host eligibility, ORM validation coverage, and a secret-free disposable-host record template are documented in [`docs/release-notes.md`](docs/release-notes.md) and the [host validation matrix](docs/validation/compatibility-matrix.md).
