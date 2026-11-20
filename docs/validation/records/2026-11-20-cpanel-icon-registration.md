@@ -27,3 +27,10 @@
 ## Sanitization review
 
 This record omits the hostname, IP address, domain, account names, credentials, session URLs, private keys, and raw operational output.
+
+## Icon-only registration refresh — 2026-11-20
+
+- ORM source commit: `1526e3d` (current `main` after PR #119).
+- A package containing only `install.json` and the four current Jupiter SVG/PNG icon assets was passed to cPanel's `install_plugin --theme jupiter` command.
+- The command returned `Plugin installed ok` and reported that it scheduled a sprite update. No ORM service, Redis/Valkey container, account data, or other package files were included in the archive.
+- The command completed successfully, but the scheduled sprite job and authenticated browser rendering were not observed. The screenshot in [`screenshots/previews/cpanel-registration-icons.png`](../../../screenshots/previews/cpanel-registration-icons.png) is a local render of the current assets, not a live cPanel capture.
