@@ -55,7 +55,7 @@ prepare_case() {
     export TEST_SYSTEMCTL_STATE="$test_root/systemctl-state"
     export TEST_REAL_INSTALL="$REAL_INSTALL"
     export TEST_REAL_CP="$REAL_CP"
-    export TEST_CURRENT_FEATURE_SHA="$(sha256sum "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.png" | awk '{print $1}')"
+    export TEST_CURRENT_FEATURE_SHA="$(sha256sum "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-feature-v2.png" | awk '{print $1}')"
     export TEST_LEGACY_FEATURE_SHA="$(sha256sum "$ORM_PACKAGE_ROOT/legacy/identity-v1/cpanel/icons/orm-feature.svg" | awk '{print $1}')"
     export TEST_MANAGED_FEATURE_SHA="$(sha256sum "$managed_v1_root/cpanel/orm-feature.svg" | awk '{print $1}')"
     export TEST_UPGRADE_BASELINE="$baseline"
@@ -71,8 +71,8 @@ prepare_case() {
     cat >"$test_root/bin/install_plugin" <<'MOCK'
 #!/usr/bin/env bash
 printf 'install_plugin %s\n' "$*" >>"$TEST_LOG"
-if tar -tzf "$1" | grep -Fxq orm-feature.png; then
-    feature_sha="$(tar -xOzf "$1" orm-feature.png | sha256sum | awk '{print $1}')"
+if tar -tzf "$1" | grep -Fxq orm-cpanel-feature-v2.png; then
+    feature_sha="$(tar -xOzf "$1" orm-cpanel-feature-v2.png | sha256sum | awk '{print $1}')"
 else
     feature_sha="$(tar -xOzf "$1" orm-feature.svg | sha256sum | awk '{print $1}')"
 fi
@@ -94,7 +94,7 @@ MOCK
     cat >"$test_root/bin/uninstall_plugin" <<'MOCK'
 #!/usr/bin/env bash
 printf 'uninstall_plugin %s\n' "$*" >>"$TEST_LOG"
-feature_sha="$(tar -xOzf "$1" orm-feature.png | sha256sum | awk '{print $1}')"
+feature_sha="$(tar -xOzf "$1" orm-cpanel-feature-v2.png | sha256sum | awk '{print $1}')"
 [[ "$feature_sha" == "$TEST_CURRENT_FEATURE_SHA" ]] || exit 49
 rm -f -- "$TEST_CPANEL_MARKER"
 if [[ "${TEST_FAIL_UNINSTALL_PLUGIN_ONCE:-0}" == 1 && ! -e "$TEST_ROOT/uninstall-plugin-failure-used" ]]; then

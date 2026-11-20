@@ -1,13 +1,13 @@
 [
   {
     "name": "Open Redis Manager",
-    "icon": "orm-group.svg",
+    "icon": "orm-cpanel-group-v2.svg",
     "order": 75,
     "type": "group",
     "id": "orm_cache_control"
   },
   {
-    "icon": "orm-feature.png",
+    "icon": "orm-cpanel-feature-v2.png",
     "group_id": "orm_cache_control",
     "order": 1,
     "name": "Open Redis Manager",

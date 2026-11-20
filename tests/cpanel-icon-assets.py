@@ -18,12 +18,12 @@ def main() -> int:
     entries = json.loads((ROOT / "install.json").read_text(encoding="utf-8"))
     group = next((entry for entry in entries if entry.get("type") == "group"), None)
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
-    if group is None or group.get("icon") != "orm-group.svg":
-        raise SystemExit("the cPanel group must use the orm-group.svg icon")
-    if feature is None or feature.get("icon") != "orm-feature.png":
-        raise SystemExit("the cPanel launcher must use the orm-feature.png icon")
+    if group is None or group.get("icon") != "orm-cpanel-group-v2.svg":
+        raise SystemExit("the cPanel group must use the cache-busted ORM group SVG")
+    if feature is None or feature.get("icon") != "orm-cpanel-feature-v2.png":
+        raise SystemExit("the cPanel launcher must use the cache-busted ORM feature PNG")
 
-    for name, size in (("orm-group", 32), ("orm-feature", 48)):
+    for name, size in (("orm-cpanel-group-v2", 32),):
         svg_path = ROOT / "icons" / f"{name}.svg"
         root = ET.parse(svg_path).getroot()
         group_node = root.find(f"{SVG_NS}g")
@@ -38,6 +38,7 @@ def main() -> int:
         ):
             raise SystemExit(f"{name}.svg must be a {size}x{size} transparent red cache-tier glyph")
 
+    for name in ("orm-cpanel-group-v2", "orm-cpanel-feature-v2"):
         png = (ROOT / "icons" / f"{name}.png").read_bytes()
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
             raise SystemExit(f"{name}.png is not a valid PNG")
@@ -46,7 +47,7 @@ def main() -> int:
         if png[25] != 6:
             raise SystemExit(f"{name}.png must use RGBA so the canvas remains transparent")
 
-    print("cPanel icon assets passed: 32x32 group SVG, 48x48 feature SVG/PNG, and RGBA PNG assets.")
+    print("cPanel icon assets passed: cache-busted 32x32 group SVG and matching RGBA PNG glyphs.")
     return 0
 
 

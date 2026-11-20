@@ -527,10 +527,10 @@ orm_make_cpanel_archive() {
     stage="$(mktemp -d "${TMPDIR:-/tmp}/orm-cpanel.XXXXXXXX")"
     if ! mkdir -p "$stage/orm" \
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/install.json" "$stage/orm/install.json" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.svg" "$stage/orm/orm-group.svg" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.png" "$stage/orm/orm-group.png" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.png" "$stage/orm/orm-feature.png" \
-        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-group.png orm-feature.png; then
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-group-v2.svg" "$stage/orm/orm-cpanel-group-v2.svg" \
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-group-v2.png" "$stage/orm/orm-cpanel-group-v2.png" \
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-feature-v2.png" "$stage/orm/orm-cpanel-feature-v2.png" \
+        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-cpanel-group-v2.svg orm-cpanel-group-v2.png orm-cpanel-feature-v2.png; then
         rm -rf -- "$stage"
         return 1
     fi

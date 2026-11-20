@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-labelledby="orm-title orm-desc">
+  <title id="orm-title">Open Redis Manager</title>
+  <desc id="orm-desc">A red outlined cube split into three cache tiers.</desc>
+  <g transform="scale(0.6666667)" fill="none" stroke="#D92D20" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 5.5 41.5 15.6v16.8L24 42.5 6.5 32.4V15.6L24 5.5Z"/>
+    <path d="m6.8 15.8 17.2 10 17.2-10M6.8 22l17.2 10L41.2 22M6.8 28.2l17.2 10 17.2-10"/>
+  </g>
+</svg>
