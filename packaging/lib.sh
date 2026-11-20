@@ -144,10 +144,26 @@ orm_legacy_identity_v1_file_map() {
 }
 
 orm_appconfig_matches_package() {
-    local target="${1:-$ORM_APPCONFIG}"
+    local target="${1:-$ORM_APPCONFIG}" source="$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
+    local manifest_owner manifest_mode expected_digest actual_digest
     [[ -f "$target" && ! -L "$target" ]] || return 1
     # register_appconfig adds the registered application name after the packaged settings.
-    cmp -s -- "$target" <(cat -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"; printf '\nname=open_redis_manager\n')
+    if [[ -f "$source" && ! -L "$source" ]]; then
+        cmp -s -- "$target" <(cat -- "$source"; printf '\nname=open_redis_manager\n')
+        return
+    fi
+
+    # Older installs do not carry the package template beside the installed updater.
+    # In that case, accept only the exact root-owned AppConfig digest in the install manifest.
+    [[ -f "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" ]] || return 1
+    manifest_owner="$(stat -c '%u' -- "$ORM_INSTALL_MANIFEST")" || return 1
+    manifest_mode="$(stat -c '%a' -- "$ORM_INSTALL_MANIFEST")" || return 1
+    [[ "$manifest_owner" == 0 && "$manifest_mode" == 600 ]] || return 1
+    expected_digest="$(awk -F'|' '$1 == "whm_appconfig" { if (found++) exit 2; print $3 } END { if (!found) exit 1 }' \
+        "$ORM_INSTALL_MANIFEST")" || return 1
+    [[ "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+    actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" || return 1
+    [[ "$actual_digest" == "$expected_digest" ]]
 }
 
 orm_validate_legacy_identity_v1() {
