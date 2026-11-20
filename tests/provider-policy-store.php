@@ -21,7 +21,7 @@ if (!mkdir($root, 0700)) {
 $path = $root . '/provider-policy.json';
 $owner = function_exists('posix_geteuid') ? posix_geteuid() : null;
 $assert(ProviderPolicyStore::normalize(ProviderPolicyStore::defaults()) === ProviderPolicyStore::defaults(),
-    'Accept the version-four report-only policy and validated global instance defaults.');
+    'Accept the version-five report-only policy and validated global instance defaults.');
 $legacyPolicy = [
     'version' => 1,
     'mode' => 'report-only',
@@ -31,12 +31,28 @@ $legacyPolicy = [
 $legacyExpected = ProviderPolicyStore::defaults();
 $legacyExpected['mode'] = 'warn';
 $assert(ProviderPolicyStore::normalize($legacyPolicy) === $legacyExpected,
-    'Migrate a version-one report-only policy to compatibility warnings with default branding and simple exposure.');
+    'Migrate a version-one report-only policy to compatibility warnings and current non-restrictive resource ceilings.');
 $legacyV3 = ProviderPolicyStore::defaults();
 $legacyV3['version'] = 3;
 unset($legacyV3['instance_defaults']);
+$legacyV3['default'] = ['enabled' => true, 'max_memory_mib' => 64, 'backup_retention' => 3];
 $assert(ProviderPolicyStore::normalize($legacyV3) === ProviderPolicyStore::defaults(),
     'Migrate a version-three policy while preserving its existing controls and adding safe future-instance defaults.');
+$legacyV4 = ProviderPolicyStore::defaults();
+$legacyV4['version'] = 4;
+$legacyV4['instance_defaults']['databases'] = 7;
+$legacyV4['default'] = ['enabled' => true, 'max_memory_mib' => 32, 'backup_retention' => 2];
+$legacyV4['packages']['starter'] = ['enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2];
+$legacyExpected = $legacyV4;
+$legacyExpected['version'] = 5;
+$legacyExpected['default'] += ['max_clients' => 100, 'max_databases' => 16];
+$legacyExpected['packages']['starter'] += ['max_clients' => 100, 'max_databases' => 16];
+$assert(ProviderPolicyStore::normalize($legacyV4) === $legacyExpected,
+    'Migrate a version-four policy to v5 with non-restrictive package ceilings and preserve its database default.');
+$invalidLegacyV4 = $legacyV4;
+$invalidLegacyV4['default']['max_clients'] = 80;
+$assert(ProviderPolicyStore::normalize($invalidLegacyV4) === null,
+    'Reject resource fields in a legacy schema instead of accepting a mixed-version policy.');
 $logoBytes = file_get_contents(dirname(__DIR__) . '/packaging/whm/icons/orm-whm.png');
 $assert(is_string($logoBytes) && strlen($logoBytes) <= 32768, 'Use a bounded PNG logo fixture.');
 $validBranding = ProviderPolicyStore::defaultBranding();
@@ -90,7 +106,11 @@ $assert($store->load() === ProviderPolicyStore::defaults(), 'Use report-only def
 $policy = ProviderPolicyStore::defaults();
 $policy['mode'] = 'warn';
 $policy['exposure'] = 'advanced';
-$policy['packages']['starter'] = ['enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2];
+$policy['packages']['starter'] = [
+    'enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2, 'max_clients' => 40, 'max_databases' => 6,
+];
+$policy['default']['max_clients'] = 80;
+$policy['default']['max_databases'] = 12;
 $policy['resellers']['reseller1'] = ['max_instances' => 4, 'max_memory_mib' => 128];
 $policy['instance_defaults'] = [
     'memory_mib' => 24,
@@ -111,7 +131,9 @@ $badMemory = $policy;
 $badMemory['packages']['starter']['max_memory_mib'] = 65;
 $assert(ProviderPolicyStore::normalize($badMemory) === null, 'Reject package memory ceilings above the host limit.');
 $badPackage = $policy;
-$badPackage['packages']['../outside'] = ['enabled' => true, 'max_memory_mib' => 8, 'backup_retention' => 1];
+$badPackage['packages']['../outside'] = [
+    'enabled' => true, 'max_memory_mib' => 8, 'backup_retention' => 1, 'max_clients' => 10, 'max_databases' => 1,
+];
 $assert(ProviderPolicyStore::normalize($badPackage) === null, 'Reject unsafe package identifiers.');
 $badReseller = $policy;
 $badReseller['resellers']['../outside'] = ['max_instances' => 2, 'max_memory_mib' => 64];
@@ -138,6 +160,15 @@ $badDefaults = $policy;
 $badDefaults['instance_defaults']['memory_mib'] = 65;
 $assert(ProviderPolicyStore::normalize($badDefaults) === null, 'Reject global memory defaults above the host limit.');
 $assert(!$store->save($badMemory), 'Refuse to persist invalid provider policy.');
+$badClients = $policy;
+$badClients['packages']['starter']['max_clients'] = 101;
+$assert(ProviderPolicyStore::normalize($badClients) === null, 'Reject package client ceilings above the runtime maximum.');
+$badDatabases = $policy;
+$badDatabases['packages']['starter']['max_databases'] = 17;
+$assert(ProviderPolicyStore::normalize($badDatabases) === null, 'Reject package database ceilings above the supported maximum.');
+$missingCeiling = $policy;
+unset($missingCeiling['packages']['starter']['max_clients']);
+$assert(ProviderPolicyStore::normalize($missingCeiling) === null, 'Require both resource ceilings in strict version-five policy objects.');
 
 $symlinkPath = $root . '/linked-policy.json';
 symlink($path, $symlinkPath);

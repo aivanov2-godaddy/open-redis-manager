@@ -300,6 +300,39 @@ ok($quota_usage_unavailable && !$quota_usage_unavailable->{allowed}
 my $existing_memory_change = $provider_policy->memory_decision($policy_account, 64);
 ok($existing_memory_change && $existing_memory_change->{allowed},
     'do not apply new-instance reseller quotas to existing instance configuration changes');
+$enforced_package_policy->{version} = 5;
+$enforced_package_policy->{default}->{max_clients} = 100;
+$enforced_package_policy->{default}->{max_databases} = 16;
+$enforced_package_policy->{packages}->{starter}->{max_clients} = 40;
+$enforced_package_policy->{packages}->{starter}->{max_databases} = 6;
+$enforced_package_policy->{packages}->{blocked}->{max_clients} = 100;
+$enforced_package_policy->{packages}->{blocked}->{max_databases} = 16;
+$enforced_package_policy->{instance_defaults} = {
+    memory_mib => 64, maxmemory_policy => 'allkeys-lru', databases => 12,
+    metrics_history_retention_days => 30,
+};
+$enforced_package_policy->{mode} = 'enforce';
+open($provider_policy_file, '>', $provider_policy_path) or die "write resource ceiling policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close resource ceiling policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod resource ceiling policy: $!";
+my $resource_effective = $provider_policy->effective_for($policy_account);
+is($resource_effective->{max_clients}, 40, 'resolve package-specific client ceilings from trusted package identity');
+is($resource_effective->{max_databases}, 6, 'resolve package-specific database ceilings from trusted package identity');
+my $resource_provision = $provider_policy->provision_decision($policy_account, 64);
+ok($resource_provision->{allowed} && $resource_provision->{provision_max_clients} == 40
+    && $resource_provision->{provision_databases} == 6,
+    'bound new instance client and database defaults by the package ceilings');
+ok($provider_policy->memory_decision($policy_account, 64, 40, 40)->{allowed},
+    'allow a configuration at the exact package client ceiling');
+my $client_increase = $provider_policy->memory_decision($policy_account, 64, 50, 40);
+ok(!$client_increase->{allowed} && $client_increase->{violations}->[0] eq 'client_limit_exceeded',
+    'enforce a package client ceiling before an increase');
+ok($provider_policy->memory_decision($policy_account, 64, 50, 50)->{allowed}
+    && $provider_policy->memory_decision($policy_account, 64, 45, 50)->{allowed},
+    'grandfather an existing over-cap client setting when it is unchanged or reduced');
+ok(!$provider_policy->memory_decision($policy_account, 64, 55, 50)->{allowed},
+    'reject an increase from an existing over-cap client setting');
 $enforced_package_policy->{mode} = 'warn';
 open($provider_policy_file, '>', $provider_policy_path) or die "write warning-mode policy: $!";
 print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
@@ -310,6 +343,14 @@ my $warn_quota = $provider_policy->provision_decision($policy_account, 8,
 ok($warn_quota && $warn_quota->{allowed}
     && $warn_quota->{violations}->[0] eq 'reseller_instance_quota_exceeded',
     'allow a reseller quota violation with a fixed warning in warn mode');
+$enforced_package_policy->{mode} = 'warn';
+open($provider_policy_file, '>', $provider_policy_path) or die "write client warning policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close client warning policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod client warning policy: $!";
+my $warn_clients = $provider_policy->memory_decision($policy_account, 64, 50, 40);
+ok($warn_clients->{allowed} && $warn_clients->{violations}->[0] eq 'client_limit_exceeded',
+    'allow an over-cap client change with a fixed warning in warn mode');
 $enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 65;
 open($provider_policy_file, '>', $provider_policy_path) or die "rewrite invalid provider policy: $!";
 print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
@@ -625,17 +666,23 @@ my $existing_config_before_defaults = do { local $/; <$existing_config_handle> }
 close($existing_config_handle) or die "close existing instance config: $!";
 my $custom_defaults_path = "$tmp/etc/missing-instance-policy.json";
 my $custom_defaults_policy = {
-    version => 4,
+    version => 5,
     mode => 'enforce',
     exposure => 'advanced',
-    default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 2 },
+    default => {
+        enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 2,
+        max_clients => 100, max_databases => 16,
+    },
     instance_defaults => {
         memory_mib => 24,
         maxmemory_policy => 'allkeys-lfu',
         databases => 5,
         metrics_history_retention_days => 7,
     },
-    packages => { starter => { enabled => JSON::PP::true, max_memory_mib => 16, backup_retention => 2 } },
+    packages => { starter => {
+        enabled => JSON::PP::true, max_memory_mib => 16, backup_retention => 2,
+        max_clients => 40, max_databases => 3,
+    } },
     resellers => {},
     branding => {
         product_name => 'Open Redis Manager', logo_png_base64 => '', support_url => '', preset => 'orm',
@@ -650,17 +697,18 @@ chmod(0600, $custom_defaults_path) or die "chmod custom defaults policy: $!";
 my $defaults_account = { name => 'ormdefaults', uid => $<, gid => $test_gid };
 my $defaults_provisioned = $manager->provision($defaults_account, 'generic');
 ok($defaults_provisioned->{success} && $defaults_provisioned->{config}->{memory_mib} == 24
-    && $defaults_provisioned->{config}->{maxmemory_policy} eq 'allkeys-lfu',
-    'apply configured global memory and eviction defaults to a new ORM instance');
+    && $defaults_provisioned->{config}->{maxmemory_policy} eq 'allkeys-lfu'
+    && $defaults_provisioned->{config}->{maxclients} == 40,
+    'apply global memory and eviction defaults while capping clients to the package ceiling');
 my $defaults_config_path = "$etc_instances/ormdefaults/redis.conf";
 open(my $defaults_config_handle, '<', $defaults_config_path) or die "read new defaults config: $!";
 my $defaults_config_text = do { local $/; <$defaults_config_handle> };
 close($defaults_config_handle) or die "close new defaults config: $!";
-like($defaults_config_text, qr/^databases 5$/m, 'apply the bounded database count only to the newly provisioned instance');
+like($defaults_config_text, qr/^databases 3$/m, 'cap the configured database count for the newly provisioned instance');
 my $defaults_manifest = $manager->_read_manifest($defaults_account);
 is_deeply($defaults_manifest->{provisioned_defaults}, {
-    backup_retention => 2, databases => 5, metrics_history_retention_days => 7,
-}, 'record snapshot, database, and history defaults in the new root-owned manifest');
+    backup_retention => 2, databases => 3, metrics_history_retention_days => 7,
+}, 'record the effective package-capped database count and other defaults in the new root-owned manifest');
 my $old_history_sample = {
     commands_per_second => 1, connected_clients => 1, keyspace_hits => 1, keyspace_misses => 0,
     memory_peak_bytes => 1024, memory_used_bytes => 512, uptime_seconds => 100,

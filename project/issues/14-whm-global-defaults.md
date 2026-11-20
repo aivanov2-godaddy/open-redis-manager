@@ -9,9 +9,9 @@ Allow the root WHM administrator to choose bounded global Redis/Valkey defaults 
 
 ## Acceptance criteria
 
-- WHM displays and saves default memory (8–64 MiB), an allowlisted eviction policy, database count (1–16), snapshot retention (2–3), and metrics-history retention (7–90 days).
+- WHM displays and saves default memory (8–64 MiB), an allowlisted eviction policy, database count (1–16), package client/database ceilings, snapshot retention (2–3), and metrics-history retention (7–90 days).
 - PHP storage and the root-owned Perl broker reader validate the same versioned policy and reject malformed or unsafe values.
-- New instances capture their database, snapshot, and history defaults; the selected workload profile and package memory ceiling continue to bound provisioning.
+- New instances capture their effective database, snapshot, and history defaults; workload profiles and package memory, client, and database ceilings bound provisioning.
 - Updating defaults does not rewrite existing instance configuration, manifests, snapshots, or history.
 - Metrics history prunes using the instance-recorded retention while retaining fixed sample/byte bounds and root-owned file permissions.
 - WHM writes remain protected by root authorization, session/CSRF checks, and normalized metadata-only audit events.
