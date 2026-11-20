@@ -49,6 +49,7 @@ $audit = [
     'sources' => [['status' => 'complete'], ['status' => 'complete']],
     'records' => [
         ['timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z', $now - 300), 'action' => 'auth.rotate', 'result' => 'success', 'account' => 'testacct'],
+        ['timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z', $now - 240), 'action' => 'auth.enable', 'result' => 'success', 'account' => 'testacct'],
         ['timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z', $now - 120), 'action' => 'auth.disable', 'result' => 'auth_disable_failed', 'account' => 'testacct'],
         ['timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z', $now - 90000), 'action' => 'auth.rotate', 'result' => 'failed', 'account' => 'oldacct'],
         ['timestamp_utc' => gmdate('Y-m-d\TH:i:s\Z', $now - 60), 'action' => 'auth.rotate', 'result' => 'success', 'account' => 'unrelated', 'password' => 'report-secret-canary'],
@@ -74,7 +75,7 @@ $assert(($byCategory['client_authentication_failures']['count'] ?? null) === 2
     && str_contains($byCategory['client_authentication_failures']['evidence'], '3600–7200 seconds')
     && str_contains($byCategory['client_authentication_failures']['recommendation'], 'no abuse threshold'),
     'report anonymous supported authentication-failure counter evidence without identifying clients or alleging attacks');
-$assert(($byCategory['auth_management_events']['count'] ?? null) === 3
+$assert(($byCategory['auth_management_events']['count'] ?? null) === 4
     && str_contains($byCategory['auth_management_events']['evidence'], '1 unsuccessful')
     && str_contains($byCategory['auth_management_events']['evidence'], 'not Redis client login attempts'),
     'count only normalized AUTH management events in the bounded 24-hour window');

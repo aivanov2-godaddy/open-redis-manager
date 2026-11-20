@@ -26,6 +26,7 @@ $journal = static function (string $identifier, string $message, int $timestamp)
 $brokerLines = [
     $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct01 action=diagnostics.read result=success state=running', $now - 30),
     $journal('orm-broker', 'account_auth actor_uid=1000 account=acct01 action=auth.rotate result=success state=running', $now - 20),
+    $journal('orm-broker', 'account_auth actor_uid=1000 account=acct01 action=auth.enable result=success state=running', $now - 22),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=memory_limit_exceeded', $now - 18),
     $journal('orm-broker', 'ORM raw message password=do-not-export', $now - 10),
     json_encode(['SYSLOG_IDENTIFIER' => 'other-service', 'MESSAGE' => 'fleet_operation actor_uid=0 account=acct01 action=start result=success state=running', '__REALTIME_TIMESTAMP' => (string) ($now * 1_000_000)], JSON_THROW_ON_ERROR),
@@ -39,10 +40,11 @@ $reader = new WhmAuditLog(static fn (string $identifier): array => [
     'status' => 'ok', 'lines' => $identifier === 'orm-broker' ? $brokerLines : $whmLines,
 ]);
 $result = $reader->read($now - 3600, $now, []);
-$assert($result['success'] && $result['record_count'] === 6, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
+$assert($result['success'] && $result['record_count'] === 7, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
 $assert($result['records'][0]['action'] === 'security.report' && $result['records'][0]['account'] === 'global', 'Recognize fixed metadata-only security report events.');
 $assert($result['records'][1]['action'] === 'provider.package.save' && $result['records'][1]['source'] === 'orm-whm', 'Sort newest first and normalize WHM policy events.');
 $assert($result['records'][3]['action'] === 'policy.violation' && $result['records'][3]['actor'] === '43210', 'Normalize broker provider policy events using their trusted account actor.');
+$assert($result['records'][5]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
 $assert($result['sources'][0]['status'] === 'partial' && $result['sources'][0]['unrecognized_rows'] === 2, 'Mark sources partial when rows cannot be safely recognized.');
 $filtered = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'auth.rotate', 'result' => 'success']);
 $assert($filtered['record_count'] === 1 && $filtered['records'][0]['actor'] === '1000', 'Filter normalized records by account, action, and result.');
