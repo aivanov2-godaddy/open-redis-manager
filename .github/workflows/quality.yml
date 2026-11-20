@@ -60,6 +60,10 @@ jobs:
         run: python tests/cpanel-live-isolation-smoke.py --help >/dev/null
       - name: Check live cPanel isolation smoke assertions
         run: python tests/cpanel-live-isolation-smoke-checks.py
+      - name: Check live cPanel Podman lifecycle smoke entry point
+        run: python tests/cpanel-live-podman-lifecycle-smoke.py --help >/dev/null
+      - name: Check live cPanel Podman lifecycle smoke assertions
+        run: python tests/cpanel-live-podman-lifecycle-smoke-checks.py
       - name: Check live WHM report-form smoke entry point
         run: php tests/whm-live-security-report-form.php --help >/dev/null
       - name: Check broker Perl syntax and tests
