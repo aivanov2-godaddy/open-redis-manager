@@ -224,7 +224,7 @@ final class WhmSecurityReport
             $authFailures = 0;
             $windowStart = max(0, $generatedAt - self::AUTH_EVENT_WINDOW_SECONDS);
             foreach ($audit['records'] as $event) {
-                if (!is_array($event) || !in_array($event['action'] ?? null, ['auth.rotate', 'auth.disable'], true)
+                if (!is_array($event) || !in_array($event['action'] ?? null, ['auth.enable', 'auth.rotate', 'auth.disable'], true)
                     || !is_string($event['timestamp_utc'] ?? null)) {
                     continue;
                 }

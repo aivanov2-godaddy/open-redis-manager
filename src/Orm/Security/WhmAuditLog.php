@@ -21,7 +21,7 @@ final class WhmAuditLog
     ];
     private const ACTIONS = [
         'start', 'stop', 'restart', 'backup.create', 'backup.restore', 'migration.to-valkey',
-        'diagnostics.read', 'recovery.scan', 'recovery.start', 'auth.rotate', 'auth.disable',
+        'diagnostics.read', 'recovery.scan', 'recovery.start', 'auth.enable', 'auth.rotate', 'auth.disable',
         'provider.default', 'provider.package.save', 'provider.package.remove',
         'provider.reseller.save', 'provider.reseller.remove', 'provider.branding.save',
         'backend.select', 'policy.violation', 'security.report',
@@ -356,7 +356,7 @@ final class WhmAuditLog
         if ($identifier === 'orm-broker') {
             $patterns = [
                 '/\Afleet_operation actor_uid=' . $actor . ' account=' . $account . ' action=' . $action . ' result=' . $result . ' state=' . $state . '\z/',
-                '/\Aaccount_auth actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>auth\.(?:rotate|disable)) result=' . $result . ' state=' . $state . '\z/',
+                '/\Aaccount_auth actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>auth\.(?:enable|rotate|disable)) result=' . $result . ' state=' . $state . '\z/',
                 '/\Abackup_restore actor_uid=' . $actor . ' account=' . $account
                     . ' backup=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|invalid) safety=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|none) result=' . $result . ' state=' . $state . '\z/',
                 '/\Aprovider_policy actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>policy\.violation) result=(?<result>report-only|warn|enforce) state=(?<state>(?:package_disabled|memory_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded)(?:,(?:package_disabled|memory_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded))*)\z/',
