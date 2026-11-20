@@ -59,6 +59,7 @@ prepare_installation() {
         mkdir -p "$(dirname -- "$installed_file")"
         case "$key" in
             cpanel_entry|whm_cgi) printf 'old %s revision\n' "$key" >"$installed_file" ;;
+            release_version) printf '%s\n' "$installed_version" >"$installed_file" ;;
             whm_appconfig)
                 cat -- "$release_root/$source" >"$installed_file"
                 printf '\nname=open_redis_manager\n' >>"$installed_file"
@@ -87,6 +88,7 @@ tree_snapshot() {
 first_target="$(awk -F'|' '$1 == "cpanel_entry" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 second_target="$(awk -F'|' '$1 == "whm_cgi" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 broker_target="$(awk -F'|' '$1 == "broker_handler" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+version_target="$(awk -F'|' '$1 == "release_version" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 
 # The WHM job must bind its accepted candidate and digest to the locked apply transaction.
 prepare_installation "$target_root" "$manifest"
@@ -207,6 +209,15 @@ prepare_installation "$target_root" "$manifest"
 bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/apply.out"
 [[ "$(orm_install_manifest_version "$manifest")" == "$release_version" ]] || {
     printf 'successful apply did not advance the installed manifest version.\n' >&2
+    exit 1
+}
+[[ "$(cat "$target_root$version_target")" == "$release_version" ]] || {
+    printf 'successful apply did not advance the installed VERSION file.\n' >&2
+    exit 1
+}
+version_digest="$(sha256sum "$target_root$version_target" | awk '{print $1}')"
+grep -Fqx "release_version|644|$version_digest|$version_target" "$manifest" || {
+    printf 'successful apply manifest did not attest the installed VERSION file.\n' >&2
     exit 1
 }
 for target in "$first_target" "$second_target"; do

@@ -151,3 +151,29 @@ if orm_validate_install_manifest "$test_root/invalid-target-manifest"; then
 fi
 
 printf 'Versioned package manifest compatibility checks passed.\n'
+
+# A v2/v3 manifest version must agree with the root-owned installed VERSION payload.
+ORM_VERSION_FILE="$test_root/version-source"
+version_target="$test_root/version-target"
+printf '2.0.0\n' >"$ORM_VERSION_FILE"
+cp -- "$ORM_VERSION_FILE" "$version_target"
+chmod 0644 "$ORM_VERSION_FILE" "$version_target"
+orm_package_file_map() {
+    printf 'test_payload|%s|%s|644\n' "$test_root/source" "$test_root/target"
+    printf 'release_version|%s|%s|644\n' "$ORM_VERSION_FILE" "$version_target"
+}
+versioned_manifest="$test_root/versioned-manifest"
+orm_write_install_manifest "$versioned_manifest"
+orm_validate_install_manifest "$versioned_manifest" \
+    || { printf 'manifest version did not agree with the installed VERSION file.\n' >&2; exit 1; }
+printf '2.0.1\n' >"$version_target"
+wrong_version_digest="$(sha256sum "$version_target" | awk '{print $1}')"
+awk -F'|' -v digest="$wrong_version_digest" 'BEGIN { OFS = "|" } $1 == "release_version" { $3 = digest } { print }' \
+    "$versioned_manifest" >"$versioned_manifest.next"
+mv -- "$versioned_manifest.next" "$versioned_manifest"
+chmod 0600 "$versioned_manifest"
+if orm_validate_install_manifest "$versioned_manifest"; then
+    printf 'manifest accepted a VERSION payload that disagreed with its recorded package version.\n' >&2
+    exit 1
+fi
+printf 'Installed VERSION and manifest version consistency checks passed.\n'
