@@ -44,6 +44,7 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 
 ## Cache-busted icon refresh — 2026-11-20
 
+- ORM source commit: `ec8b326`.
 - After a cPanel browser screenshot still showed the earlier solid red tile, the feature and group icon filenames were changed to fresh `orm-cpanel-*-v2` names. The actual icon artwork and the primary README logo were left unchanged.
 - An icon-only package containing the updated `install.json`, 32×32 group SVG, and transparent 48×48 PNG assets was accepted by `install_plugin`. cPanel scheduled a sprite update.
 - The Windows browser capture helper could not capture the monitor (`IGraphicsCaptureItemInterop.CreateForMonitor` returned `0x80070057`), so the final browser appearance has not been verified. This remains a registration result, not a visual confirmation.

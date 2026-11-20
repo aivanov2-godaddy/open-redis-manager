@@ -59,21 +59,65 @@ source_version="$(<"$repo_root/VERSION")"
 source_commit="$(git -C "$repo_root" rev-parse --verify HEAD)" || orm_die 'could not resolve the exact source commit.'
 [[ "$source_commit" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || orm_die 'source commit ID is invalid.'
 
+orm_path_permissions_are_private() {
+    local path="$1" kind="$2" mode acl_result
+    if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+        local windows_path
+        windows_path="$(cygpath -w -- "$path")" || return 1
+        acl_result="$(ORM_ACL_PATH="$windows_path" ORM_ACL_KIND="$kind" powershell.exe \
+            -NoLogo -NoProfile -NonInteractive -Command '
+                $ErrorActionPreference = "Stop"
+                try {
+                    $path = $env:ORM_ACL_PATH
+                    $kind = $env:ORM_ACL_KIND
+                    $acl = Get-Acl -LiteralPath $path
+                    $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+                    if (-not $acl.AreAccessRulesProtected -or $acl.Owner -notin @($current, "BUILTIN\Administrators")) { exit 1 }
+                    $rules = @($acl.Access)
+                    if ($rules.Count -ne 2) { exit 1 }
+                    $seen = @{}
+                    foreach ($rule in $rules) {
+                        $identity = $rule.IdentityReference.Translate([System.Security.Principal.NTAccount]).Value
+                        if ($identity -notin @($current, "NT AUTHORITY\SYSTEM") -or $rule.AccessControlType -ne "Allow" -or $rule.IsInherited) { exit 1 }
+                        if ($seen.ContainsKey($identity)) { exit 1 }
+                        $seen[$identity] = $true
+                        $required = if ($kind -eq "file" -and $identity -eq $current) {
+                            [System.Security.AccessControl.FileSystemRights]::ReadData -bor [System.Security.AccessControl.FileSystemRights]::WriteData
+                        } else {
+                            [System.Security.AccessControl.FileSystemRights]::FullControl
+                        }
+                        if (($rule.FileSystemRights -band $required) -ne $required) { exit 1 }
+                    }
+                    if (-not $seen.ContainsKey($current) -or -not $seen.ContainsKey("NT AUTHORITY\SYSTEM")) { exit 1 }
+                    "restricted"
+                } catch { exit 1 }
+            ' | tr -d "\r\n")" || return 1
+        [[ "$acl_result" == restricted ]]
+        return
+    fi
+
+    mode="$(stat -c '%a' -- "$path")" || return 1
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+    if [[ "$kind" == file ]]; then
+        (( (8#$mode & 0077) == 0 ))
+    else
+        (( (8#$mode & 0022) == 0 ))
+    fi
+}
+
 [[ "$private_key" == /* && -f "$private_key" && ! -L "$private_key" ]] \
     || orm_die 'private key must be an existing absolute regular file, not a symlink.'
 private_key_real="$(realpath -e -- "$private_key")" || orm_die 'could not resolve private key path.'
 [[ "$private_key_real" != "$repo_root" && "$private_key_real" != "$repo_root/"* ]] \
     || orm_die 'private signing key must be stored outside the repository.'
-key_mode="$(stat -c '%a' -- "$private_key_real")" || orm_die 'could not inspect private key permissions.'
-[[ "$key_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$key_mode & 0077) == 0 )) \
+orm_path_permissions_are_private "$private_key_real" file \
     || orm_die 'private signing key must not be accessible to group or other users.'
 [[ -d "$output_directory" && ! -L "$output_directory" ]] \
     || orm_die 'output directory must already exist and must not be a symlink.'
 output_directory="$(realpath -e -- "$output_directory")" || orm_die 'could not resolve output directory.'
 [[ "$output_directory" != "$repo_root" && "$output_directory" != "$repo_root/"* ]] \
     || orm_die 'release output must be stored outside the repository.'
-output_mode="$(stat -c '%a' -- "$output_directory")" || orm_die 'could not inspect output directory permissions.'
-[[ "$output_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$output_mode & 0022) == 0 )) \
+orm_path_permissions_are_private "$output_directory" directory \
     || orm_die 'output directory must not be group or world writable.'
 
 release_directory="$output_directory/orm-$version"
