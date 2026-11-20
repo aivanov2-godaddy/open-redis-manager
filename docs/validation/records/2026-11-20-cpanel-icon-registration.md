@@ -1,5 +1,9 @@
 # cPanel icon registration refresh — 2026-11-20
 
+## Correction to earlier rendering hypotheses
+
+The earlier sections below preserve the sequence of investigations, but several explanations were hypotheses and should not be treated as established root cause. A later inspection found that cPanel's generated Jupiter sprite contains the group and feature paths, and its CSS points at the expected sprite offsets. The reason the user's browser screenshot showed a solid red tile remains undetermined; a stale or transformed-path explanation is not proven. This follow-up replaces the full-background tile with transparent, single-color red line art to remove the tile that visually dominated the icon. It does not change the approved main README logo. The v3 package preview is local artwork only; registration and authenticated browser rendering must still be checked.
+
 ## Test identity
 
 - ORM source commit: `9010412` (PR #116).
@@ -89,3 +93,11 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - The package helper now runs cPanel's sprite generator synchronously before calculating the cache key, preventing the delayed `install_plugin` sprite update from leaving a stale URL. The isolated cPanel installer test covers this cache-key rewrite.
 - The authenticated browser appearance was not captured in this run; the existing image remains a local render of the packaged assets. A browser hard refresh and visual confirmation are still pending.
 - No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed by this icon-only registration and sprite refresh. No host, account, credential, session URL, or raw operational output is recorded here.
+
+## Transparent cPanel icon redesign — 2026-11-20
+
+- Replaced the cPanel-only full red tile and white cube with a transparent Redis-red outline of a three-tier cache cube and inset keyspace diamond. The icon is kept separate from the approved README mark.
+- Registered fresh v3 filenames in `install.json` so cPanel can treat the redesign as new Jupiter assets. The group SVG uses a 32×32 viewBox; the feature SVG uses 48×48, with matching 48×48 transparent PNG fallbacks.
+- Added pixel checks for transparent PNG corners and red foreground pixels, plus SVG checks for direct path geometry, single-color strokes, and no background shapes. Added a local preview at [`screenshots/previews/cpanel-icons-v3-preview.png`](../../../screenshots/previews/cpanel-icons-v3-preview.png).
+- The icon-only archive was accepted by the designated cPanel test system. The installed group and feature SVGs match the v3 package hashes; the generated feature view and stylesheet reference the 48×48 launcher. The authenticated browser appearance was not captured, so the local preview must not be mistaken for a live cPanel screenshot.
+- The temporary icon-only archive was removed from the test host after registration. No ORM service, Redis/Valkey instance, account data, or cPanel settings outside the icon registration and regenerated sprite were changed.

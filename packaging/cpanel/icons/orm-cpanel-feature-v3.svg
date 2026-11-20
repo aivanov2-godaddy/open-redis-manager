@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="orm-title orm-desc">
+  <title id="orm-title">Open Redis Manager</title>
+  <desc id="orm-desc">A red outline of a three-tier cache cube with an inset keyspace diamond.</desc>
+  <path d="M24 6 40.5 15 24 24 7.5 15Z" fill="none" stroke="#D92D20" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7.5 15V33L24 42 40.5 33V15" fill="none" stroke="#D92D20" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7.5 22.5 24 31.5 40.5 22.5" fill="none" stroke="#D92D20" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7.5 30 24 39 40.5 30" fill="none" stroke="#D92D20" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18.45 15 24 12 29.55 15 24 18Z" fill="none" stroke="#D92D20" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
