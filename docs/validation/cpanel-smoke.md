@@ -24,6 +24,8 @@ The check requires an installed ORM cPanel entry point, an active `orm-broker.se
 
 ## Current evidence
 
+On 2026-11-20, the current signed ORM `0.1.0-rc.3` package from merged source commit `87331b0` passed the live account identity, query-parameter spoof, and read-only Podman cache assertions. The package updater verified the v3 manifest, WHM registration, broker service state, and socket readiness; the authenticated cPanel entry point matched the signed package. The registered WHM AppConfig was preserved by design. See [`records/2026-11-20-rc3-source-matched-cpanel-smoke.md`](records/2026-11-20-rc3-source-matched-cpanel-smoke.md). This was an HTTP smoke, not an authenticated browser screenshot or visual review.
+
 A live cPanel identity smoke passed on 2026-11-20 against the current entry point and identity classes. The test host was missing the current read-only `ApplicationDiscovery.php` dependency, so that exact file was installed before rerunning the smoke. The existing package manifest and several updater files do not match the current checkout, so this result is not a full install or upgrade validation. See [`records/2026-11-20-cpanel-identity-smoke-after-repair.md`](records/2026-11-20-cpanel-identity-smoke-after-repair.md).
 
 On 2026-11-20, the merged smoke harness also passed exact SSO identity comparison and a read-only query-parameter spoof probe on the same single-account test host. The installed cPanel entry point was not byte-identical to the repository source, and this was not a two-account isolation test. See [`records/2026-11-20-cpanel-query-spoof-smoke.md`](records/2026-11-20-cpanel-query-spoof-smoke.md).
