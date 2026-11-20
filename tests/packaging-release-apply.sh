@@ -355,7 +355,10 @@ grep -q 'failed integrity validation\|unfinished updater transaction' "$test_roo
 
 # Recovery requires an exact preview and explicit transaction ID. The hard-kill
 # point is between atomic replacement and its journal checkpoint.
-bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out"
+if ! bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out" 2>&1; then
+    cat "$test_root/recovery-preview.out" >&2
+    exit 1
+fi
 grep -q 'No files changed' "$test_root/recovery-preview.out" || {
     printf 'recovery preview did not report its read-only validation.\n' >&2
     cat "$test_root/recovery-preview.out" >&2
@@ -374,7 +377,10 @@ fi
 first_source="$(awk -F'|' -v target="$first_target" '$3 == target { print $2 }' "$repo_root/packaging/release-install-map.txt")"
 cp -- "$release_root/$first_source" "$target_root$first_target"
 chmod 644 "$target_root$first_target"
-bash "$repo_root/packaging/recover-release.sh" --confirm "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery.out"
+if ! bash "$repo_root/packaging/recover-release.sh" --confirm "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery.out" 2>&1; then
+    cat "$test_root/recovery.out" >&2
+    exit 1
+fi
 [[ "$(tree_snapshot "$target_root")" == "$original_install_tree" \
     && "$(orm_install_manifest_version "$manifest")" == "$installed_version" \
     && "$(sha256sum "$manifest" | awk '{print $1}')" == "$manifest_before_interrupt" ]] || {
