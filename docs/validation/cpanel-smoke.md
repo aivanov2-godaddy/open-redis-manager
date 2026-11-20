@@ -24,6 +24,8 @@ On 2026-11-17, the repository owner supplied a separate PHP 8.5 CLI/PhpRedis smo
 
 This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
 
+Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) was accepted by cPanel. Neither run verifies the cPanel identity smoke's other scenarios or establishes host support.
+
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
 
 The test uses cPanel's documented [`create_user_session` single-sign-on flow](https://api.docs.cpanel.net/guides/guide-to-api-authentication/guide-to-api-authentication-single-sign-on).
