@@ -16,7 +16,7 @@ installed_version='0.1.0-dev'
 artifact="$test_root/orm-${release_version}.tar.gz"
 release_root="$test_root/orm-$release_version"
 target_root="$test_root/targets"
-manifest="$test_root/installed-manifest"
+manifest="$target_root/usr/local/cpanel/3rdparty/orm/install-manifest"
 
 mkdir -m 0700 "$key_dir"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key" >/dev/null 2>&1
@@ -55,6 +55,7 @@ prepare_installation() {
     local root="$1" target_manifest="$2" key source target mode installed_file digest
     rm -rf -- "$root" "$target_manifest"
     mkdir -m 0700 "$root"
+    mkdir -p "$(dirname -- "$target_manifest")"
     printf 'orm-install-manifest-v3\nversion|%s\n' "$installed_version" >"$target_manifest"
     while IFS='|' read -r key source target mode; do
         installed_file="$root$target"
@@ -270,6 +271,7 @@ chmod 0755 "$crash_bin/mv"
 marker="$test_root/crash-marker"
 wrapper_pid_file="$test_root/crash-wrapper-pid"
 manifest_before_interrupt="$(sha256sum "$manifest" | awk '{print $1}')"
+original_install_tree="$(tree_snapshot "$target_root")"
 TEST_REAL_MV="$real_mv" TEST_CRASH_MARKER="$marker" TEST_CRASH_WRAPPER_PID="$wrapper_pid_file" \
     PATH="$crash_bin:$PATH" setsid bash "$repo_root/packaging/apply-release.sh" \
     "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" \
@@ -351,4 +353,60 @@ grep -q 'failed integrity validation\|unfinished updater transaction' "$test_roo
     exit 1
 }
 
-printf 'Signed release apply, rollback, and interruption checks passed.\n'
+# Recovery requires an exact preview and explicit transaction ID. The hard-kill
+# point is between atomic replacement and its journal checkpoint.
+bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out"
+grep -q 'No files changed' "$test_root/recovery-preview.out" || {
+    printf 'recovery preview did not report its read-only validation.\n' >&2
+    cat "$test_root/recovery-preview.out" >&2
+    exit 1
+}
+printf 'operator edit\n' >"$target_root$first_target"
+unknown_target_snapshot="$(tree_snapshot "$target_root")"
+if bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-conflict.out" 2>&1; then
+    printf 'recovery accepted a target with an unknown digest.\n' >&2
+    exit 1
+fi
+[[ "$(tree_snapshot "$target_root")" == "$unknown_target_snapshot" ]] || {
+    printf 'failed recovery preflight changed the operator-edited target or other fixture state.\n' >&2
+    exit 1
+}
+first_source="$(awk -F'|' -v target="$first_target" '$3 == target { print $2 }' "$repo_root/packaging/release-install-map.txt")"
+cp -- "$release_root/$first_source" "$target_root$first_target"
+chmod 644 "$target_root$first_target"
+bash "$repo_root/packaging/recover-release.sh" --confirm "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery.out"
+[[ "$(tree_snapshot "$target_root")" == "$original_install_tree" \
+    && "$(orm_install_manifest_version "$manifest")" == "$installed_version" \
+    && "$(sha256sum "$manifest" | awk '{print $1}')" == "$manifest_before_interrupt" ]] || {
+    printf 'recovery did not restore the original managed package and manifest exactly.\n' >&2
+    cat "$test_root/recovery.out" >&2
+    exit 1
+}
+[[ -z "$(find "$target_root/var/cpanel/orm/updates" -mindepth 1 -maxdepth 1 -name 'transaction.*' -print -quit)" ]] || {
+    printf 'verified recovery left the transaction workspace behind.\n' >&2
+    exit 1
+}
+grep -q '"outcome":"rolled_back"' "$target_root/var/cpanel/orm/updates/update-audit.jsonl" || {
+    printf 'recovery did not append a rollback outcome.\n' >&2
+    exit 1
+}
+[[ "$(grep -c '"outcome":"rolled_back"' "$target_root/var/cpanel/orm/updates/update-audit.jsonl")" -eq 1 ]] || {
+    printf 'recovery wrote duplicate rollback audit outcomes.\n' >&2
+    exit 1
+}
+if bash "$repo_root/packaging/recover-release.sh" --confirm "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-repeat.out" 2>&1; then
+    printf 'recovery accepted an already removed transaction ID.\n' >&2
+    exit 1
+fi
+[[ "$(tree_snapshot "$target_root")" == "$original_install_tree" ]] || {
+    printf 'a repeated recovery attempt changed the restored installation.\n' >&2
+    exit 1
+}
+[[ "$(cat "$target_root/etc/orm-instances/send.json")" == account-state-fixture \
+    && "$(cat "$target_root/var/lib/orm-instances/send/dump.rdb")" == redis-rdb-fixture \
+    && "$(cat "$target_root/var/cpanel/orm/provider-backend-policy")" == podman ]] || {
+    printf 'recovery changed account state, Redis data, or backend selection.\n' >&2
+    exit 1
+}
+
+printf 'Signed release apply, rollback, interruption, and recovery checks passed.\n'

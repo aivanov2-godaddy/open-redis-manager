@@ -119,6 +119,7 @@ orm_package_file_map() {
         release_version "$ORM_REPO_ROOT/VERSION" "$ORM_3RDPARTY/VERSION" 644 \
         release_preview "$ORM_PACKAGE_ROOT/preview-release.sh" "$ORM_3RDPARTY/packaging/preview-release.sh" 755 \
         release_apply "$ORM_PACKAGE_ROOT/apply-release.sh" "$ORM_3RDPARTY/packaging/apply-release.sh" 755 \
+        release_recover "$ORM_PACKAGE_ROOT/recover-release.sh" "$ORM_3RDPARTY/packaging/recover-release.sh" 755 \
         release_worker "$ORM_REPO_ROOT/bin/orm-update-worker.pl" "$ORM_3RDPARTY/bin/orm-update-worker.pl" 755 \
         release_package_lib "$ORM_PACKAGE_ROOT/lib.sh" "$ORM_3RDPARTY/packaging/lib.sh" 644 \
         release_verification_lib "$ORM_PACKAGE_ROOT/release-lib.sh" "$ORM_3RDPARTY/packaging/release-lib.sh" 644 \
