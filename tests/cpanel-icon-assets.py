@@ -20,23 +20,23 @@ def main() -> int:
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
     if group is None or group.get("icon") != "orm-group.svg":
         raise SystemExit("the cPanel group must use the orm-group.svg icon")
-    if feature is None or feature.get("icon") != "orm-feature.svg":
-        raise SystemExit("the cPanel launcher must use the orm-feature.svg icon")
+    if feature is None or feature.get("icon") != "orm-feature.png":
+        raise SystemExit("the cPanel launcher must use the orm-feature.png icon")
 
-    for name in ("orm-group", "orm-feature"):
+    for name, size in (("orm-group", 32), ("orm-feature", 48)):
         svg_path = ROOT / "icons" / f"{name}.svg"
         root = ET.parse(svg_path).getroot()
         group_node = root.find(f"{SVG_NS}g")
         if (
             root.tag != f"{SVG_NS}svg"
-            or (root.get("width"), root.get("height")) != ("48", "48")
-            or root.get("viewBox") != "0 0 48 48"
+            or (root.get("width"), root.get("height")) != (str(size), str(size))
+            or root.get("viewBox") != f"0 0 {size} {size}"
             or group_node is None
             or group_node.get("fill") != "none"
             or group_node.get("stroke") != "#D92D20"
             or len(group_node.findall(f"{SVG_NS}path")) != 2
         ):
-            raise SystemExit(f"{name}.svg must be a 48x48 transparent red cache-tier glyph")
+            raise SystemExit(f"{name}.svg must be a {size}x{size} transparent red cache-tier glyph")
 
         png = (ROOT / "icons" / f"{name}.png").read_bytes()
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
@@ -46,7 +46,7 @@ def main() -> int:
         if png[25] != 6:
             raise SystemExit(f"{name}.png must use RGBA so the canvas remains transparent")
 
-    print("cPanel icon assets passed: transparent 48x48 SVG glyphs and RGBA PNG fallbacks.")
+    print("cPanel icon assets passed: 32x32 group SVG, 48x48 feature SVG/PNG, and RGBA PNG assets.")
     return 0
 
 

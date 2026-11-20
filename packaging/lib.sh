@@ -529,9 +529,8 @@ orm_make_cpanel_archive() {
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/install.json" "$stage/orm/install.json" \
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.svg" "$stage/orm/orm-group.svg" \
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.png" "$stage/orm/orm-group.png" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.svg" "$stage/orm/orm-feature.svg" \
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.png" "$stage/orm/orm-feature.png" \
-        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-group.png orm-feature.svg orm-feature.png; then
+        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-group.png orm-feature.png; then
         rm -rf -- "$stage"
         return 1
     fi

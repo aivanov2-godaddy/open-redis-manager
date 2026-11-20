@@ -34,3 +34,10 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - A package containing only `install.json` and the four current Jupiter SVG/PNG icon assets was passed to cPanel's `install_plugin --theme jupiter` command.
 - The command returned `Plugin installed ok` and reported that it scheduled a sprite update. No ORM service, Redis/Valkey container, account data, or other package files were included in the archive.
 - The command completed successfully, but the scheduled sprite job and authenticated browser rendering were not observed. The screenshot in [`screenshots/previews/cpanel-registration-icons.png`](../../../screenshots/previews/cpanel-registration-icons.png) is a local render of the current assets, not a live cPanel capture.
+
+## PNG launcher refresh — 2026-11-20
+
+- The owner reported that Jupiter displayed the launcher as a solid red block. The installed feature SVG matched the repository source hash, so the problem was not an outdated repository asset.
+- A registration archive containing the 32×32 group SVG and transparent 48×48 launcher PNG was accepted by `install_plugin`; it returned `Plugin installed ok` and scheduled another sprite refresh.
+- cPanel retained the previously installed `open_redis_manager.svg` despite its absence from the refresh archive. That exact generated feature asset was copied to a root-only backup outside the repository and removed; the registration was then applied again. The Jupiter application icon directory subsequently contained the PNG only, with a hash matching the packaged launcher PNG.
+- No ORM service, Redis/Valkey container, account data, or other plugin files were touched. The sprite task and authenticated browser rendering were not observed, so the corrected live appearance remains unverified. The local preview documents the package assets only.
