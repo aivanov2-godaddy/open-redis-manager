@@ -45,6 +45,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php
+        /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php
         /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl
         /usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher

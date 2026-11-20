@@ -44,7 +44,12 @@ candidate_order="$(orm_semver_compare "$version" "$maximum_version")" \
 
 git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || orm_die 'release source must be a Git checkout.'
-[[ "$(git -C "$repo_root" rev-parse --show-toplevel)" == "$repo_root" ]] \
+git_root="$(git -C "$repo_root" rev-parse --show-toplevel)" \
+    || orm_die 'could not resolve the Git checkout root.'
+if command -v cygpath >/dev/null 2>&1; then
+    git_root="$(cygpath -u -- "$git_root")" || orm_die 'could not normalize the Git checkout path.'
+fi
+[[ "$git_root" == "$repo_root" ]] \
     || orm_die 'release source root is not the Git checkout root.'
 [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] \
     || orm_die 'release source checkout must be clean; commit reviewed files before building.'
@@ -54,21 +59,75 @@ source_version="$(<"$repo_root/VERSION")"
 source_commit="$(git -C "$repo_root" rev-parse --verify HEAD)" || orm_die 'could not resolve the exact source commit.'
 [[ "$source_commit" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || orm_die 'source commit ID is invalid.'
 
+orm_path_permissions_are_private() {
+    local path="$1" kind="$2" mode acl_result powershell_executable powershell_module_path
+    if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+        local windows_path powershell_directory
+        windows_path="$(cygpath -w -- "$path")" || return 1
+        powershell_executable="$(command -v powershell.exe)" || return 1
+        powershell_directory="$(dirname -- "$powershell_executable")"
+        powershell_module_path="$(cygpath -w -- "$powershell_directory/Modules")" || return 1
+        acl_result="$(PSModulePath="$powershell_module_path" ORM_ACL_PATH="$windows_path" ORM_ACL_KIND="$kind" "$powershell_executable" \
+            -NoLogo -NoProfile -NonInteractive -Command '
+                $ErrorActionPreference = "Stop"
+                try {
+                    $path = $env:ORM_ACL_PATH
+                    $kind = $env:ORM_ACL_KIND
+                    $acl = Get-Acl -LiteralPath $path
+                    $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+                    if (-not $acl.AreAccessRulesProtected -or $acl.Owner -notin @($current, "BUILTIN\Administrators")) { exit 1 }
+                    $rules = @($acl.Access)
+                    if ($rules.Count -ne 2) { exit 1 }
+                    $seen = @{}
+                    foreach ($rule in $rules) {
+                        $identity = $rule.IdentityReference.Translate([System.Security.Principal.NTAccount]).Value
+                        if ($identity -notin @($current, "NT AUTHORITY\SYSTEM") -or $rule.AccessControlType -ne "Allow" -or $rule.IsInherited) { exit 1 }
+                        if ($seen.ContainsKey($identity)) { exit 1 }
+                        $seen[$identity] = $true
+                        $required = if ($kind -eq "file" -and $identity -eq $current) {
+                            [System.Security.AccessControl.FileSystemRights]::ReadData -bor [System.Security.AccessControl.FileSystemRights]::WriteData
+                        } else {
+                            [System.Security.AccessControl.FileSystemRights]::FullControl
+                        }
+                        if (($rule.FileSystemRights -band $required) -ne $required) { exit 1 }
+                    }
+                    if (-not $seen.ContainsKey($current) -or -not $seen.ContainsKey("NT AUTHORITY\SYSTEM")) { exit 1 }
+                    "restricted"
+                } catch { exit 1 }
+            ' | tr -d "\r\n")" || return 1
+        [[ "$acl_result" == restricted ]]
+        return
+    fi
+
+    mode="$(stat -c '%a' -- "$path")" || return 1
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+    if [[ "$kind" == file ]]; then
+        (( (8#$mode & 0077) == 0 ))
+    else
+        (( (8#$mode & 0022) == 0 ))
+    fi
+}
+
+orm_set_mode() {
+    if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+        return 0
+    fi
+    chmod "$@"
+}
+
 [[ "$private_key" == /* && -f "$private_key" && ! -L "$private_key" ]] \
     || orm_die 'private key must be an existing absolute regular file, not a symlink.'
 private_key_real="$(realpath -e -- "$private_key")" || orm_die 'could not resolve private key path.'
 [[ "$private_key_real" != "$repo_root" && "$private_key_real" != "$repo_root/"* ]] \
     || orm_die 'private signing key must be stored outside the repository.'
-key_mode="$(stat -c '%a' -- "$private_key_real")" || orm_die 'could not inspect private key permissions.'
-[[ "$key_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$key_mode & 0077) == 0 )) \
+orm_path_permissions_are_private "$private_key_real" file \
     || orm_die 'private signing key must not be accessible to group or other users.'
 [[ -d "$output_directory" && ! -L "$output_directory" ]] \
     || orm_die 'output directory must already exist and must not be a symlink.'
 output_directory="$(realpath -e -- "$output_directory")" || orm_die 'could not resolve output directory.'
 [[ "$output_directory" != "$repo_root" && "$output_directory" != "$repo_root/"* ]] \
     || orm_die 'release output must be stored outside the repository.'
-output_mode="$(stat -c '%a' -- "$output_directory")" || orm_die 'could not inspect output directory permissions.'
-[[ "$output_mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$output_mode & 0022) == 0 )) \
+orm_path_permissions_are_private "$output_directory" directory \
     || orm_die 'output directory must not be group or world writable.'
 
 release_directory="$output_directory/orm-$version"
@@ -89,7 +148,8 @@ cleanup() {
 trap cleanup EXIT
 
 stage="$work_directory/orm-$version"
-mkdir -m 0755 -- "$stage"
+mkdir -- "$stage"
+orm_set_mode 0755 -- "$stage"
 while IFS= read -r relative_path || [[ -n "$relative_path" ]]; do
     [[ "$relative_path" =~ ^[A-Za-z0-9._/@-]+$ && "$relative_path" != *'..'* ]] \
         || orm_die 'required-file manifest contains an unsafe path.'
@@ -103,14 +163,16 @@ while IFS= read -r relative_path || [[ -n "$relative_path" ]]; do
     else
         cp -- "$source_file" "$target_file"
     fi
-    chmod 0644 -- "$target_file"
+    orm_set_mode 0644 -- "$target_file"
 done <"$package_root/release-required-files.txt"
-find "$stage" -type d -exec chmod 0755 {} +
+if ! command -v cygpath >/dev/null 2>&1 || ! command -v powershell.exe >/dev/null 2>&1; then
+    find "$stage" -type d -exec chmod 0755 {} +
+fi
 
 archive_path="$work_directory/orm-$version.tar.gz"
-tar --format=gnu --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
+tar --format=gnu --sort=name --mode=0755 --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
     -cf - -C "$work_directory" "orm-$version" | gzip -n -9 >"$archive_path"
-chmod 0644 -- "$archive_path"
+orm_set_mode 0644 -- "$archive_path"
 archive_size="$(stat -c '%s' -- "$archive_path")" || orm_die 'could not measure release archive.'
 [[ "$archive_size" =~ ^[1-9][0-9]{0,8}$ && "$archive_size" -le "$ORM_RELEASE_ARTIFACT_MAX_BYTES" ]] \
     || orm_die 'release archive exceeds the verifier size limit.'
@@ -125,7 +187,7 @@ metadata_path="$work_directory/release.metadata"
     printf 'min_from_version|%s\nmax_from_version|%s\ncreated_at|%s\nexpires_at|%s\n' \
         "$minimum_version" "$maximum_version" "$created_at" "$expires_at"
 } >"$metadata_path"
-chmod 0644 -- "$metadata_path"
+orm_set_mode 0644 -- "$metadata_path"
 
 private_bits="$(openssl rsa -in "$private_key_real" -check -noout -text 2>/dev/null \
     | sed -nE '1s/.*\(([0-9]+) bit([,)]).*/\1/p')" || orm_die 'private key is not a valid RSA key.'
@@ -134,19 +196,20 @@ private_bits="$(openssl rsa -in "$private_key_real" -check -noout -text 2>/dev/n
 public_key_path="$work_directory/$key_id.pem"
 openssl rsa -in "$private_key_real" -pubout -out "$public_key_path" >/dev/null 2>&1 \
     || orm_die 'could not derive the public key for this release.'
-chmod 0644 -- "$public_key_path"
+orm_set_mode 0644 -- "$public_key_path"
 openssl dgst -sha256 -sign "$private_key_real" -out "$work_directory/release.sig" "$metadata_path" \
     || orm_die 'could not sign release metadata.'
-chmod 0644 -- "$work_directory/release.sig"
+orm_set_mode 0644 -- "$work_directory/release.sig"
 "$ORM_PERL" "$package_root/inspect-release-archive.pl" "$archive_path" "$version" >/dev/null \
     || orm_die 'built archive did not pass the release archive inspector.'
 openssl dgst -sha256 -verify "$public_key_path" -signature "$work_directory/release.sig" "$metadata_path" >/dev/null \
     || orm_die 'built release signature did not verify with its derived public key.'
 
 bundle_stage="$work_directory/bundle"
-mkdir -m 0755 -- "$bundle_stage"
+mkdir -- "$bundle_stage"
+orm_set_mode 0755 -- "$bundle_stage"
 cp -- "$archive_path" "$metadata_path" "$work_directory/release.sig" "$public_key_path" "$bundle_stage/"
-chmod 0644 -- "$bundle_stage"/*
+orm_set_mode 0644 -- "$bundle_stage"/*
 mv -T -- "$bundle_stage" "$release_directory" || orm_die 'could not publish complete release bundle.'
 cleanup
 work_directory=''

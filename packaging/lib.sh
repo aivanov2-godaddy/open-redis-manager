@@ -98,6 +98,7 @@ orm_package_file_map() {
         diagnostic_report "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php" "$ORM_3RDPARTY/src/Orm/Cpanel/DiagnosticReport.php" 644 \
         health_guidance "$ORM_REPO_ROOT/src/Orm/Cpanel/HealthGuidance.php" "$ORM_3RDPARTY/src/Orm/Cpanel/HealthGuidance.php" 644 \
         podman_cache_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/PodmanCacheDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/PodmanCacheDiscovery.php" 644 \
+        application_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/ApplicationDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ApplicationDiscovery.php" 644 \
         backend_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" 644 \
         broker_bin "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN" 755 \
         instance_launcher "$ORM_REPO_ROOT/bin/orm-instance-launcher.pl" "$ORM_INSTANCE_LAUNCHER" 755 \
@@ -144,10 +145,28 @@ orm_legacy_identity_v1_file_map() {
 }
 
 orm_appconfig_matches_package() {
-    local target="${1:-$ORM_APPCONFIG}"
+    local target="${1:-$ORM_APPCONFIG}" source="$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
+    local manifest_owner manifest_mode expected_digest actual_digest
     [[ -f "$target" && ! -L "$target" ]] || return 1
     # register_appconfig adds the registered application name after the packaged settings.
-    cmp -s -- "$target" <(cat -- "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"; printf '\nname=open_redis_manager\n')
+    if [[ -f "$source" && ! -L "$source" ]]; then
+        if cmp -s -- "$target" <(cat -- "$source"; printf '\nname=open_redis_manager\n'); then
+            return 0
+        fi
+        return 1
+    fi
+
+    # Older installs do not carry the package template beside the installed updater.
+    # In that case, accept only the exact root-owned AppConfig digest in the install manifest.
+    [[ -f "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" ]] || return 1
+    manifest_owner="$(stat -c '%u' -- "$ORM_INSTALL_MANIFEST")" || return 1
+    manifest_mode="$(stat -c '%a' -- "$ORM_INSTALL_MANIFEST")" || return 1
+    [[ "$manifest_owner" == 0 && "$manifest_mode" == 600 ]] || return 1
+    expected_digest="$(awk -F'|' '$1 == "whm_appconfig" { if (found++) exit 2; print $3 } END { if (!found) exit 1 }' \
+        "$ORM_INSTALL_MANIFEST")" || return 1
+    [[ "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
+    actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" || return 1
+    [[ "$actual_digest" == "$expected_digest" ]]
 }
 
 orm_validate_legacy_identity_v1() {
@@ -226,6 +245,15 @@ orm_legacy_managed_v1_file_map() {
         printf '%s|%s|%s|%s|%s\n' "$key" "$source" "$target" "$mode" "$digest"
     done <"$map"
     [[ "$count" -eq 28 ]]
+}
+
+orm_release_install_map_is_compatible() {
+    local candidate="$1" installed="$2" approved_addition
+    approved_addition='application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+    [[ -f "$candidate" && ! -L "$candidate" && -f "$installed" && ! -L "$installed" ]] || return 1
+    cmp -s -- "$candidate" "$installed" && return 0
+    [[ "$(grep -Fxc -- "$approved_addition" "$candidate")" == 1 ]] || return 1
+    cmp -s -- <(grep -Fvx -- "$approved_addition" "$candidate") "$installed"
 }
 
 orm_legacy_managed_v1_expected_manifest() {
@@ -527,10 +555,10 @@ orm_make_cpanel_archive() {
     stage="$(mktemp -d "${TMPDIR:-/tmp}/orm-cpanel.XXXXXXXX")"
     if ! mkdir -p "$stage/orm" \
         || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/install.json" "$stage/orm/install.json" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.svg" "$stage/orm/orm-group.svg" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-group.png" "$stage/orm/orm-group.png" \
-        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-feature.png" "$stage/orm/orm-feature.png" \
-        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-group.png orm-feature.png; then
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-group-v2.svg" "$stage/orm/orm-cpanel-group-v2.svg" \
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-group-v2.png" "$stage/orm/orm-cpanel-group-v2.png" \
+        || ! install -m 0644 "$ORM_PACKAGE_ROOT/cpanel/icons/orm-cpanel-feature-v2.png" "$stage/orm/orm-cpanel-feature-v2.png" \
+        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-cpanel-group-v2.svg orm-cpanel-group-v2.png orm-cpanel-feature-v2.png; then
         rm -rf -- "$stage"
         return 1
     fi

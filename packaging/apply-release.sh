@@ -304,7 +304,7 @@ tar --extract --gzip --file "$archive" --directory "$staging" \
 release_root="$staging/orm-$candidate_version"
 [[ -f "$release_root/packaging/release-install-map.txt" && ! -L "$release_root/packaging/release-install-map.txt" ]] \
     || orm_die 'staged release is missing its signed install map.'
-cmp -s -- "$release_root/packaging/release-install-map.txt" "$ORM_PACKAGE_ROOT/release-install-map.txt" \
+orm_release_install_map_is_compatible "$release_root/packaging/release-install-map.txt" "$ORM_PACKAGE_ROOT/release-install-map.txt" \
     || orm_die 'staged release install map differs from the updater allowlist.'
 
 declare -A candidate_digest=() installed_digest=() installed_mode=() action_for_key=() target_for_key=() mode_for_key=() source_for_key=()

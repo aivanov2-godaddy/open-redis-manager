@@ -7,7 +7,7 @@ repo_root="$(cd -- "$(dirname -- "$BASH_SOURCE")/.." && pwd -P)"
 source "$repo_root/packaging/lib.sh"
 python3 "$repo_root/tests/cpanel-icon-assets.py"
 base_path="$PATH"
-test_case_root="$(mktemp -d /tmp/orm-install-test.XXXXXXXX)"
+test_case_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-install-test.XXXXXXXX")"
 test_root=""
 trap '[[ -z "$test_case_root" || ! -d "$test_case_root" ]] || rm -rf -- "$test_case_root"' EXIT
 
@@ -67,10 +67,10 @@ configure_case() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 [[ "$2" == --theme && "$3" == jupiter ]] || exit 60
-for member in install.json orm-group.svg orm-group.png orm-feature.png; do
+for member in install.json orm-cpanel-group-v2.svg orm-cpanel-group-v2.png orm-cpanel-feature-v2.png; do
     tar -tzf "$1" | grep -Fxq "$member" || exit 61
 done
-! tar -tzf "$1" | grep -Fxq orm-feature.svg || exit 61
+! tar -tzf "$1" | grep -Fxq orm-cpanel-feature-v2.svg || exit 61
 printf 'installed\n' >"$TEST_PLUGIN_STATE"
 MOCK
     cat >"$ORM_UNINSTALL_PLUGIN" <<'MOCK'
@@ -179,6 +179,18 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'fresh install
 [[ "$(cat "$TEST_PLUGIN_STATE")" == installed && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \
     || { printf 'fresh install did not register cPanel and WHM entries.\n' >&2; exit 1; }
 orm_appconfig_matches_package "$ORM_APPCONFIG" || { printf 'fresh install AppConfig does not match the package.\n' >&2; exit 1; }
+source_package_root="$ORM_PACKAGE_ROOT"
+ORM_PACKAGE_ROOT="$TEST_ROOT/package-without-template"
+orm_appconfig_matches_package "$ORM_APPCONFIG" \
+    || { printf 'AppConfig digest fallback failed when the installed package template was absent.\n' >&2; exit 1; }
+cp -- "$ORM_APPCONFIG" "$TEST_ROOT/appconfig-before-tamper"
+printf 'tampered\n' >>"$ORM_APPCONFIG"
+if orm_appconfig_matches_package "$ORM_APPCONFIG"; then
+    printf 'AppConfig digest fallback accepted a modified registration file.\n' >&2
+    exit 1
+fi
+mv -f -- "$TEST_ROOT/appconfig-before-tamper" "$ORM_APPCONFIG"
+ORM_PACKAGE_ROOT="$source_package_root"
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active ]] \
     || { printf 'fresh install did not enable and start the broker.\n' >&2; exit 1; }
 for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do

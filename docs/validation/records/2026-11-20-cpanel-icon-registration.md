@@ -41,3 +41,19 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - A registration archive containing the 32×32 group SVG and transparent 48×48 launcher PNG was accepted by `install_plugin`; it returned `Plugin installed ok` and scheduled another sprite refresh.
 - cPanel retained the previously installed `open_redis_manager.svg` despite its absence from the refresh archive. That exact generated feature asset was copied to a root-only backup outside the repository and removed; the registration was then applied again. The Jupiter application icon directory subsequently contained the PNG only, with a hash matching the packaged launcher PNG.
 - No ORM service, Redis/Valkey container, account data, or other plugin files were touched. The sprite task and authenticated browser rendering were not observed, so the corrected live appearance remains unverified. The local preview documents the package assets only.
+
+## Cache-busted icon refresh — 2026-11-20
+
+- ORM source commit: `ec8b326`.
+- After a cPanel browser screenshot still showed the earlier solid red tile, the feature and group icon filenames were changed to fresh `orm-cpanel-*-v2` names. The actual icon artwork and the primary README logo were left unchanged.
+- An icon-only package containing the updated `install.json`, 32×32 group SVG, and transparent 48×48 PNG assets was accepted by `install_plugin`. cPanel scheduled a sprite update.
+- The Windows browser capture helper could not capture the monitor (`IGraphicsCaptureItemInterop.CreateForMonitor` returned `0x80070057`), so the final browser appearance has not been verified. This remains a registration result, not a visual confirmation.
+- No ORM service, account data, Redis/Valkey container, or broker state was changed.
+
+## Approved cache-cube refresh — 2026-11-20
+
+- ORM source commit: `7821269`.
+- The cPanel Jupiter group and launcher were changed to use the already approved red-tile/white-cube artwork from the README and WHM mark. The README logo file itself was not modified.
+- The icon-only archive was accepted by cPanel and a sprite refresh was scheduled. The installed 48×48 launcher PNG has the same SHA-256 digest as the packaged PNG.
+- The local package preview is [`screenshots/previews/cpanel-registration-icons.png`](../../../screenshots/previews/cpanel-registration-icons.png). It documents the supplied assets; it is not a live cPanel screenshot. Browser appearance remains unverified because no authenticated Jupiter capture was available.
+- No ORM service, broker state, Redis/Valkey instance, or account data was changed by this icon-only registration.

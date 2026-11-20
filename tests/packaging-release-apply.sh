@@ -89,7 +89,7 @@ prepare_installation() {
 tree_snapshot() {
     local root="$1"
     {
-        find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -printf '%P|%y|%u|%g|%m|%s\n' | sort
+        find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -printf '%P|%y|%u|%g|%m\n' | sort
         find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -type f -print0 | sort -z | xargs -0 -r sha256sum
     }
 }
@@ -98,6 +98,20 @@ first_target="$(awk -F'|' '$1 == "cpanel_entry" { print $3 }' "$repo_root/packag
 second_target="$(awk -F'|' '$1 == "whm_cgi" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 broker_target="$(awk -F'|' '$1 == "broker_handler" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 version_target="$(awk -F'|' '$1 == "release_version" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+
+# The updater may accept only the one intentional additive row introduced after rc.1.
+old_install_map="$test_root/installed-release-install-map.txt"
+new_install_map="$repo_root/packaging/release-install-map.txt"
+approved_addition='application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+grep -Fvx -- "$approved_addition" "$new_install_map" >"$old_install_map"
+orm_release_install_map_is_compatible "$new_install_map" "$old_install_map" \
+    || { printf 'updater rejected its exact additive ApplicationDiscovery map migration.\n' >&2; exit 1; }
+cp -- "$new_install_map" "$test_root/tampered-release-install-map.txt"
+sed -i 's#ApplicationDiscovery.php|644$#ApplicationDiscovery.php|600#' "$test_root/tampered-release-install-map.txt"
+if orm_release_install_map_is_compatible "$test_root/tampered-release-install-map.txt" "$old_install_map"; then
+    printf 'updater accepted a modified install-map row.\n' >&2
+    exit 1
+fi
 
 # The WHM job must bind its accepted candidate and digest to the locked apply transaction.
 prepare_installation "$target_root" "$manifest"
