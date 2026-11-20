@@ -16,31 +16,30 @@ SVG_NS = "{http://www.w3.org/2000/svg}"
 
 def main() -> int:
     entries = json.loads((ROOT / "install.json").read_text(encoding="utf-8"))
-    icons = {entry["icon"] for entry in entries}
-    expected = {"orm-group.svg", "orm-feature.svg"}
-    if icons != expected:
-        raise SystemExit(f"unexpected cPanel icon registrations: {sorted(icons)}")
+    group = next((entry for entry in entries if entry.get("type") == "group"), None)
+    feature = next((entry for entry in entries if entry.get("type") == "link"), None)
+    if group is None or group.get("icon") != "orm-group.svg":
+        raise SystemExit("the cPanel group must use orm-group.svg")
+    if feature is None or feature.get("icon") != "orm-feature.png":
+        raise SystemExit("the cPanel launcher must explicitly use the PNG artwork")
 
-    for svg_name in sorted(expected):
-        stem = Path(svg_name).stem
-        svg_path = ROOT / "icons" / svg_name
-        png_path = ROOT / "icons" / f"{stem}.png"
-        svg_root = ET.parse(svg_path).getroot()
-        if (
-            svg_root.tag != f"{SVG_NS}svg"
-            or svg_root.get("width") != "48"
-            or svg_root.get("height") != "48"
-            or svg_root.get("viewBox") != "0 0 48 48"
-        ):
-            raise SystemExit(f"{svg_name} must be an SVG with a 48x48 viewBox")
+    group_svg = ET.parse(ROOT / "icons" / "orm-group.svg").getroot()
+    if (
+        group_svg.tag != f"{SVG_NS}svg"
+        or group_svg.get("width") != "32"
+        or group_svg.get("height") != "32"
+        or group_svg.get("viewBox") != "0 0 48 48"
+    ):
+        raise SystemExit("orm-group.svg must expose the 48-unit mark at cPanel's 32x32 group size")
 
-        png = png_path.read_bytes()
+    for name in ("orm-feature.png", "orm-group.png"):
+        png = (ROOT / "icons" / name).read_bytes()
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
-            raise SystemExit(f"{png_path.name} is not a valid PNG")
+            raise SystemExit(f"{name} is not a valid PNG")
         if struct.unpack(">II", png[16:24]) != (48, 48):
-            raise SystemExit(f"{png_path.name} must be 48x48 pixels")
+            raise SystemExit(f"{name} must be 48x48 pixels")
 
-    print("cPanel icon assets passed: paired 48x48 SVG/PNG icons are registered.")
+    print("cPanel icon assets passed: 32x32 SVG group and explicit 48x48 PNG launcher.")
     return 0
 
 
