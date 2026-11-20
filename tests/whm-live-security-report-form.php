@@ -216,6 +216,11 @@ try {
     if (!$result['rendered']) {
         $title = preg_match('/<title[^>]*>(.*?)<\/title>/is', $reportBody, $titleMatch) === 1
             ? strtolower(trim(strip_tags($titleMatch[1]))) : '';
+        $titleClass = $title === '' ? 'missing'
+            : (str_contains($title, 'open redis manager') ? 'orm'
+                : (str_contains($title, 'webhost manager') || preg_match('/\bwhm\b/', $title) === 1 ? 'whm'
+                    : (preg_match('/login|sign in/', $title) === 1 ? 'login'
+                        : (preg_match('/error|failure/', $title) === 1 ? 'error' : 'other'))));
         $pageClass = str_contains($title, 'open redis manager') ? 'orm'
             : (str_contains($title, 'login') ? 'login' : (str_contains($title, 'home') ? 'home' : 'other'));
         $diagnostics = 'HTTP ' . $report['code']
@@ -233,6 +238,10 @@ try {
             . '; summary_rendered=' . ($result['summary'] ? 'yes' : 'no')
             . '; response_type=' . (str_starts_with((string) $report['content_type'], 'text/html') ? 'html'
                 : (str_starts_with((string) $report['content_type'], 'application/json') ? 'json' : 'other'))
+            . '; title_class=' . $titleClass
+            . '; html_document=' . (preg_match('/\A\s*<!doctype html|\A\s*<html\b/i', $reportBody) === 1 ? 'yes' : 'no')
+            . '; whm_shell=' . (stripos($reportBody, 'WebHost Manager') !== false ? 'yes' : 'no')
+            . '; php_error_marker=' . (preg_match('/fatal error|uncaught (?:error|exception|typeerror)/i', $reportBody) === 1 ? 'yes' : 'no')
             . '; audit_event=' . ($result['audit'] ? 'yes' : 'no');
         throw new RuntimeException('WHM POST did not render a generated report (' . $diagnostics . ')');
     }
