@@ -1,6 +1,6 @@
 # Live cPanel smoke test
 
-`tests/cpanel-live-smoke.py` checks the installed cPanel entry point on a disposable cPanel & WHM host. It uses WHM's temporary single-sign-on session, requires the page's displayed LiveAPI account to exactly match the selected SSO account, and repeats the read-only request with `user`, `username`, and `account` query parameters set to `root`. The identity must remain bound to the SSO account. It performs no Redis/Valkey operation.
+`tests/cpanel-live-smoke.py` checks the installed cPanel entry point on a disposable cPanel & WHM host. It uses WHM's temporary single-sign-on session, requires the page's displayed LiveAPI account to exactly match the selected SSO account, and repeats read-only requests with each identity query parameter (`user`, `username`, and `account`) set independently. By default, the spoof target is `root`; the authenticated identity must remain bound to the SSO account. It performs no Redis/Valkey operation.
 
 Run as root on a test host with exactly one cPanel account:
 
@@ -13,6 +13,14 @@ On a multi-account test host, pass an explicit cPanel username:
 ```sh
 python3 tests/cpanel-live-smoke.py --user example
 ```
+
+To check one or more known, distinct cPanel accounts as query-spoof targets, repeat `--spoof-account`:
+
+```sh
+python3 tests/cpanel-live-smoke.py --user example --spoof-account another --spoof-account third
+```
+
+Each target is tested separately in each of the three identity parameters. Targets must be valid cPanel usernames and must differ from the authenticated account. This tests that query values cannot switch the authenticated identity; it does not by itself establish authorization or denial for another account's resources.
 
 To also require that the authenticated page finds a cPanel-managed Redis or Valkey socket and reports its read-only health probe as reachable, add `--require-podman-cache`. This assertion checks only the sanitized rendered status; it does not print account names, container identifiers, socket paths, or page content.
 
@@ -29,6 +37,8 @@ On 2026-11-20, the current signed ORM `0.1.0-rc.3` package from merged source co
 A live cPanel identity smoke passed on 2026-11-20 against the current entry point and identity classes. The test host was missing the current read-only `ApplicationDiscovery.php` dependency, so that exact file was installed before rerunning the smoke. The existing package manifest and several updater files do not match the current checkout, so this result is not a full install or upgrade validation. See [`records/2026-11-20-cpanel-identity-smoke-after-repair.md`](records/2026-11-20-cpanel-identity-smoke-after-repair.md).
 
 On 2026-11-20, the merged smoke harness also passed exact SSO identity comparison and a read-only query-parameter spoof probe on the same single-account test host. The installed cPanel entry point was not byte-identical to the repository source, and this was not a two-account isolation test. See [`records/2026-11-20-cpanel-query-spoof-smoke.md`](records/2026-11-20-cpanel-query-spoof-smoke.md).
+
+The expanded smoke harness separately tested `user`, `username`, and `account` with two distinct spoof targets on 2026-11-20. The installed page kept the SSO-selected identity for every request. This remains an identity-binding check, not resource-level authorization between two real accounts. See [`records/2026-11-20-cpanel-independent-query-spoof-smoke.md`](records/2026-11-20-cpanel-independent-query-spoof-smoke.md).
 
 Earlier evidence from three private test runs on 2026-11-16 is recorded in [`records/2026-11-16-identity-smoke.md`](records/2026-11-16-identity-smoke.md). That run also observed a Redis container managed by cPanel's Podman integration, but it did not perform Redis/Valkey operations or establish the deployed repository revision.
 
