@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check cPanel Jupiter icon registration and the transparent ORM glyphs."""
+"""Check cPanel Jupiter icon registration and the approved ORM brand mark."""
 
 from __future__ import annotations
 
@@ -23,21 +23,20 @@ def main() -> int:
     if feature is None or feature.get("icon") != "orm-cpanel-feature-v2.png":
         raise SystemExit("the cPanel launcher must use the cache-busted ORM feature PNG")
 
-    for name, size in (("orm-cpanel-group-v2", 32),):
-        svg_path = ROOT / "icons" / f"{name}.svg"
-        root = ET.parse(svg_path).getroot()
-        group_node = root.find(f"{SVG_NS}g")
-        if (
-            root.tag != f"{SVG_NS}svg"
-            or (root.get("width"), root.get("height")) != (str(size), str(size))
-            or root.get("viewBox") != f"0 0 {size} {size}"
-            or group_node is None
-            or group_node.get("fill") != "none"
-            or group_node.get("stroke") != "#D92D20"
-            or len(group_node.findall(f"{SVG_NS}path")) != 2
-        ):
-            raise SystemExit(f"{name}.svg must be a {size}x{size} transparent red cache-tier glyph")
+    svg_path = ROOT / "icons" / "orm-cpanel-group-v2.svg"
+    root = ET.parse(svg_path).getroot()
+    fills = {node.get("fill") for node in root.findall(f"{SVG_NS}path")}
+    if (
+        root.tag != f"{SVG_NS}svg"
+        or (root.get("width"), root.get("height")) != ("32", "32")
+        or root.get("viewBox") != "0 0 256 256"
+        or not any(node.get("fill") == "#D92D20" for node in root.findall(f"{SVG_NS}rect"))
+        or not {"#FFFFFF", "#FFE5E1", "#F9BDB6"}.issubset(fills)
+        or len(root.findall(f"{SVG_NS}path")) != 6
+    ):
+        raise SystemExit("the 32x32 cPanel group SVG must retain the approved red tile and white cache-cube mark")
 
+    pngs = []
     for name in ("orm-cpanel-group-v2", "orm-cpanel-feature-v2"):
         png = (ROOT / "icons" / f"{name}.png").read_bytes()
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
@@ -46,8 +45,11 @@ def main() -> int:
             raise SystemExit(f"{name}.png must be 48x48 pixels")
         if png[25] != 6:
             raise SystemExit(f"{name}.png must use RGBA so the canvas remains transparent")
+        pngs.append(png)
+    if pngs[0] != pngs[1]:
+        raise SystemExit("the cPanel group PNG fallback and launcher PNG must use identical approved artwork")
 
-    print("cPanel icon assets passed: cache-busted 32x32 group SVG and matching RGBA PNG glyphs.")
+    print("cPanel icon assets passed: approved red tile and white cache cube at 32px SVG and matching 48px RGBA PNGs.")
     return 0
 
 
