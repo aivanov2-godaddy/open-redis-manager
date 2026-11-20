@@ -20,3 +20,5 @@ Use cPanel's own `ea-podman` tools to install, upgrade, back up, or remove these
 ## Verified test-host evidence
 
 On 2026-11-16, a disposable cPanel test account used the EasyApache PHP 8.5 CLI and PhpRedis to connect to its EA Podman Redis 6.2.24 Unix socket; `PING` returned success. This confirms the tested account's PHP extension and socket access work together. It does not validate every PHP handler, CageFS/PHP Selector configuration, Valkey, or the full ORM installation lifecycle. Host, account, and socket identifiers are intentionally omitted.
+
+On 2026-11-20, the merged lifecycle manager source candidate was exercised from the test account's EasyApache PHP 8.5 CLI against a new, temporary EA Valkey container. Start, stop, start, and restart each completed, and discovery reported the expected socket state and reachable PING. The temporary container and its uninstall backup were removed; the existing Redis cache remained reachable. This did not exercise the authenticated cPanel web form or establish support for other hosts. See the [sanitized lifecycle record](../validation/records/2026-11-20-cpanel-podman-lifecycle-smoke.md).
