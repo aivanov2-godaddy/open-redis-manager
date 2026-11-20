@@ -1,6 +1,6 @@
 # WHM signed update preview
 
-The WHM page exposes a root-only **Verify staged release** action. It checks a manually staged signed release and displays its installed and candidate versions, signature key ID, artifact digest, and managed-file actions. A conflict-free preview also exposes an explicit confirmation form that queues the signed update asynchronously; the browser request never runs the apply transaction itself.
+The WHM page exposes a root-only **Verify staged release** action. It checks a manually staged signed release and displays its installed and candidate versions, signature key ID, signed source commit, artifact digest, migration declaration, and managed-file actions. A conflict-free preview also exposes an explicit confirmation form that queues the signed update asynchronously; the browser request never runs the apply transaction itself.
 
 ![ORM WHM signed update preview interface](../../screenshots/whm-update-preview.png)
 

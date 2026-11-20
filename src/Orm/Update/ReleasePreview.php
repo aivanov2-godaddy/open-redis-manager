@@ -126,13 +126,14 @@ final class ReleasePreview
         }
 
         $release = $preview['release'];
-        foreach (['channel', 'keyId', 'artifactSha256', 'stateMigrations'] as $field) {
+        foreach (['channel', 'keyId', 'artifactSha256', 'stateMigrations', 'sourceCommit'] as $field) {
             if (!is_string($release[$field] ?? null)) {
                 return ['ok' => false, 'message' => 'The signed-update verifier returned incomplete release metadata.'];
             }
         }
         if (strlen($release['channel']) > 32 || strlen($release['keyId']) > 64
             || $release['stateMigrations'] !== 'none'
+            || !preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $release['sourceCommit'])
             || !preg_match('/\A[a-f0-9]{64}\z/D', $release['artifactSha256'])) {
             return ['ok' => false, 'message' => 'The signed-update verifier returned an invalid artifact digest.'];
         }
@@ -144,6 +145,7 @@ final class ReleasePreview
             'release' => [
                 'channel' => $release['channel'],
                 'stateMigrations' => $release['stateMigrations'],
+                'sourceCommit' => $release['sourceCommit'],
                 'keyId' => $release['keyId'],
                 'artifactSha256' => $release['artifactSha256'],
             ],

@@ -45,6 +45,9 @@ verified_version="$(orm_release_verify_bundle \
     "$bundle/release.metadata" "$bundle/release.sig" "$bundle/orm-0.2.0.tar.gz" \
     "$trusted_key_root" 0.1.0-dev)"
 [[ "$verified_version" == 0.2.0 ]] || { printf 'built bundle failed the installed release verifier.\n' >&2; exit 1; }
+expected_source_commit="$(git -C "$source_root" rev-parse HEAD)"
+grep -Fqx "source_commit|$expected_source_commit" "$bundle/release.metadata" \
+    || { printf 'release metadata did not record the exact clean source commit.\n' >&2; exit 1; }
 
 if bash "$source_root/packaging/build-release.sh" \
     0.2.0 stable orm-test 0.1.0-dev 0.1.0-dev "$private_key" "$output_root" 30 >/dev/null 2>&1; then
