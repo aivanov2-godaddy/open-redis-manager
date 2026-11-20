@@ -89,7 +89,7 @@ prepare_installation() {
 tree_snapshot() {
     local root="$1"
     {
-        find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -printf '%P|%y|%u|%g|%m|%s\n' | sort
+        find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -printf '%P|%y|%u|%g|%m\n' | sort
         find "$root" -path "$root/var/cpanel/orm/updates" -prune -o -type f -print0 | sort -z | xargs -0 -r sha256sum
     }
 }
