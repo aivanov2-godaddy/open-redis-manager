@@ -24,6 +24,11 @@ USERS_DIR = "/var/cpanel/users"
 WHMAPI1 = "/usr/local/cpanel/bin/whmapi1"
 LOGIN_TIMEOUT_SECONDS = 20
 MAX_PAGE_BYTES = 256 * 1024
+PODMAN_SECTION = re.compile(
+    r'<section\b[^>]*aria-labelledby=["\']orm-podman-title["\'][^>]*>.*?</section>',
+    re.IGNORECASE | re.DOTALL,
+)
+REACHABLE_STATUS = re.compile(r'<strong>\s*Status:\s*</strong>\s*Reachable\b', re.IGNORECASE)
 
 
 def select_account(user: str | None) -> str:
@@ -88,7 +93,13 @@ def read_page(opener: urllib.request.OpenerDirector, url: str) -> tuple[int, str
             return error.code, body, error.geturl()
 
 
-def run(user: str | None) -> int:
+def page_has_reachable_podman_cache(body: str) -> bool:
+    """Return whether the account page reports a reachable cPanel-managed cache."""
+    match = PODMAN_SECTION.search(body)
+    return match is not None and REACHABLE_STATUS.search(match.group(0)) is not None
+
+
+def run(user: str | None, require_podman_cache: bool = False) -> int:
     if os.geteuid() != 0:
         print("Run this check as root on the cPanel host.")
         return 2
@@ -107,6 +118,12 @@ def run(user: str | None) -> int:
         return 1
 
     if status == 200 and "Verified cPanel account:" in body:
+        if require_podman_cache and not page_has_reachable_podman_cache(body):
+            print("The cPanel identity check passed, but no reachable Podman cache was shown.")
+            return 1
+        if require_podman_cache:
+            print("Live cPanel account identity and Podman cache checks passed.")
+            return 0
         print("Live cPanel account identity check passed.")
         return 0
     if "could not be verified by the local ORM broker" in body:
@@ -119,9 +136,14 @@ def run(user: str | None) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--user", help="cPanel username; omit only when exactly one account exists")
+    parser.add_argument(
+        "--require-podman-cache",
+        action="store_true",
+        help="also require the authenticated page to show a reachable cPanel-managed Redis/Valkey socket",
+    )
     args = parser.parse_args()
     try:
-        return run(args.user)
+        return run(args.user, require_podman_cache=args.require_podman_cache)
     except ValueError as error:
         print("Provide one valid cPanel account with --user, or run on a single-account test host.")
         return 2

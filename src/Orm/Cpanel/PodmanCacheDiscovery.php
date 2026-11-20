@@ -81,6 +81,8 @@ final class PodmanCacheDiscovery
                 }
             } elseif (class_exists('Redis')) {
                 $probeResult = self::probeRedis($socket);
+            } else {
+                $probeResult = self::probePing($socket);
             }
             $version = is_array($probeResult) && is_string($probeResult['version'] ?? null)
                 && preg_match('/\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/', $probeResult['version']) === 1
@@ -118,5 +120,32 @@ final class PodmanCacheDiscovery
         } catch (\Throwable) {
             return ['reachable' => false, 'version' => null];
         }
+    }
+
+    /** @return array{reachable:bool,version:?string} */
+    private static function probePing(string $socket): array
+    {
+        $connection = @stream_socket_client('unix://' . $socket, $errorCode, $errorMessage, 0.5, STREAM_CLIENT_CONNECT);
+        if (!is_resource($connection)) {
+            return ['reachable' => false, 'version' => null];
+        }
+        stream_set_timeout($connection, 0, 500000);
+        $request = "*1\r\n\$4\r\nPING\r\n";
+        $written = 0;
+        while ($written < strlen($request)) {
+            $count = @fwrite($connection, substr($request, $written));
+            if (!is_int($count) || $count < 1) {
+                fclose($connection);
+                return ['reachable' => false, 'version' => null];
+            }
+            $written += $count;
+        }
+        $reply = @fgets($connection, 64);
+        $timedOut = (stream_get_meta_data($connection)['timed_out'] ?? false) === true;
+        fclose($connection);
+        return [
+            'reachable' => !$timedOut && is_string($reply) && trim($reply) === '+PONG',
+            'version' => null,
+        ];
     }
 }
