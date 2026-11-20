@@ -30,6 +30,7 @@ src/Orm/Cpanel/ConnectionDetails.php
 src/Orm/Cpanel/DiagnosticReport.php
 src/Orm/Cpanel/HealthGuidance.php
 src/Orm/Cpanel/PodmanCacheDiscovery.php
+src/Orm/Cpanel/PodmanLifecycleManager.php
 src/Orm/Cpanel/ApplicationDiscovery.php
 src/Orm/Backend/BackendPolicyStore.php
 bin/orm-broker.pl
