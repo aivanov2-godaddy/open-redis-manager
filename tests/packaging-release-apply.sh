@@ -365,7 +365,7 @@ grep -q 'failed integrity validation\|unfinished updater transaction' "$test_roo
 # Recovery requires an exact preview and explicit transaction ID. The hard-kill
 # point is between atomic replacement and its journal checkpoint.
 checkpoint='previewing interrupted release recovery'
-if ! bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out" 2>&1; then
+if ! bash -x "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out" 2>&1; then
     cat "$test_root/recovery-preview.out" >&2
     exit 1
 fi
