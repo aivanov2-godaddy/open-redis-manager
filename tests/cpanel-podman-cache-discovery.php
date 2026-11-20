@@ -48,9 +48,12 @@ $results = PodmanCacheDiscovery::discover('ormtest', $home, $uid, static functio
 $assert(count($results) === 3, 'discover current-account Redis and Valkey containers, including stopped ones');
 $assert($results[0]['backend'] === 'redis' && $results[0]['status'] === 'reachable'
     && $results[0]['version'] === '6.2.24', 'verify Redis pod metadata and bounded health data');
-$assert($results[1]['backend'] === 'valkey' && str_ends_with($results[1]['socket_path'], '/valkey.sock'),
+$valkeyResult = array_values(array_filter($results, static fn (array $entry): bool => $entry['container'] === $valkeyName))[0] ?? null;
+$stoppedResult = array_values(array_filter($results, static fn (array $entry): bool => $entry['container'] === $stoppedName))[0] ?? null;
+$assert(is_array($valkeyResult) && $valkeyResult['backend'] === 'valkey'
+    && str_ends_with($valkeyResult['socket_path'], '/valkey.sock'),
     'use the distinct cPanel Valkey socket name');
-$assert($results[2]['container'] === $stoppedName && $results[2]['status'] === 'socket-missing',
+$assert(is_array($stoppedResult) && $stoppedResult['status'] === 'socket-missing',
     'identify an installed account container whose service socket is absent');
 $assert(count($probed) === 2 && !str_contains(implode("\n", $probed), 'someone'),
     'never probe a container belonging to another account');
