@@ -19,10 +19,10 @@ def main() -> int:
     entries = json.loads((ROOT / "install.json").read_text(encoding="utf-8"))
     group = next((entry for entry in entries if entry.get("type") == "group"), None)
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
-    if group is None or group.get("icon") != "orm-group.svg":
-        raise SystemExit("the cPanel group must use the approved orm-group.svg artwork")
-    if feature is None or feature.get("icon") != "orm-feature.svg":
-        raise SystemExit("the cPanel launcher must use the approved orm-feature.svg artwork")
+    if group is None or group.get("icon") != "orm-group.png":
+        raise SystemExit("the cPanel group must use the approved orm-group.png artwork")
+    if feature is None or feature.get("icon") != "orm-feature.png":
+        raise SystemExit("the cPanel launcher must use the approved orm-feature.png artwork")
 
     approved = BRAND.read_text(encoding="utf-8")
     expected_feature = approved.replace('width="256" height="256"', 'width="48" height="48"', 1)
