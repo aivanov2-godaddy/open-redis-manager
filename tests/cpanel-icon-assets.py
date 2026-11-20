@@ -20,17 +20,21 @@ def main() -> int:
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
     if group is None or group.get("icon") != "orm-group.svg":
         raise SystemExit("the cPanel group must use orm-group.svg")
-    if feature is None or feature.get("icon") != "orm-feature.png":
-        raise SystemExit("the cPanel launcher must explicitly use the PNG artwork")
+    if feature is None or feature.get("icon") != "orm-feature.svg":
+        raise SystemExit("the cPanel launcher must use the vector icon so Jupiter can tint its transparent mark")
 
-    group_svg = ET.parse(ROOT / "icons" / "orm-group.svg").getroot()
-    if (
-        group_svg.tag != f"{SVG_NS}svg"
-        or group_svg.get("width") != "32"
-        or group_svg.get("height") != "32"
-        or group_svg.get("viewBox") != "0 0 48 48"
-    ):
-        raise SystemExit("orm-group.svg must expose the 48-unit mark at cPanel's 32x32 group size")
+    for name in ("orm-group.svg", "orm-feature.svg"):
+        icon = ET.parse(ROOT / "icons" / name).getroot()
+        if (
+            icon.tag != f"{SVG_NS}svg"
+            or (icon.get("width"), icon.get("height")) != ("48", "48")
+            or icon.get("viewBox") != "0 0 48 48"
+            or icon.find(f"{SVG_NS}rect") is not None
+        ):
+            raise SystemExit(f"{name} must use its documented size and a transparent background")
+        group = icon.find(f"{SVG_NS}g")
+        if group is None or group.get("fill") != "none" or group.get("stroke") != "#D92D20":
+            raise SystemExit(f"{name} must retain the red cube mark without an opaque tile")
 
     for name in ("orm-feature.png", "orm-group.png"):
         png = (ROOT / "icons" / name).read_bytes()
@@ -38,8 +42,10 @@ def main() -> int:
             raise SystemExit(f"{name} is not a valid PNG")
         if struct.unpack(">II", png[16:24]) != (48, 48):
             raise SystemExit(f"{name} must be 48x48 pixels")
+        if png[25] != 6:
+            raise SystemExit(f"{name} must use RGBA so its background remains transparent")
 
-    print("cPanel icon assets passed: 32x32 SVG group and explicit 48x48 PNG launcher.")
+    print("cPanel icon assets passed: transparent 48x48 SVG icons and RGBA PNG fallbacks.")
     return 0
 
 

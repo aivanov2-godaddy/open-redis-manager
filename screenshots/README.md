@@ -5,7 +5,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | Image | Surface | Capture |
 |---|---|---|
 | [ORM logo](orm-logo.png) | White three-tier cache cube with an inset keyspace on a Redis-red tile, shown at full size and interface-icon scale | [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
-| [cPanel registration icon assets](previews/cpanel-registration-icons.png) | Current ORM group SVG at 32×32 and launcher PNG at 48×48; local asset preview, not a live cPanel capture | Source assets: [`orm-group.svg`](../packaging/cpanel/icons/orm-group.svg) and [`orm-feature.png`](../packaging/cpanel/icons/orm-feature.png) |
+| [cPanel registration icon assets](previews/cpanel-registration-icons.png) | Transparent Redis-red cube mark adapted for cPanel's tintable 48×48 group and launcher icons; local asset preview, not a live cPanel capture | Source assets: [`orm-group.svg`](../packaging/cpanel/icons/orm-group.svg) and [`orm-feature.svg`](../packaging/cpanel/icons/orm-feature.svg) |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel application discovery](cpanel-application-discovery.png) | On-demand app marker results and honest connection preflight | Static sample-data preview; [HTML source](previews/cpanel-application-discovery.html) |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |

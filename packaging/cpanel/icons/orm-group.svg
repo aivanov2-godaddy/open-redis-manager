@@ -1,10 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="orm-title orm-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A white layered cache cube on a Redis-red tile.</desc>
-  <rect x="1" y="1" width="46" height="46" rx="10" fill="#D92D20"/>
-  <path d="M24 6 41 15 24 24 7 15 24 6Z" fill="#FFFFFF"/>
-  <path d="m24 11 8 4-8 4-8-4 8-4Z" fill="#D92D20"/>
-  <path d="M7 15 24 24 24 44 7 35V15Z" fill="#FFFFFF"/>
-  <path d="M24 24 41 15V35L24 44V24Z" fill="#FFFFFF"/>
-  <path d="m7 23 17 9 17-9M7 31l17 9 17-9" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4"/>
+  <desc id="orm-desc">A Redis-red outline of the ORM layered cache cube on a transparent background.</desc>
+  <g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.8">
+    <path d="M24 5.5 41.5 15 24 24.5 6.5 15 24 5.5Z"/>
+    <path d="M6.5 15v18L24 42.5 41.5 33V15"/>
+    <path d="m6.5 23 17.5 9.5L41.5 23M6.5 31l17.5 9.5L41.5 31"/>
+  </g>
 </svg>
