@@ -56,6 +56,8 @@ $assert($failed === ['success' => false, 'reason' => 'failed'], 'return a saniti
 $timedOut = PodmanLifecycleManager::manage('ormtest', $container, 'restart',
     static fn (): array => ['exit_code' => null, 'timeout' => true], $identity);
 $assert($timedOut === ['success' => false, 'reason' => 'timeout'], 'report a bounded command timeout');
+$scriptResolver = new ReflectionMethod(PodmanLifecycleManager::class, 'trustedEaPodmanScript');
+$assert($scriptResolver->invoke(null) === null, 'fail closed when the cPanel EA Podman script is absent on the test host');
 
 @rmdir($podmanRoot . '/' . $container);
 @rmdir($podmanRoot);

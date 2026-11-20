@@ -47,14 +47,15 @@ final class PodmanLifecycleManager
         if ($info === null) {
             return ['success' => false, 'reason' => 'container'];
         }
+        $scriptPath = self::SCRIPT;
         if ($runner === null) {
-            $script = @lstat(self::SCRIPT);
-            if (!is_array($script) || (($script['mode'] & 0170000) !== 0100000)
-                || $script['uid'] !== 0 || ($script['mode'] & 0022) !== 0 || !is_executable(self::SCRIPT)) {
+            $trustedScript = self::trustedEaPodmanScript();
+            if ($trustedScript === null) {
                 return ['success' => false, 'reason' => 'unavailable'];
             }
+            $scriptPath = $trustedScript;
         }
-        $argv = [self::SCRIPT, $action, $container];
+        $argv = [$scriptPath, $action, $container];
         $env = [
             'HOME' => $identity['home'], 'USER' => $username, 'LOGNAME' => $username,
             'SHELL' => $shell, 'PATH' => '/usr/local/bin:/usr/bin:/bin', 'LANG' => 'C', 'LC_ALL' => 'C',
@@ -81,6 +82,49 @@ final class PodmanLifecycleManager
         return ($result['exit_code'] ?? null) === 0
             ? ['success' => true, 'reason' => 'ok']
             : ['success' => false, 'reason' => 'failed'];
+    }
+
+    private static function trustedEaPodmanScript(): ?string
+    {
+        $entry = @lstat(self::SCRIPT);
+        $entryType = is_array($entry) ? ($entry['mode'] & 0170000) : 0;
+        if (!is_array($entry) || !in_array($entryType, [0100000, 0120000], true) || $entry['uid'] !== 0
+            || !self::hasSafeRootOwnedDirectoryChain(dirname(self::SCRIPT))) {
+            return null;
+        }
+        $resolved = @realpath(self::SCRIPT);
+        if (!is_string($resolved) || str_contains($resolved, "\0")
+            || !(str_starts_with($resolved, '/usr/local/cpanel/')
+                || str_starts_with($resolved, '/usr/local/opt/cpanel/')
+                || str_starts_with($resolved, '/opt/cpanel/'))
+            || !self::hasSafeRootOwnedDirectoryChain(dirname($resolved))) {
+            return null;
+        }
+        $target = @stat($resolved);
+        if (!is_array($target) || (($target['mode'] & 0170000) !== 0100000)
+            || $target['uid'] !== 0 || ($target['mode'] & 0022) !== 0 || !is_executable($resolved)) {
+            return null;
+        }
+        return $resolved;
+    }
+
+    private static function hasSafeRootOwnedDirectoryChain(string $directory): bool
+    {
+        while (true) {
+            $stat = @lstat($directory);
+            if (!is_array($stat) || (($stat['mode'] & 0170000) !== 0040000)
+                || $stat['uid'] !== 0 || ($stat['mode'] & 0022) !== 0 || @realpath($directory) !== $directory) {
+                return false;
+            }
+            if ($directory === '/') {
+                return true;
+            }
+            $parent = dirname($directory);
+            if ($parent === $directory) {
+                return false;
+            }
+            $directory = $parent;
+        }
     }
 
     /** @param list<string> $argv @param array<string,string> $env @return array{exit_code:?int,timeout:bool} */
