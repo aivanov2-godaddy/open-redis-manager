@@ -98,6 +98,7 @@ orm_package_file_map() {
         diagnostic_report "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php" "$ORM_3RDPARTY/src/Orm/Cpanel/DiagnosticReport.php" 644 \
         health_guidance "$ORM_REPO_ROOT/src/Orm/Cpanel/HealthGuidance.php" "$ORM_3RDPARTY/src/Orm/Cpanel/HealthGuidance.php" 644 \
         podman_cache_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/PodmanCacheDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/PodmanCacheDiscovery.php" 644 \
+        application_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/ApplicationDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ApplicationDiscovery.php" 644 \
         backend_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" 644 \
         broker_bin "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN" 755 \
         instance_launcher "$ORM_REPO_ROOT/bin/orm-instance-launcher.pl" "$ORM_INSTANCE_LAUNCHER" 755 \
@@ -242,6 +243,15 @@ orm_legacy_managed_v1_file_map() {
         printf '%s|%s|%s|%s|%s\n' "$key" "$source" "$target" "$mode" "$digest"
     done <"$map"
     [[ "$count" -eq 28 ]]
+}
+
+orm_release_install_map_is_compatible() {
+    local candidate="$1" installed="$2" approved_addition
+    approved_addition='application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+    [[ -f "$candidate" && ! -L "$candidate" && -f "$installed" && ! -L "$installed" ]] || return 1
+    cmp -s -- "$candidate" "$installed" && return 0
+    [[ "$(grep -Fxc -- "$approved_addition" "$candidate")" == 1 ]] || return 1
+    cmp -s -- <(grep -Fvx -- "$approved_addition" "$candidate") "$installed"
 }
 
 orm_legacy_managed_v1_expected_manifest() {

@@ -14,6 +14,7 @@ connection_details|src/Orm/Cpanel/ConnectionDetails.php|/usr/local/cpanel/3rdpar
 diagnostic_report|src/Orm/Cpanel/DiagnosticReport.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php|644
 health_guidance|src/Orm/Cpanel/HealthGuidance.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php|644
 podman_cache_discovery|src/Orm/Cpanel/PodmanCacheDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php|644
+application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644
 backend_policy_store|src/Orm/Backend/BackendPolicyStore.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php|644
 broker_bin|bin/orm-broker.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl|755
 instance_launcher|bin/orm-instance-launcher.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher|755
