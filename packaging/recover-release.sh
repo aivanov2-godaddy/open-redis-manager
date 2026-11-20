@@ -154,7 +154,7 @@ done < <(tail -n +3 -- "$workspace/install-manifest.old")
 
 while IFS='|' read -r key op src dst perm digest; do
     [[ "$key" != whm_appconfig ]] || {
-        [[ "$op" == unchanged && -n "${old_digest[$key]+x}" ]] \
+        [[ ( "$op" == unchanged || "$op" == replace ) && -n "${old_digest[$key]+x}" ]] \
             || orm_die 'WHM AppConfig changes are outside signed-release recovery.'
         [[ "$(physical_target "$dst")" == "$ORM_APPCONFIG" || -n "$test_target_root" ]] \
             || orm_die 'WHM AppConfig target is not the fixed registration path.'
