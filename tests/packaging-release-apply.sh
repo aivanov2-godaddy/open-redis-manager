@@ -337,6 +337,7 @@ if grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-aud
     printf 'process interruption recorded a successful update outcome.\n' >&2
     exit 1
 fi
+trap 'test_status=$?; printf "release recovery fixture failed at line %s (status %s): %s\n" "$LINENO" "$test_status" "$BASH_COMMAND" >&2' ERR
 before_retry="$(tree_snapshot "$target_root")"
 if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" \
     "$installed_version" "$manifest" "$target_root" >"$test_root/interrupted-retry.out" 2>&1; then
