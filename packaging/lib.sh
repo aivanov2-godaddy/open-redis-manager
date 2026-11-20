@@ -244,7 +244,7 @@ orm_installed_files_match_current_package() {
 }
 
 orm_validate_install_manifest() {
-    local manifest="$1" validation_mode="${2:-strict}" key source target mode expected_digest actual_digest owner manifest_mode file_owner file_mode header version records_start recorded_target extra expected_target expected_mode version_target=''
+    local manifest="$1" validation_mode="${2:-strict}" key source target mode expected_digest actual_digest owner manifest_mode file_owner file_mode header version records_start recorded_target extra expected_target expected_mode release_version_path=''
     local -a installed_version_lines=()
     local -A recorded=() expected=() expected_targets=()
     [[ "$validation_mode" == strict || "$validation_mode" == allow-known-subset ]] || return 1
@@ -278,7 +278,7 @@ orm_validate_install_manifest() {
         [[ -z "${expected[$key]+present}" && -z "${expected_targets[$target]+present}" ]] || return 1
         expected[$key]="$target|$mode"
         expected_targets[$target]=1
-        [[ "$key" != release_version ]] || version_target="$target"
+        [[ "$key" != release_version ]] || release_version_path="$target"
         orm_safe_target_parent_chain "$target" || return 1
     done < <(orm_package_file_map)
     for key in "${!recorded[@]}"; do
@@ -295,9 +295,9 @@ orm_validate_install_manifest() {
         actual_digest="$(sha256sum -- "$expected_target" | awk '{print $1}')" || return 1
         [[ "$actual_digest" == "$expected_digest" ]] || return 1
     done
-    if [[ "$header" != orm-install-manifest-v1 && -n "$version_target" ]]; then
-        [[ -f "$version_target" && ! -L "$version_target" ]] || return 1
-        mapfile -t installed_version_lines <"$version_target" || return 1
+    if [[ "$header" != orm-install-manifest-v1 && -n "$release_version_path" ]]; then
+        [[ -f "$release_version_path" && ! -L "$release_version_path" ]] || return 1
+        mapfile -t installed_version_lines <"$release_version_path" || return 1
         [[ "${#installed_version_lines[@]}" -eq 1 && "${installed_version_lines[0]}" == "$version" ]] || return 1
     fi
     if [[ "$validation_mode" == strict ]]; then
