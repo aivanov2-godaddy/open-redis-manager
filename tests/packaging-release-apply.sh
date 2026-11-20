@@ -244,4 +244,111 @@ grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-audit.
     exit 1
 }
 
-printf 'Signed release apply and rollback checks passed.\n'
+# SIGKILL the updater after an atomic file replacement but before its next
+# journal checkpoint. The transaction must remain recoverable and retries must
+# not treat the partial installation as a completed release.
+prepare_installation "$target_root" "$manifest"
+crash_bin="$test_root/crash-bin"
+mkdir -m 0700 "$crash_bin"
+real_mv="$(command -v mv)"
+cat >"$crash_bin/mv" <<'SH'
+#!/usr/bin/env bash
+set -e
+source_path="${@: -2:1}"
+"$TEST_REAL_MV" "$@"
+case "$source_path" in
+    */.orm-update.*)
+        if [[ ! -e "$TEST_CRASH_MARKER" ]]; then
+            printf '%s\n' "$$" >"$TEST_CRASH_WRAPPER_PID"
+            : >"$TEST_CRASH_MARKER"
+            while :; do sleep 1; done
+        fi
+        ;;
+esac
+SH
+chmod 0755 "$crash_bin/mv"
+marker="$test_root/crash-marker"
+wrapper_pid_file="$test_root/crash-wrapper-pid"
+manifest_before_interrupt="$(sha256sum "$manifest" | awk '{print $1}')"
+TEST_REAL_MV="$real_mv" TEST_CRASH_MARKER="$marker" TEST_CRASH_WRAPPER_PID="$wrapper_pid_file" \
+    PATH="$crash_bin:$PATH" setsid bash "$repo_root/packaging/apply-release.sh" \
+    "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" \
+    >"$test_root/interrupted-apply.out" 2>&1 &
+apply_pid=$!
+for ((attempt = 0; attempt < 500; attempt += 1)); do
+    [[ ! -f "$marker" ]] || break
+    kill -0 "$apply_pid" 2>/dev/null || break
+    sleep 0.02
+done
+[[ -f "$marker" && -f "$wrapper_pid_file" ]] || {
+    kill -KILL -- "-$apply_pid" 2>/dev/null || true
+    printf 'release apply did not reach the process-interruption checkpoint.\n' >&2
+    cat "$test_root/interrupted-apply.out" >&2
+    exit 1
+}
+crash_pgid="$(ps -o pgid= -p "$(cat "$wrapper_pid_file")" | tr -d '[:space:]')"
+[[ "$crash_pgid" =~ ^[1-9][0-9]*$ ]] || {
+    kill -KILL -- "-$apply_pid" 2>/dev/null || true
+    printf 'could not identify the isolated release-apply process group.\n' >&2
+    exit 1
+}
+kill -KILL -- "-$crash_pgid"
+set +e
+wait "$apply_pid"
+interruption_status=$?
+set -e
+[[ "$interruption_status" -ne 0 ]] || {
+    printf 'the interrupted release process unexpectedly reported success.\n' >&2
+    exit 1
+}
+interrupted_workspace="$(find "$target_root/var/cpanel/orm/updates" -mindepth 1 -maxdepth 1 -type d -name 'transaction.*' -print -quit)"
+[[ -n "$interrupted_workspace" && -d "$interrupted_workspace" \
+    && "$(stat -c '%u:%a' "$interrupted_workspace")" == 0:700 \
+    && -f "$interrupted_workspace/journal" \
+    && "$(stat -c '%u:%a' "$interrupted_workspace/journal")" == 0:600 \
+    && -f "$interrupted_workspace/install-manifest.old" \
+    && "$(sha256sum "$interrupted_workspace/install-manifest.old" | awk '{print $1}')" == "$manifest_before_interrupt" \
+    && -f "$interrupted_workspace/backup/cpanel_entry" ]] || {
+    printf 'process interruption did not retain a protected journal and replaced-file backup.\n' >&2
+    exit 1
+}
+grep -Fqx 'phase|applying' "$interrupted_workspace/journal" || {
+    printf 'interrupted transaction journal did not preserve its in-progress phase.\n' >&2
+    exit 1
+}
+cmp -s "$release_root/packaging/cpanel/files/orm/index.live.php" "$target_root$first_target" || {
+    printf 'process interruption did not leave the fixture at the expected partial replacement point.\n' >&2
+    exit 1
+}
+[[ "$(orm_install_manifest_version "$manifest")" == "$installed_version" \
+    && "$(sha256sum "$manifest" | awk '{print $1}')" == "$manifest_before_interrupt" ]] || {
+    printf 'process interruption unexpectedly advanced the installed package version.\n' >&2
+    exit 1
+}
+[[ "$(cat "$target_root/etc/orm-instances/send.json")" == account-state-fixture \
+    && "$(cat "$target_root/var/lib/orm-instances/send/dump.rdb")" == redis-rdb-fixture \
+    && "$(cat "$target_root/var/cpanel/orm/provider-backend-policy")" == podman ]] || {
+    printf 'process interruption changed account state, Redis data, or backend selection.\n' >&2
+    exit 1
+}
+if grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-audit.jsonl"; then
+    printf 'process interruption recorded a successful update outcome.\n' >&2
+    exit 1
+fi
+before_retry="$(tree_snapshot "$target_root")"
+if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" \
+    "$installed_version" "$manifest" "$target_root" >"$test_root/interrupted-retry.out" 2>&1; then
+    printf 'release apply retried against an interrupted transaction.\n' >&2
+    exit 1
+fi
+[[ "$before_retry" == "$(tree_snapshot "$target_root")" ]] || {
+    printf 'retry after interruption changed the partially applied installation.\n' >&2
+    exit 1
+}
+grep -q 'failed integrity validation\|unfinished updater transaction' "$test_root/interrupted-retry.out" || {
+    printf 'retry after interruption did not fail closed on the partial install or retained journal.\n' >&2
+    cat "$test_root/interrupted-retry.out" >&2
+    exit 1
+}
+
+printf 'Signed release apply, rollback, and interruption checks passed.\n'
