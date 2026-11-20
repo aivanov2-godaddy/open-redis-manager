@@ -1,11 +1,12 @@
 # ORM prototype screenshots
 
-Screenshots below are local prototype captures using sample data. The logo, cPanel feature previews, and WHM policy/fleet previews use the current ORM brand mark; the standalone dashboard and WHM summary mockups are earlier static concepts. None are screenshots from the commercial reference product.
+Images below are local previews and prototype captures; most UI examples use synthetic data. The generated-sprite preview uses only the cPanel test system's icon artwork, not account or service data. The logo, cPanel feature previews, and WHM policy/fleet previews use the current ORM brand mark; the standalone dashboard and WHM summary mockups are earlier static concepts. None are screenshots from the commercial reference product.
 
 | Image | Surface | Capture |
 |---|---|---|
 | [ORM logo](orm-logo.png) | White three-tier cache cube with an inset keyspace on a Redis-red tile, shown at full size and interface-icon scale | [HTML preview](previews/orm-logo.html); [renderable SVG composition](previews/orm-logo-showcase.svg) |
 | [cPanel Jupiter v3 icon preview](previews/cpanel-icons-v3-preview.png) | Local preview of the transparent red line-art group and launcher glyphs, including an enlarged detail. This is a package preview, not a live cPanel capture. | Source assets: [`orm-cpanel-group-v3.svg`](../packaging/cpanel/icons/orm-cpanel-group-v3.svg), [`orm-cpanel-feature-v3.svg`](../packaging/cpanel/icons/orm-cpanel-feature-v3.svg), and matching PNG fallbacks. |
+| [cPanel Jupiter generated-sprite preview](previews/cpanel-jupiter-live-sprite-preview.png) | Local rendering of the cPanel test server's generated group and launcher sprite entries after cache-key synchronization; no account or service data is shown. This is not a browser screenshot. | Source: generated cPanel Jupiter sprite, rendered from the two icon viewBoxes. |
 | [cPanel dashboard](cpanel-dashboard.png) | Account status, usage, setup checklist and trend | 1500 × 1200 |
 | [cPanel application discovery](cpanel-application-discovery.png) | On-demand app marker results and honest connection preflight | Static sample-data preview; [HTML source](previews/cpanel-application-discovery.html) |
 | [cPanel exposure tiers](cpanel-exposure-tiers.png) | Simple, Developer and Advanced feature visibility with the same account boundary | Static comparison preview; [HTML source](previews/cpanel-exposure-tiers.html) |
