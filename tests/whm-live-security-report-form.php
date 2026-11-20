@@ -12,7 +12,7 @@ const ORM_INSTALL_ROOT = '/usr/local/cpanel/3rdparty/orm';
 if (in_array('--help', $argv, true)) {
     fwrite(STDOUT, "Usage: php tests/whm-live-security-report-form.php --confirm-report-write\n"
         . "Requires root on a disposable cPanel & WHM host. Generates one report, consumes the one-minute throttle,\n"
-        . "and writes a metadata-only audit event. Output contains pass/fail only.\n");
+        . "and writes a metadata-only audit event. Output contains sanitized status and response diagnostics only.\n");
     exit(0);
 }
 
