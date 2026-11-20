@@ -49,3 +49,11 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - An icon-only package containing the updated `install.json`, 32×32 group SVG, and transparent 48×48 PNG assets was accepted by `install_plugin`. cPanel scheduled a sprite update.
 - The Windows browser capture helper could not capture the monitor (`IGraphicsCaptureItemInterop.CreateForMonitor` returned `0x80070057`), so the final browser appearance has not been verified. This remains a registration result, not a visual confirmation.
 - No ORM service, account data, Redis/Valkey container, or broker state was changed.
+
+## Approved cache-cube refresh — 2026-11-20
+
+- ORM source commit: `7821269`.
+- The cPanel Jupiter group and launcher were changed to use the already approved red-tile/white-cube artwork from the README and WHM mark. The README logo file itself was not modified.
+- The icon-only archive was accepted by cPanel and a sprite refresh was scheduled. The installed 48×48 launcher PNG has the same SHA-256 digest as the packaged PNG.
+- The local package preview is [`screenshots/previews/cpanel-registration-icons.png`](../../../screenshots/previews/cpanel-registration-icons.png). It documents the supplied assets; it is not a live cPanel screenshot. Browser appearance remains unverified because no authenticated Jupiter capture was available.
+- No ORM service, broker state, Redis/Valkey instance, or account data was changed by this icon-only registration.
