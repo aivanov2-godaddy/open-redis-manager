@@ -48,6 +48,8 @@ On 2026-11-17, the repository owner supplied a separate PHP 8.5 CLI/PhpRedis smo
 
 This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
 
+`tests/whm-acl.php` exercises the fail-closed reseller ACL parser with exact-match, missing-`all`, unrelated reseller, malformed record, CRLF, and oversized-input cases. It also checks that privileged WHM controls require a root identity and a valid request guard. This is local policy/parser coverage; it does not establish how a live reseller login is authorized by WHM. Live reseller-ACL behavior and two-account resource isolation remain unverified.
+
 Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) records the accepted flattened-path icon package and sprite regeneration. These checks do not establish host support.
 
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.

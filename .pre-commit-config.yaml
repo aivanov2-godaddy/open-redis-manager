@@ -47,6 +47,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-whm-acl
+        name: WHM ACL checks
+        entry: php tests/whm-acl.php
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: php-whm-security-report
         name: WHM security report checks
         entry: php tests/whm-security-report.php
