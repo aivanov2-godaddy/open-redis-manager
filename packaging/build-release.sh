@@ -44,7 +44,12 @@ candidate_order="$(orm_semver_compare "$version" "$maximum_version")" \
 
 git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || orm_die 'release source must be a Git checkout.'
-[[ "$(git -C "$repo_root" rev-parse --show-toplevel)" == "$repo_root" ]] \
+git_root="$(git -C "$repo_root" rev-parse --show-toplevel)" \
+    || orm_die 'could not resolve the Git checkout root.'
+if command -v cygpath >/dev/null 2>&1; then
+    git_root="$(cygpath -u -- "$git_root")" || orm_die 'could not normalize the Git checkout path.'
+fi
+[[ "$git_root" == "$repo_root" ]] \
     || orm_die 'release source root is not the Git checkout root.'
 [[ -z "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]] \
     || orm_die 'release source checkout must be clean; commit reviewed files before building.'
