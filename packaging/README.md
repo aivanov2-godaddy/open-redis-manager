@@ -2,7 +2,7 @@
 
 This folder contains the cPanel and WHM registration files, authenticated UI entry points, and the first manual installer lifecycle for Open Redis Manager:
 
-- `cpanel/install.json` registers one feature group and one Jupiter interface link.
+- `cpanel/install.json` registers one feature group and one Jupiter interface link. Their 48×48 SVG icons ship with matching PNG fallbacks, as cPanel recommends for Jupiter.
 - `cpanel/files/orm/index.live.php` uses cPanel's LiveAPI PHP class and its session header/footer, compares the LiveAPI username with the local broker identity, and shows only that account's private socket path and PHP, Node.js and Python client examples.
 - [`../src/Orm/Cpanel/DiagnosticReport.php`](../src/Orm/Cpanel/DiagnosticReport.php) builds the cPanel support preview/download from fixed, validated fields; the installer deploys it alongside the other account-facing PHP helpers.
 - `systemd/orm-broker.service` runs the broker as root. Its fixed local protocol exposes identity, per-account instance status/provision/start/stop, a UID-0-only paginated fleet inventory, and a UID-0-only control request with a validated cPanel account name plus one of three fixed lifecycle actions. It accepts no command, path, unit name, backend or arbitrary configuration values.
