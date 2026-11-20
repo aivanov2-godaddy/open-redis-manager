@@ -1,9 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-labelledby="orm-title orm-desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 256 256" role="img" aria-labelledby="orm-title orm-desc">
   <title id="orm-title">Open Redis Manager</title>
-  <desc id="orm-desc">A Redis-red outline of the ORM layered cache cube on a transparent background.</desc>
-  <g fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.8">
-    <path d="M24 5.5 41.5 15 24 24.5 6.5 15 24 5.5Z"/>
-    <path d="M6.5 15v18L24 42.5 41.5 33V15"/>
-    <path d="m6.5 23 17.5 9.5L41.5 23M6.5 31l17.5 9.5L41.5 31"/>
-  </g>
+  <desc id="orm-desc">A dimensional, three-tier cache cube with an inset keyspace at its center on a Redis-red tile.</desc>
+  <path d="M62 4h132a58 58 0 0 1 58 58v132a58 58 0 0 1-58 58H62a58 58 0 0 1-58-58V62A58 58 0 0 1 62 4Z" fill="#D92D20"/>
+  <path d="M62 5h132a57 57 0 0 1 57 57v132a57 57 0 0 1-57 57H62a57 57 0 0 1-57-57V62A57 57 0 0 1 62 5Z" fill="none" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="2"/>
+  <!-- Isometric top: the inset diamond is the keyspace. -->
+  <path d="m128 47 67 37-67 37-67-37 67-37Z" fill="#FFFFFF"/>
+  <!-- Two lit facets form a solid, dimensional stack. -->
+  <path d="m61 84 67 37v67l-67-37V84Z" fill="#FFE5E1"/>
+  <path d="m128 121 67-37v67l-67 37v-67Z" fill="#FFFFFF"/>
+  <path d="m128 63 39 21-39 22-39-22 39-21Z" fill="#D92D20"/>
+  <path d="m128 72 23 12-23 13-23-13 23-12Z" fill="#F9BDB6"/>
+  <!-- Negative-space seams divide the body into three cache tiers. -->
+  <path d="m68 128 60 32 60-32M68 140l60 32 60-32" fill="none" stroke="#D92D20" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
 </svg>
