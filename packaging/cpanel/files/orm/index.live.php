@@ -527,7 +527,7 @@ try {
                         <?php $renderHistoryChart($metricsHistory['history'], 'connected_clients', 'Connected clients', '#317a9d'); ?>
                         <?php $renderHistoryChart($metricsHistory['history'], 'keyspace_hits', 'Cache hit ratio', '#16804a', true); ?>
                       </div>
-                      <p class="orm-metrics-note" role="status">Hourly samples are collected while your cache is running and kept for up to 30 days.</p>
+                      <p class="orm-metrics-note" role="status">Hourly samples are collected while your cache is running. New instances use the history retention set by your hosting provider.</p>
                     <?php elseif (is_array($metricsHistory) && ($metricsHistory['success'] ?? false) === true): ?>
                       <p class="orm-metrics-note" role="status">No hourly samples are available for this range yet. Collection runs while your cache is active<?= $metricsHistory['scheduled'] ? '.' : '; scheduled collection is currently unavailable.' ?></p>
                     <?php else: ?>
@@ -589,7 +589,7 @@ try {
                   <option value="magento">Magento — 64 MiB</option>
                   <option value="session">Session cache — 32 MiB</option>
                 </select>
-                <p class="orm-preset-help">Each profile uses the same private socket, 16 databases, 100-client ceiling, and non-persistent cache policy. The hosting provider may disable provisioning or enforce a lower package memory ceiling.</p>
+                <p class="orm-preset-help">Each profile uses the same private socket and 100-client ceiling with persistence disabled. The hosting provider sets the database count and eviction policy, may lower the profile memory default, and can disable provisioning or enforce a package ceiling.</p>
                 <?php endif; ?>
                 <button type="submit">Initialize cache</button>
               </form>

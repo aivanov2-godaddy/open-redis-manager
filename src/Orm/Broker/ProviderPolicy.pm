@@ -9,11 +9,20 @@ use Sys::Syslog qw(:standard :macros);
 
 my $MAX_POLICY_BYTES = 262144;
 my $MAX_LOGO_BYTES = 32768;
+my %MAXMEMORY_POLICIES = map { $_ => 1 } qw(
+    allkeys-lru allkeys-lfu allkeys-random volatile-lru volatile-lfu volatile-random volatile-ttl noeviction
+);
 my $DEFAULT_POLICY = {
-    version => 3,
+    version => 4,
     mode => 'report-only',
     exposure => 'simple',
     default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3 },
+    instance_defaults => {
+        memory_mib => 64,
+        maxmemory_policy => 'allkeys-lru',
+        databases => 16,
+        metrics_history_retention_days => 30,
+    },
     packages => {},
     resellers => {},
     branding => {
@@ -55,6 +64,7 @@ sub effective_for {
         enabled => $limits->{enabled},
         max_memory_mib => 0 + $limits->{max_memory_mib},
         backup_retention => 0 + $limits->{backup_retention},
+        instance_defaults => { %{$policy->{instance_defaults}} },
         owner => $owner,
         reseller_max_instances => 0 + $reseller->{max_instances},
         reseller_max_memory_mib => 0 + $reseller->{max_memory_mib},
@@ -88,6 +98,7 @@ sub provision_decision {
     return undef if !defined($memory_mib) || ref($memory_mib) || $memory_mib !~ /\A[0-9]+\z/;
     my $effective = $self->effective_for($account);
     return undef if ref($effective) ne 'HASH';
+    $memory_mib = _minimum($memory_mib, $effective->{instance_defaults}->{memory_mib});
     my @violations;
     push @violations, 'package_disabled' if !$effective->{enabled};
     push @violations, 'memory_limit_exceeded' if $memory_mib > $effective->{max_memory_mib};
@@ -105,7 +116,9 @@ sub provision_decision {
                 && $usage->{memory_mib} + $memory_mib > $effective->{reseller_max_memory_mib};
         }
     }
-    return $self->_decision($effective, \@violations, $account);
+    my $decision = $self->_decision($effective, \@violations, $account);
+    $decision->{provision_memory_mib} = 0 + $memory_mib;
+    return $decision;
 }
 
 sub memory_decision {
@@ -142,6 +155,7 @@ sub _decision {
         mode => $effective->{mode},
         max_memory_mib => $effective->{max_memory_mib},
         backup_retention => $effective->{backup_retention},
+        instance_defaults => { %{$effective->{instance_defaults}} },
         violations => [@{$violations}],
     };
 }
@@ -158,7 +172,8 @@ sub _read_policy {
 
     my @path_stat = lstat($path);
     if (!@path_stat) {
-        return { %{$DEFAULT_POLICY}, default => { %{$DEFAULT_POLICY->{default}} }, packages => {}, resellers => {},
+        return { %{$DEFAULT_POLICY}, default => { %{$DEFAULT_POLICY->{default}} },
+            instance_defaults => { %{$DEFAULT_POLICY->{instance_defaults}} }, packages => {}, resellers => {},
             branding => { %{$DEFAULT_POLICY->{branding}} } }
             if $! == ENOENT;
         return undef;
@@ -183,15 +198,16 @@ sub _read_policy {
 
 sub _upgrade_policy {
     my ($policy) = @_;
-    return $policy if $policy->{version} == 3;
+    return $policy if $policy->{version} == 4;
     return {
-        version => 3,
+        version => 4,
         mode => $policy->{version} == 1 && $policy->{mode} eq 'report-only' ? 'warn' : $policy->{mode},
         exposure => $policy->{version} >= 2 ? $policy->{exposure} : 'simple',
         default => $policy->{default},
+        instance_defaults => { %{$DEFAULT_POLICY->{instance_defaults}} },
         packages => $policy->{packages},
         resellers => $policy->{version} >= 2 ? $policy->{resellers} : {},
-        branding => { %{$DEFAULT_POLICY->{branding}} },
+        branding => $policy->{version} >= 3 ? $policy->{branding} : { %{$DEFAULT_POLICY->{branding}} },
     };
 }
 
@@ -217,6 +233,14 @@ sub _valid_policy {
             || $policy->{exposure} !~ /\A(?:simple|developer|advanced)\z/
             || ref($policy->{resellers}) ne 'HASH' || scalar(keys %{$policy->{resellers}}) > 1000
             || !_valid_branding($policy->{branding});
+    } elsif ($policy->{version} == 4) {
+        return 0 if join(',', sort keys %{$policy}) ne 'branding,default,exposure,instance_defaults,mode,packages,resellers,version'
+            || !defined($policy->{mode}) || ref($policy->{mode})
+            || $policy->{mode} !~ /\A(?:report-only|warn|enforce)\z/
+            || !defined($policy->{exposure}) || ref($policy->{exposure})
+            || $policy->{exposure} !~ /\A(?:simple|developer|advanced)\z/
+            || ref($policy->{resellers}) ne 'HASH' || scalar(keys %{$policy->{resellers}}) > 1000
+            || !_valid_branding($policy->{branding}) || !_valid_instance_defaults($policy->{instance_defaults});
     } else {
         return 0;
     }
@@ -378,6 +402,21 @@ sub _valid_reseller_limits {
         || !_is_integer($limits->{max_memory_mib}) || $limits->{max_memory_mib} > 1_000_000;
     return 1;
 }
+
+sub _valid_instance_defaults {
+    my ($defaults) = @_;
+    return 0 if ref($defaults) ne 'HASH'
+        || join(',', sort keys %{$defaults}) ne 'databases,maxmemory_policy,memory_mib,metrics_history_retention_days'
+        || !_is_integer($defaults->{memory_mib}) || $defaults->{memory_mib} < 8 || $defaults->{memory_mib} > 64
+        || !_is_integer($defaults->{databases}) || $defaults->{databases} < 1 || $defaults->{databases} > 16
+        || !_is_integer($defaults->{metrics_history_retention_days})
+        || $defaults->{metrics_history_retention_days} < 7 || $defaults->{metrics_history_retention_days} > 90
+        || !defined($defaults->{maxmemory_policy}) || ref($defaults->{maxmemory_policy})
+        || !exists($MAXMEMORY_POLICIES{$defaults->{maxmemory_policy}});
+    return 1;
+}
+
+sub _minimum { return $_[0] < $_[1] ? $_[0] : $_[1]; }
 
 sub _is_integer {
     my ($value) = @_;

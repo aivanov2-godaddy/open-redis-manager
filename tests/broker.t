@@ -619,6 +619,79 @@ ok((grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-inst
 }
 is_deeply($provisioned->{config}, { memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0 },
     'return validated saved settings in the instance status');
+my $existing_config_path = "$etc_instances/ormtest/redis.conf";
+open(my $existing_config_handle, '<', $existing_config_path) or die "read existing instance config: $!";
+my $existing_config_before_defaults = do { local $/; <$existing_config_handle> };
+close($existing_config_handle) or die "close existing instance config: $!";
+my $custom_defaults_path = "$tmp/etc/missing-instance-policy.json";
+my $custom_defaults_policy = {
+    version => 4,
+    mode => 'enforce',
+    exposure => 'advanced',
+    default => { enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 2 },
+    instance_defaults => {
+        memory_mib => 24,
+        maxmemory_policy => 'allkeys-lfu',
+        databases => 5,
+        metrics_history_retention_days => 7,
+    },
+    packages => { starter => { enabled => JSON::PP::true, max_memory_mib => 16, backup_retention => 2 } },
+    resellers => {},
+    branding => {
+        product_name => 'Open Redis Manager', logo_png_base64 => '', support_url => '', preset => 'orm',
+        primary_color => '#C92319', secondary_color => '#A91F18', surface_color => '#FFFFFF',
+        text_color => '#172536', footer_visible => JSON::PP::true,
+    },
+};
+open(my $custom_defaults_file, '>', $custom_defaults_path) or die "write custom defaults policy: $!";
+print {$custom_defaults_file} JSON::PP->new->canonical(1)->encode($custom_defaults_policy) . "\n";
+close($custom_defaults_file) or die "close custom defaults policy: $!";
+chmod(0600, $custom_defaults_path) or die "chmod custom defaults policy: $!";
+my $defaults_account = { name => 'ormdefaults', uid => $<, gid => $test_gid };
+my $defaults_provisioned = $manager->provision($defaults_account, 'generic');
+ok($defaults_provisioned->{success} && $defaults_provisioned->{config}->{memory_mib} == 24
+    && $defaults_provisioned->{config}->{maxmemory_policy} eq 'allkeys-lfu',
+    'apply configured global memory and eviction defaults to a new ORM instance');
+my $defaults_config_path = "$etc_instances/ormdefaults/redis.conf";
+open(my $defaults_config_handle, '<', $defaults_config_path) or die "read new defaults config: $!";
+my $defaults_config_text = do { local $/; <$defaults_config_handle> };
+close($defaults_config_handle) or die "close new defaults config: $!";
+like($defaults_config_text, qr/^databases 5$/m, 'apply the bounded database count only to the newly provisioned instance');
+my $defaults_manifest = $manager->_read_manifest($defaults_account);
+is_deeply($defaults_manifest->{provisioned_defaults}, {
+    backup_retention => 2, databases => 5, metrics_history_retention_days => 7,
+}, 'record snapshot, database, and history defaults in the new root-owned manifest');
+my $old_history_sample = {
+    commands_per_second => 1, connected_clients => 1, keyspace_hits => 1, keyspace_misses => 0,
+    memory_peak_bytes => 1024, memory_used_bytes => 512, uptime_seconds => 100,
+    sampled_at => int(time - 8 * 24 * 60 * 60),
+};
+my $old_history_path = "$etc_instances/ormdefaults/metrics-history.json";
+open(my $old_history_handle, '>', $old_history_path) or die "write expired history fixture: $!";
+print {$old_history_handle} JSON::PP->new->canonical(1)->encode([$old_history_sample]) . "\n";
+close($old_history_handle) or die "close expired history fixture: $!";
+chmod(0600, $old_history_path) or die "chmod expired history fixture: $!";
+chown($<, $<, $old_history_path) or die "chown expired history fixture: $!";
+my $new_history_sample = { %{$old_history_sample}, sampled_at => int(time) };
+ok($manager->_write_metrics_history($defaults_account, $new_history_sample),
+    'prune history using the instance-specific retention while preserving bounded root-owned storage');
+my $retained_defaults_history = $manager->dispatch('metrics.history', $defaults_account, undef, undef, undef, '7d');
+ok($retained_defaults_history->{success} && @{$retained_defaults_history->{history}} == 1,
+    'keep only samples inside the configured seven-day retention window');
+open($existing_config_handle, '<', $existing_config_path) or die "recheck existing instance config: $!";
+my $existing_config_after_defaults = do { local $/; <$existing_config_handle> };
+close($existing_config_handle) or die "close existing instance config: $!";
+is($existing_config_after_defaults, $existing_config_before_defaults,
+    'leave an existing instance configuration unchanged after global defaults change');
+is_deeply($manager->_read_manifest($account)->{provisioned_defaults}, {
+    backup_retention => 3, databases => 16, metrics_history_retention_days => 30,
+}, 'leave an existing instance snapshot, database, and history defaults unchanged after a global default change');
+my $capped_account = { name => 'ormcapped', uid => $<, gid => $test_gid, plan => 'starter' };
+is($manager->provision($capped_account, 'generic')->{error}, 'provider_policy_denied',
+    'continue enforcing the package memory ceiling against global defaults');
+ok(!-e "$etc_instances/ormcapped" && !-e "$data_instances/ormcapped",
+    'do not create instance files when a package ceiling rejects the configured default');
+unlink($custom_defaults_path) or die "remove custom defaults policy: $!";
 
 my $migration_etc = "$tmp/migration-etc";
 my $migration_data = "$tmp/migration-data";
@@ -692,6 +765,7 @@ my $legacy_manifest;
     close($legacy_manifest_handle) or die "close migration manifest fixture: $!";
 }
 delete $legacy_manifest->{preset};
+delete $legacy_manifest->{provisioned_defaults};
 $legacy_manifest->{version} = 1;
 open(my $legacy_manifest_write, '>', $migration_manifest_path) or die "write legacy migration manifest fixture: $!";
 print {$legacy_manifest_write} JSON::PP->new->canonical(1)->encode($legacy_manifest) . "\n";
@@ -827,8 +901,8 @@ ok($manager->dispatch('backup.create', $account)->{success}, 'create a snapshot 
 sleep 1;
 ok($manager->dispatch('backup.create', $account)->{success}, 'create the next snapshot under the enforced retention policy');
 $listed_backups = $manager->dispatch('backup.list', $account);
-ok($listed_backups->{success} && @{$listed_backups->{backups}} == 2,
-    'enforce the package snapshot retention limit after each validated backup');
+ok($listed_backups->{success} && @{$listed_backups->{backups}} == 3,
+    'retain the existing instance snapshot policy captured when it was provisioned');
 unlink($retention_policy_path) or die "remove retention policy fixture: $!";
 my $metrics = $manager->dispatch('instance.metrics', $account);
 ok($metrics->{success}, 'collect current metrics for the running account instance');
@@ -1270,9 +1344,9 @@ $unit_state = 'inactive';
 is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running',
     'preserve the stopped error when the saved sample is expired');
 ok(!-e $metrics_path, 'remove an expired root-owned snapshot on access');
-ok(!(grep { $_->[0] ne 'is-active' && $_->[-1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
+ok(!(grep { $_->[0] ne 'is-active' && $_->[-1] !~ /\A(?:orm-instance\@(?:ormtest|ormdefaults)\.service|orm-metrics-collect\@(?:ormtest|ormdefaults)\.timer)\z/ } @systemctl_calls),
     'only the account-specific service and metrics timer templates are controlled');
-ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
+ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\A(?:orm-instance\@(?:ormtest|ormdefaults)\.service|orm-metrics-collect\@(?:ormtest|ormdefaults)\.timer)\z/ } @systemctl_calls),
     'status never queries a global Redis, Valkey or metrics unit');
 my %root_rates;
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 0), 'deny root broker requests by default');

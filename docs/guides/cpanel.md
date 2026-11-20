@@ -4,7 +4,7 @@
 
 ## Overview
 
-The account page shows service state, current or retained memory, connection count, hit ratio, and sample time. The latest successful sample is retained for up to 30 days, labeled stale when the service is stopped or live sampling fails, and removed after expiry. A separate per-account timer collects one hourly sample while the cache is running; root-owned history is capped at 720 samples/30 days and charted over 24 hours or 7 days.
+The account page shows service state, current or retained memory, connection count, hit ratio, and sample time. The latest successful sample is retained for up to 30 days, labeled stale when the service is stopped or live sampling fails, and removed after expiry. A separate per-account timer collects one hourly sample while the cache is running; newly provisioned instances use the provider-configured 7–90 day history retention, capped at 2,160 samples and 1 MiB, and charted over 24 hours or 7 days. Existing and legacy instances keep their recorded retention behavior.
 
 ## Lifecycle and connection details
 

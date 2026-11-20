@@ -11,7 +11,12 @@ $assertions = [
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
         && str_contains($whmPage, "'provider.policy.update'"),
     is_string($whmPage) && str_contains($whmPage, 'if (!$rootAuthorized)')
-        && str_contains($whmPage, 'Package resource policy'),
+        && str_contains($whmPage, 'Provider policy and new instance defaults'),
+    is_string($whmPage) && str_contains($whmPage, 'instance_default_memory_mib')
+        && str_contains($whmPage, 'instance_default_eviction')
+        && str_contains($whmPage, 'instance_default_databases')
+        && str_contains($whmPage, 'instance_default_history_days')
+        && str_contains($whmPage, 'does not rewrite an existing instance'),
     is_string($whmPage) && str_contains($whmPage, 'WhmAuditEventWriter::providerPolicyChanged($providerAction)')
         && str_contains($whmPage, 'WhmAuditEventWriter::backendSelection($submittedBackend, true)'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
