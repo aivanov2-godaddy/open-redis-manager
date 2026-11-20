@@ -212,7 +212,7 @@ final class ReleaseApplyJob
             || !is_array($preview['fileActions'] ?? null) || count($preview['fileActions']) > 100) {
             return false;
         }
-        foreach (['add', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $field) {
+        foreach (['add', 'adopt', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $field) {
             if (!is_int($preview['summary'][$field] ?? null) || $preview['summary'][$field] < 0) {
                 return false;
             }
@@ -223,7 +223,8 @@ final class ReleaseApplyJob
             }
         }
         foreach ($preview['fileActions'] as $action) {
-            if (!is_array($action) || !in_array($action['action'] ?? null, ['add', 'replace', 'unchanged'], true)) {
+            if (!is_array($action) || !in_array($action['action'] ?? null, ['add', 'adopt', 'replace', 'unchanged'], true)
+                || (($action['action'] ?? null) === 'adopt' && ($action['requiresReview'] ?? null) !== true)) {
                 return false;
             }
         }

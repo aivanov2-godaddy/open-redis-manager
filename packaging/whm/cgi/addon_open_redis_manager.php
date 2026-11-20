@@ -751,10 +751,13 @@ WHM::header('Open Redis Manager', 0, 0);
             <dt>Artifact SHA-256</dt><dd><code><?= htmlspecialchars($updatePreview['release']['artifactSha256'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></dd>
           </dl>
           <ul aria-label="Update file change summary">
-            <?php foreach (['add' => 'Add', 'replace' => 'Replace', 'unchanged' => 'Unchanged', 'move' => 'Move', 'conflict' => 'Conflict', 'retire' => 'Retire'] as $action => $label): ?>
+            <?php foreach (['add' => 'Add', 'adopt' => 'Adopt exact file', 'replace' => 'Replace', 'unchanged' => 'Unchanged', 'move' => 'Move', 'conflict' => 'Conflict', 'retire' => 'Retire'] as $action => $label): ?>
               <li><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>: <?= (int) $updatePreview['summary'][$action] ?></li>
             <?php endforeach; ?>
           </ul>
+          <?php if (($updatePreview['summary']['adopt'] ?? 0) > 0): ?>
+            <p role="note">An exact file already on disk matches the signed release’s path, content, owner, and mode but is missing from the install manifest. Applying will record that file in the new manifest without rewriting its contents. Review the adopt action below before confirming.</p>
+          <?php endif; ?>
           <details>
             <summary>Review managed file actions</summary>
             <table>

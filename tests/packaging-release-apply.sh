@@ -58,7 +58,7 @@ openssl dgst -sha256 -sign "$private_key" -out "$signature" "$metadata"
 chmod 0600 "$signature"
 
 prepare_installation() {
-    local root="$1" target_manifest="$2" key source target mode installed_file digest
+    local root="$1" target_manifest="$2" omit_manifest_key="${3:-}" key source target mode installed_file digest
     rm -rf -- "$root" "$target_manifest"
     mkdir -m 0700 "$root"
     mkdir -p "$(dirname -- "$target_manifest")"
@@ -77,7 +77,7 @@ prepare_installation() {
         esac
         chmod "$mode" "$installed_file"
         digest="$(sha256sum -- "$installed_file" | awk '{print $1}')"
-        printf '%s|%s|%s|%s\n' "$key" "$mode" "$digest" "$target" >>"$target_manifest"
+        [[ "$key" == "$omit_manifest_key" ]] || printf '%s|%s|%s|%s\n' "$key" "$mode" "$digest" "$target" >>"$target_manifest"
     done <"$repo_root/packaging/release-install-map.txt"
     chmod 0600 "$target_manifest"
     mkdir -p "$root/etc/orm-instances" "$root/var/lib/orm-instances/send" "$root/var/cpanel/orm"
@@ -227,6 +227,25 @@ grep -q "^$add_key|" "$manifest" && [[ -f "$add_file" ]] || {
     exit 1
 }
 
+# An exact root-owned candidate file omitted from an older v3 manifest is
+# explicitly adopted. Apply records it without replacing the existing inode.
+prepare_installation "$target_root" "$manifest" 'application_discovery'
+adopt_target="$(awk -F'|' '$1 == "application_discovery" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+adopt_file="$target_root$adopt_target"
+adopt_inode_before="$(stat -c '%i' "$adopt_file")"
+adopt_digest_before="$(sha256sum "$adopt_file" | awk '{print $1}')"
+if grep -q '^application_discovery|' "$manifest"; then
+    printf 'adoption fixture unexpectedly included the managed-file record.\n' >&2
+    exit 1
+fi
+bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/adopt-apply.out"
+grep -Fqx "application_discovery|644|$adopt_digest_before|$adopt_target" "$manifest" \
+    && [[ "$(stat -c '%i' "$adopt_file")" == "$adopt_inode_before" \
+        && "$(sha256sum "$adopt_file" | awk '{print $1}')" == "$adopt_digest_before" ]] || {
+    printf 'signed apply rewrote or failed to adopt the exact pre-existing candidate file.\n' >&2
+    exit 1
+}
+
 # A clean fixture applies and advances the v3 manifest without touching service data.
 prepare_installation "$target_root" "$manifest"
 bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/apply.out"
@@ -268,7 +287,7 @@ grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-audit.
 # SIGKILL the updater after an atomic file replacement but before its next
 # journal checkpoint. The transaction must remain recoverable and retries must
 # not treat the partial installation as a completed release.
-prepare_installation "$target_root" "$manifest"
+prepare_installation "$target_root" "$manifest" 'application_discovery'
 crash_bin="$test_root/crash-bin"
 mkdir -m 0700 "$crash_bin"
 real_mv="$(command -v mv)"
@@ -291,6 +310,9 @@ chmod 0755 "$crash_bin/mv"
 marker="$test_root/crash-marker"
 wrapper_pid_file="$test_root/crash-wrapper-pid"
 manifest_before_interrupt="$(sha256sum "$manifest" | awk '{print $1}')"
+adopt_file="$target_root$(awk -F'|' '$1 == "application_discovery" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+adopt_inode_before_interrupt="$(stat -c '%i' "$adopt_file")"
+adopt_digest_before_interrupt="$(sha256sum "$adopt_file" | awk '{print $1}')"
 original_install_tree="$(tree_snapshot "$target_root")"
 checkpoint='waiting for interrupted updater'
 TEST_REAL_MV="$real_mv" TEST_CRASH_MARKER="$marker" TEST_CRASH_WRAPPER_PID="$wrapper_pid_file" \
@@ -338,6 +360,10 @@ interrupted_workspace="$(find "$target_root/var/cpanel/orm/updates" -mindepth 1 
 }
 grep -Fqx 'phase|applying' "$interrupted_workspace/journal" || {
     printf 'interrupted transaction journal did not preserve its in-progress phase.\n' >&2
+    exit 1
+}
+grep -Fq 'application_discovery|adopt|' "$interrupted_workspace/journal" || {
+    printf 'interrupted transaction did not preserve its adopted-file action in the journal.\n' >&2
     exit 1
 }
 cmp -s "$release_root/packaging/cpanel/files/orm/index.live.php" "$target_root$first_target" || {
@@ -412,6 +438,11 @@ fi
     && "$(sha256sum "$manifest" | awk '{print $1}')" == "$manifest_before_interrupt" ]] || {
     printf 'recovery did not restore the original managed package and manifest exactly.\n' >&2
     cat "$test_root/recovery.out" >&2
+    exit 1
+}
+[[ "$(stat -c '%i' "$adopt_file")" == "$adopt_inode_before_interrupt" \
+    && "$(sha256sum "$adopt_file" | awk '{print $1}')" == "$adopt_digest_before_interrupt" ]] || {
+    printf 'recovery changed the pre-existing adopted file.\n' >&2
     exit 1
 }
 [[ -z "$(find "$target_root/var/cpanel/orm/updates" -mindepth 1 -maxdepth 1 -name 'transaction.*' -print -quit)" ]] || {

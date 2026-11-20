@@ -273,7 +273,7 @@ for my $key (sort keys %installed) {
 }
 
 my @actions;
-my %action_counts = map { $_ => 0 } qw(add replace unchanged move conflict retire);
+my %action_counts = map { $_ => 0 } qw(add adopt replace unchanged move conflict retire);
 for my $key (sort keys %candidate) {
     my $next = $candidate{$key};
     my $before = $installed{$key};
@@ -292,7 +292,19 @@ for my $key (sort keys %candidate) {
                 ? 'unchanged' : 'replace';
         }
     } else {
-        $action = (-e $destination || -l $destination) ? 'conflict' : 'add';
+        if (-e $destination || -l $destination) {
+            my @destination_info = lstat($destination);
+            if (@destination_info && S_ISREG($destination_info[2])
+                && $destination_info[4] == 0
+                && sprintf('%o', mode_of($destination_info[2])) eq $next->{mode}
+                && file_digest($destination) eq $next->{sha256}) {
+                $action = 'adopt';
+            } else {
+                $action = 'conflict';
+            }
+        } else {
+            $action = 'add';
+        }
     }
     $action_counts{$action}++;
     push @actions, {
@@ -302,7 +314,7 @@ for my $key (sort keys %candidate) {
         target => $next->{target},
         mode => $next->{mode},
         sha256 => $next->{sha256},
-        requiresReview => $action eq 'conflict' ? JSON::PP::true : JSON::PP::false,
+        requiresReview => $action eq 'conflict' || $action eq 'adopt' ? JSON::PP::true : JSON::PP::false,
     };
     if ($before && $before->{integrityConflict}) {
         $actions[-1]{conflictReason} = $before->{integrityConflict}{reason};

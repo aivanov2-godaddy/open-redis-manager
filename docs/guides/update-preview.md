@@ -24,6 +24,8 @@ The root operator stages the bundle files using the fixed names above, then subm
 
 The **Check update status** form reads the sanitized job record. Terminal states include succeeded, failed, recovery required, and interrupted. If an unfinished job's transient systemd service is no longer active, ORM marks it interrupted or recovery required when a transaction journal remains. Review the [recovery guide](update-recovery.md) before retrying an interrupted or incomplete transaction. ORM does not automatically retry an apply job.
 
+If a candidate file is absent from the installed v3 manifest but already exists at its fixed managed path, the preview labels it **Adopt exact file** only when it is a regular non-symlink file owned by root with the candidate mode and exact signed SHA-256. Adoption is marked for operator review. Apply rechecks all of those conditions under the update lock, adds the record to the new manifest, and leaves the existing file untouched. Any mismatch remains a conflict and blocks apply. WHM AppConfig cannot be adopted by this workflow.
+
 ## Current boundaries
 
 - No remote update feed or automatic downloader is configured; staging remains a root-operated task.

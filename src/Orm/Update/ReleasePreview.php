@@ -102,7 +102,7 @@ final class ReleasePreview
             return ['ok' => false, 'message' => 'The signed-update verifier response did not meet ORM’s preview contract.'];
         }
 
-        foreach (['add', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $action) {
+        foreach (['add', 'adopt', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $action) {
             if (!isset($preview['summary'][$action]) || !is_int($preview['summary'][$action])
                 || $preview['summary'][$action] < 0) {
                 return ['ok' => false, 'message' => 'The signed-update verifier returned an invalid file summary.'];
@@ -112,7 +112,8 @@ final class ReleasePreview
         foreach ($preview['fileActions'] as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null)
                 || !preg_match('/\A[a-z_]{1,64}\z/D', $entry['key'])
-                || !in_array($entry['action'] ?? null, ['add', 'replace', 'unchanged', 'move', 'conflict', 'retire'], true)
+                || !in_array($entry['action'] ?? null, ['add', 'adopt', 'replace', 'unchanged', 'move', 'conflict', 'retire'], true)
+                || (($entry['action'] ?? null) === 'adopt' && ($entry['requiresReview'] ?? null) !== true)
                 || !is_string($entry['target'] ?? null)
                 || !self::isManagedTarget($entry['target'], $allowedTargets)) {
                 return ['ok' => false, 'message' => 'The signed-update verifier returned an invalid file action.'];

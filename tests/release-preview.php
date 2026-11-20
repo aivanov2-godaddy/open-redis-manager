@@ -25,7 +25,7 @@ $valid = [
         'keyId' => 'orm-release-2026',
         'artifactSha256' => str_repeat('a', 64),
     ],
-    'summary' => ['add' => 1, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
+    'summary' => ['add' => 1, 'adopt' => 0, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
     'fileActions' => [[
         'key' => 'whm_cgi',
         'action' => 'replace',
@@ -67,6 +67,16 @@ $systemdAction = $valid;
 $systemdAction['fileActions'][0]['target'] = '/etc/systemd/system/orm-broker.service';
 $assert((ReleasePreview::validate($json($systemdAction), '0.1.0-dev', $allowedTargets)['ok'] ?? false) === true,
     'known managed systemd targets are accepted');
+$adoptAction = $valid;
+$adoptAction['summary']['adopt'] = 1;
+$adoptAction['fileActions'][0]['action'] = 'adopt';
+$adoptAction['fileActions'][0]['requiresReview'] = true;
+$assert((ReleasePreview::validate($json($adoptAction), '0.1.0-dev', $allowedTargets)['ok'] ?? false) === true,
+    'an explicitly reviewed adopt action is returned to the WHM operator');
+$adoptWithoutReview = $adoptAction;
+$adoptWithoutReview['fileActions'][0]['requiresReview'] = false;
+$assert(!(ReleasePreview::validate($json($adoptWithoutReview), '0.1.0-dev', $allowedTargets)['ok'] ?? false),
+    'adopt actions without explicit review are rejected');
 
 $assert(!(ReleasePreview::validate($json($valid), '0.1.1', $allowedTargets)['ok'] ?? false), 'installed version must match');
 foreach (['verified', 'signatureVerified', 'mutationsApplied'] as $field) {
