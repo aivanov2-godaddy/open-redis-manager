@@ -43,3 +43,13 @@ Other narrowly scoped live test results are recorded separately: the [managed-v1
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
 
 The test uses cPanel's documented [`create_user_session` single-sign-on flow](https://api.docs.cpanel.net/guides/guide-to-api-authentication/guide-to-api-authentication-single-sign-on).
+
+## WHM security report engine smoke
+
+`tests/whm-live-security-report-engine.php` runs as root with cPanel's PHP CLI on a disposable cPanel & WHM host. It requests the broker's bounded fleet summary, reads normalized ORM journal events, and builds the report in memory. It prints only pass/fail and whether the report is partial. It does not submit the WHM form, write an audit event, consume the one-minute report rate limit, change policy, or read Redis keys.
+
+```sh
+/usr/local/cpanel/3rdparty/bin/php tests/whm-live-security-report-engine.php
+```
+
+On 2026-11-20, the source-matched rc.3 installation passed the broker, report builder, report-only mode, and audit-source-read checks. The generated report was partial. A separate scripted WHM POST returned to a cPanel login response without rendering the report; authenticated form submission therefore remains unverified. See [`records/2026-11-20-whm-security-report-engine.md`](records/2026-11-20-whm-security-report-engine.md).
