@@ -90,10 +90,21 @@ if (function_exists('pcntl_fork')) {
         exit($valid ? 0 : 3);
     }
     $method = new ReflectionMethod(PodmanCacheDiscovery::class, 'probePing');
-    $method->setAccessible(true);
     $probeResult = $method->invoke(null, $probeSocket);
     pcntl_waitpid($child, $childStatus);
-    $assert(($probeResult['reachable'] ?? false) === true && ($probeResult['version'] ?? 'invalid') === null
+    $fixturePassed = ($probeResult['reachable'] ?? false) === true
+        && array_key_exists('version', $probeResult) && $probeResult['version'] === null
+        && pcntl_wifexited($childStatus) && pcntl_wexitstatus($childStatus) === 0;
+    if (!$fixturePassed) {
+        fwrite(STDERR, 'PING fixture diagnostics: ' . json_encode([
+            'reachable' => $probeResult['reachable'] ?? null,
+            'version_is_null' => array_key_exists('version', $probeResult) && $probeResult['version'] === null,
+            'child_exited' => pcntl_wifexited($childStatus),
+            'child_exit_code' => pcntl_wifexited($childStatus) ? pcntl_wexitstatus($childStatus) : null,
+        ]) . "\n");
+    }
+    $assert(($probeResult['reachable'] ?? false) === true
+        && array_key_exists('version', $probeResult) && $probeResult['version'] === null
         && pcntl_wifexited($childStatus) && pcntl_wexitstatus($childStatus) === 0,
         'perform a bounded read-only RESP PING when the cPanel PHP runtime lacks PhpRedis');
     fclose($probeServer);
