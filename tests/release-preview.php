@@ -21,6 +21,7 @@ $valid = [
     'release' => [
         'channel' => 'stable',
         'stateMigrations' => 'none',
+        'sourceCommit' => str_repeat('a', 40),
         'keyId' => 'orm-release-2026',
         'artifactSha256' => str_repeat('a', 64),
     ],
@@ -60,6 +61,7 @@ $assert(($result['ok'] ?? false) === true, 'verified candidate is accepted');
 $assert($result['candidateVersion'] === '0.2.0', 'candidate version is returned');
 $assert($result['fileActions'][0]['key'] === 'whm_cgi', 'file action is returned in normalized form');
 $assert($result['release']['stateMigrations'] === 'none', 'signed no-migration contract is returned for operator review');
+$assert($result['release']['sourceCommit'] === str_repeat('a', 40), 'signed source commit is returned for operator review');
 $assert(!array_key_exists('mutationsApplied', $result), 'UI result does not expose arbitrary verifier fields');
 $systemdAction = $valid;
 $systemdAction['fileActions'][0]['target'] = '/etc/systemd/system/orm-broker.service';
@@ -86,6 +88,9 @@ $assert(!(ReleasePreview::validate($json($invalid), '0.1.0-dev', $allowedTargets
 $invalid = $valid;
 $invalid['release']['stateMigrations'] = 'v1-to-v2';
 $assert(!(ReleasePreview::validate($json($invalid), '0.1.0-dev', $allowedTargets)['ok'] ?? false), 'unsupported state migrations are rejected');
+$invalid = $valid;
+$invalid['release']['sourceCommit'] = 'not-a-commit';
+$assert(!(ReleasePreview::validate($json($invalid), '0.1.0-dev', $allowedTargets)['ok'] ?? false), 'invalid source commits are rejected');
 $assert(!(ReleasePreview::validate('{broken', '0.1.0-dev', $allowedTargets)['ok'] ?? false), 'malformed JSON is rejected');
 $assert(!(ReleasePreview::validate(str_repeat('x', 1048577), '0.1.0-dev', $allowedTargets)['ok'] ?? false), 'oversized output is rejected');
 

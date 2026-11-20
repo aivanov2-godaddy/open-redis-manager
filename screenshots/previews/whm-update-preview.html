@@ -32,6 +32,7 @@
     dd { margin: 0; font-size: 15px; font-weight: 650; }
     code { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
     .digest { grid-column: 1 / -1; border-top: 1px solid #e0e6ec; }
+    .source-commit { grid-column: span 3; border-top: 1px solid #e0e6ec; }
     h3 { margin: 20px 0 10px; font-size: 15px; }
     .counts { display: flex; gap: 9px; flex-wrap: wrap; }
     .counts span { padding: 8px 11px; border: 1px solid #e0e6ec; border-radius: 6px; color: #526173; font-size: 13px; }
@@ -55,7 +56,7 @@
     button { padding: 10px 15px; border: 0; border-radius: 6px; color: white; background: #236b9a; font: inherit; font-weight: 650; }
     .quiet { color: #617184; font-size: 12px; }
     .footnote { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #e5eaf0; color: #657588; font-size: 12px; line-height: 1.5; }
-    @media (max-width: 760px) { .layout { padding: 0 15px; margin: 18px auto; } .release { grid-template-columns: 1fr 1fr; } .digest { grid-column: 1 / -1; } .topbar { padding: 0 18px; } }
+    @media (max-width: 760px) { .layout { padding: 0 15px; margin: 18px auto; } .release { grid-template-columns: 1fr 1fr; } .digest, .source-commit { grid-column: 1 / -1; } .topbar { padding: 0 18px; } }
   </style>
 </head>
 <body>
@@ -73,6 +74,8 @@
           <div><dt>Installed version</dt><dd>0.1.0-dev</dd></div>
           <div><dt>Candidate version</dt><dd>0.2.0</dd></div>
           <div><dt>Release channel</dt><dd>Stable</dd></div>
+          <div><dt>ORM state migrations</dt><dd>none</dd></div>
+          <div class="source-commit"><dt>Source commit</dt><dd><code>8f3a1c2d4e5b6a7980c1d2e3f4a5b6c7d8e9f012</code></dd></div>
           <div><dt>Trusted key ID</dt><dd>orm-release-2026</dd></div>
           <div class="digest"><dt>Artifact SHA-256</dt><dd><code>9cb4b68c1024e2212e3730ea3c39d03b5b815a46fe74032433de025a6418e420</code></dd></div>
         </dl>

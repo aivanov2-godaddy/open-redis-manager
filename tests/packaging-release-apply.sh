@@ -38,9 +38,11 @@ tar -czf "$artifact" -C "$test_root" "orm-$release_version"
 future_expiry="$(date -u -d '+30 days' '+%Y-%m-%dT%H:%M:%SZ')"
 artifact_size="$(stat -c '%s' "$artifact")"
 artifact_digest="$(sha256sum "$artifact" | awk '{print $1}')"
+source_commit='0000000000000000000000000000000000000001'
 {
     printf 'orm-release-metadata-v2\n'
-    printf 'product|orm\nkey_id|test-release\nversion|%s\nchannel|stable\nstate_migrations|none\n' "$release_version"
+    printf 'product|orm\nkey_id|test-release\nversion|%s\nchannel|stable\nsource_commit|%s\nstate_migrations|none\n' \
+        "$release_version" "$source_commit"
     printf 'artifact|orm-%s.tar.gz\nartifact_size|%s\nartifact_sha256|%s\n' "$release_version" "$artifact_size" "$artifact_digest"
     printf 'min_from_version|%s\nmax_from_version|%s\n' "$installed_version" "$installed_version"
     printf 'created_at|%s\nexpires_at|%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$future_expiry"

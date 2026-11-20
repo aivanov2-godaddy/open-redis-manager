@@ -51,6 +51,8 @@ git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
 [[ -f "$repo_root/VERSION" && ! -L "$repo_root/VERSION" ]] || orm_die 'release VERSION file is missing or unsafe.'
 source_version="$(<"$repo_root/VERSION")"
 [[ "$source_version" == "$version" ]] || orm_die 'requested release version does not match the committed VERSION file.'
+source_commit="$(git -C "$repo_root" rev-parse --verify HEAD)" || orm_die 'could not resolve the exact source commit.'
+[[ "$source_commit" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || orm_die 'source commit ID is invalid.'
 
 [[ "$private_key" == /* && -f "$private_key" && ! -L "$private_key" ]] \
     || orm_die 'private key must be an existing absolute regular file, not a symlink.'
@@ -117,7 +119,8 @@ archive_digest="$(sha256sum -- "$archive_path" | awk '{print $1}')" || orm_die '
 metadata_path="$work_directory/release.metadata"
 {
     printf 'orm-release-metadata-v2\n'
-    printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|%s\nstate_migrations|none\n' "$key_id" "$version" "$channel"
+    printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|%s\nsource_commit|%s\nstate_migrations|none\n' \
+        "$key_id" "$version" "$channel" "$source_commit"
     printf 'artifact|orm-%s.tar.gz\nartifact_size|%s\nartifact_sha256|%s\n' "$version" "$archive_size" "$archive_digest"
     printf 'min_from_version|%s\nmax_from_version|%s\ncreated_at|%s\nexpires_at|%s\n' \
         "$minimum_version" "$maximum_version" "$created_at" "$expires_at"

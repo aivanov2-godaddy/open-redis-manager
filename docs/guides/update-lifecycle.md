@@ -43,6 +43,8 @@ cPanel documents `install_plugin` as the supported way to register a plugin and 
 
 ## Reviewed no-migration release contract
 
+Release metadata v2 also signs the exact source commit ID from the clean release checkout. WHM displays that commit with the artifact digest and trusted key ID. The signature binds these values together; operators still need to confirm the commit is the intended reviewed release source.
+
 Signed package updates are file-only. Each signed release declares `state_migrations|none`; the verifier, comparator, WHM preview contract, and apply path require that exact value. The transaction may replace or add only allowlisted package files and update the root-owned install manifest. It does not rewrite provider policy, per-account manifests or configuration, Redis/Valkey data, credentials, backend selection, or cPanel/WHM registration. File additions and replacements do not imply a persistent-state migration.
 
 Every release PR must explicitly review changes to persistent formats, including the install manifest, provider policy, account instance manifests, and update job/recovery records. If behavior requires a persistent-state transform, the release is not eligible for the current updater contract: implement and review a separate versioned migration transaction first, or keep the format backward-compatible. Do not change `state_migrations` to another value until the updater implements that migration type and its backup, rollback, interruption, and recovery gates. The signed declaration is an operator-visible assertion, not an automatic proof that source code has no state-changing side effects; PR review and tests must check the assertion against the diff.
