@@ -564,6 +564,14 @@ orm_wait_for_broker_socket() {
     return 1
 }
 
+orm_broker_health_matches_initial() {
+    local active
+    orm_broker_state_matches_initial || return 1
+    active="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
+    [[ "$active" == "${ORM_BROKER_ACTIVE_BEFORE:-}" ]] || return 1
+    [[ "$active" != active ]] || orm_wait_for_broker_socket
+}
+
 orm_restore_broker_state() {
     case "${ORM_BROKER_ENABLED_BEFORE:-}" in
         enabled) "$ORM_SYSTEMCTL" enable orm-broker.service || return 1 ;;

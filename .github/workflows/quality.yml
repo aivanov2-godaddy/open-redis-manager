@@ -28,7 +28,7 @@ jobs:
         run: perl -c packaging/inspect-release-archive.pl && perl -c packaging/compare-release-preview.pl && perl -c bin/orm-update-worker.pl
       - name: Check packaging fresh install and rollback
         run: sudo bash tests/packaging-install.sh
-      - name: Check packaging instance-root guards
+      - name: Check packaging guards and updater broker health
         run: sudo bash tests/packaging-guards.sh
       - name: Check versioned package manifest handling
         run: sudo bash tests/packaging-manifest.sh
