@@ -173,10 +173,25 @@ mkdir -p -- "$icon_sprite_root"
 printf '<svg>new sprite</svg>\n' >"$icon_sprite_root/icon_spritemap.svg"
 printf '.icon-open_redis_manager { background-image: url(icon_spritemap.svg?%064d_4.0); }\n' 0 \
     >"$icon_sprite_root/icon_spritemap.css"
+mkdir -p -- "$ORM_CPANEL_ROOT/bin"
+cat >"$ORM_CPANEL_ROOT/bin/sprite_generator" <<'MOCK'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$1" == --theme && "$2" == jupiter ]]
+printf 'sprite_generator %s\n' "$*" >>"$TEST_ROOT/sprite-generator.log"
+sed -E 's/(icon_spritemap\.svg\?)[0-9a-f]+/\1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/' \
+    "$ORM_CPANEL_ROOT/base/frontend/jupiter/assets/application_icons/sprites/icon_spritemap.css" \
+    >"$TEST_ROOT/sprite-generator.css"
+mv -f -- "$TEST_ROOT/sprite-generator.css" \
+    "$ORM_CPANEL_ROOT/base/frontend/jupiter/assets/application_icons/sprites/icon_spritemap.css"
+MOCK
+chmod 0755 -- "$ORM_CPANEL_ROOT/bin/sprite_generator"
 orm_refresh_cpanel_icon_sprite_cache_key
 icon_sprite_digest="$(sha256sum -- "$icon_sprite_root/icon_spritemap.svg" | awk '{print $1}')"
 grep -Fq "icon_spritemap.svg?${icon_sprite_digest}_4.0" "$icon_sprite_root/icon_spritemap.css" \
     || { printf 'installer did not refresh the generated cPanel sprite cache key.\n' >&2; exit 1; }
+grep -Fq 'sprite_generator --theme jupiter' "$TEST_ROOT/sprite-generator.log" \
+    || { printf 'installer did not regenerate the cPanel Jupiter sprite before refreshing its cache key.\n' >&2; exit 1; }
 TEST_FAIL_REGISTER=0
 export TEST_FAIL_REGISTER
 write_installer_runner
