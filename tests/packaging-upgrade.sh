@@ -189,6 +189,12 @@ printf 'u_str LISTEN 0 64 %s users:(("perl",pid=4242,fd=3))\n' "$TEST_SOCKET"
 MOCK
     cat >"$test_root/bin/install" <<'MOCK'
 #!/usr/bin/env bash
+if [[ "${TEST_INTERRUPT_FILE_INSTALL_ONCE:-0}" == 1 && "${1:-}" == -m && "${3:-}" == *Server.pm && ! -e "$TEST_ROOT/file-interruption-used" ]]; then
+    : >"$TEST_ROOT/file-interruption-used"
+    "$TEST_REAL_INSTALL" "$@" || exit
+    kill -TERM "$PPID"
+    exit 0
+fi
 if [[ "${TEST_FAIL_FILE_INSTALL_ONCE:-0}" == 1 && "${1:-}" == -m && "${3:-}" == *Server.pm && ! -e "$TEST_ROOT/file-failure-used" ]]; then
     : >"$TEST_ROOT/file-failure-used"
     exit 46
@@ -755,6 +761,20 @@ for failure in plugin file reload start; do
     trap - EXIT
     unset TEST_FAIL_CURRENT_PLUGIN_ONCE TEST_FAIL_FILE_INSTALL_ONCE TEST_FAIL_RELOAD_ONCE TEST_FAIL_START_ONCE
 done
+
+printf 'Testing managed-v1 rollback after TERM during file installation.\n'
+prepare_case managed-rollback-interrupted enabled active managed
+export TEST_INTERRUPT_FILE_INSTALL_ONCE=1
+if bash "$test_root/upgrade-test.sh"; then
+    printf 'expected managed-v1 upgrade to stop after the injected TERM signal.\n' >&2
+    exit 1
+fi
+[[ -e "$TEST_ROOT/file-interruption-used" ]] \
+    || { printf 'the managed-v1 interruption signal was not injected.\n' >&2; exit 1; }
+assert_managed_legacy_restored
+cleanup_test_root
+trap - EXIT
+unset TEST_INTERRUPT_FILE_INSTALL_ONCE
 
 for drift in manifest target extra-file empty-directory appconfig appconfig-mode cpanel-entry instance-mode instance-symlink; do
     prepare_case "managed-drift-$drift" disabled inactive managed
