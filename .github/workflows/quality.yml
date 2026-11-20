@@ -56,6 +56,8 @@ jobs:
         run: python tests/cpanel-live-smoke.py --help >/dev/null
       - name: Check live cPanel smoke assertions
         run: python tests/cpanel-live-smoke-checks.py
+      - name: Check live WHM report-form smoke entry point
+        run: php tests/whm-live-security-report-form.php --help >/dev/null
       - name: Check broker Perl syntax and tests
         run: |
           for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl; do perl -I src -c "$file"; done
