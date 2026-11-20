@@ -726,12 +726,13 @@ sub _provision_locked {
     return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
     return _failure('provider_policy_denied') if !$provider_decision->{allowed};
     $settings->{memory_mib} = $provider_decision->{provision_memory_mib};
+    $settings->{maxclients} = $provider_decision->{provision_max_clients};
     $settings->{maxmemory_policy} = $provider_decision->{instance_defaults}->{maxmemory_policy};
     my $memory_bytes = $settings->{memory_mib} * 1024 * 1024;
     return _failure('invalid_request') if $memory_bytes > $MAX_MEMORY_BYTES;
     my $provisioned_defaults = {
         backup_retention => 0 + $provider_decision->{backup_retention},
-        databases => 0 + $provider_decision->{instance_defaults}->{databases},
+        databases => 0 + $provider_decision->{provision_databases},
         metrics_history_retention_days => 0 + $provider_decision->{instance_defaults}->{metrics_history_retention_days},
     };
 
@@ -1165,9 +1166,6 @@ sub configure {
 sub _configure_locked {
     my ($self, $account, $settings) = @_;
     return _failure('invalid_request') if !_valid_settings($settings);
-    my $provider_decision = $self->{provider_policy}->memory_decision($account, $settings->{memory_mib});
-    return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
-    return _failure('provider_policy_denied') if !$provider_decision->{allowed};
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
     my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
@@ -1179,6 +1177,14 @@ sub _configure_locked {
         $runtime_previous = $self->_redis_config_get($manifest->{backend}, $manifest->{socket});
         return _failure('configuration_unavailable') if !_valid_settings($runtime_previous);
     }
+    my $existing_max_clients = $state eq 'active'
+        ? $runtime_previous->{maxclients}
+        : $manifest->{settings}->{maxclients};
+    my $provider_decision = $self->{provider_policy}->memory_decision(
+        $account, $settings->{memory_mib}, $settings->{maxclients}, $existing_max_clients
+    );
+    return _failure('provider_policy_unavailable') if ref($provider_decision) ne 'HASH';
+    return _failure('provider_policy_denied') if !$provider_decision->{allowed};
 
     my ($auth_valid, $auth_secret) = $self->_read_auth_secret($account, $manifest);
     return _failure('configuration_unavailable') if !$auth_valid;

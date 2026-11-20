@@ -159,6 +159,13 @@ $reportOnlyProvision = new BrokerClient(static fn (string $request): string =>
 $reportOnlyResult = $reportOnlyProvision->request('instance.provision', 'generic');
 $assert($reportOnlyResult['policy_warnings'] === ['memory_limit_exceeded'],
     'Expose only allowlisted report-only package policy warnings to the account UI.');
+$clientLimitWarning = new BrokerClient(static fn (string $request): string =>
+    "{\"config\":{\"maxclients\":50,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":48,\"timeout\":60},\"policy_warnings\":[\"client_limit_exceeded\"],\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
+);
+$assert($clientLimitWarning->request('instance.configure', null, [
+    'memory_mib' => 48, 'maxmemory_policy' => 'allkeys-lru', 'maxclients' => 50, 'timeout' => 60,
+])['policy_warnings'] === ['client_limit_exceeded'],
+    'Expose the fixed client ceiling warning without returning provider policy values.');
 $unexpectedPolicyWarning = new BrokerClient(static fn (string $request): string =>
     "{\"config\":{\"maxclients\":100,\"maxmemory_policy\":\"allkeys-lru\",\"memory_mib\":64,\"timeout\":0},\"policy_warnings\":[\"private detail\"],\"preset\":\"generic\",\"state\":\"running\",\"success\":true,\"version\":1}\n"
 );

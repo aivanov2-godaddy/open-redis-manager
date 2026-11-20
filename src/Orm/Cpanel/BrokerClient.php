@@ -465,12 +465,13 @@ final class BrokerClient
 
     private static function validProviderPolicyWarnings(mixed $warnings): bool
     {
-        if (!is_array($warnings) || !array_is_list($warnings) || count($warnings) > 5) {
+        if (!is_array($warnings) || !array_is_list($warnings) || count($warnings) > 6) {
             return false;
         }
         foreach ($warnings as $warning) {
             if (!is_string($warning) || !in_array($warning, [
-                'package_disabled', 'memory_limit_exceeded', 'reseller_instance_quota_exceeded',
+                'package_disabled', 'memory_limit_exceeded', 'client_limit_exceeded',
+                'reseller_instance_quota_exceeded',
                 'reseller_memory_quota_exceeded', 'reseller_usage_unavailable',
             ], true)) {
                 return false;

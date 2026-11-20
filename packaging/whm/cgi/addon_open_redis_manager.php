@@ -453,13 +453,16 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         if ($providerAction === 'default') {
             $defaultMemory = $readPolicyInteger('default_memory_mib', 8, 64);
             $defaultRetention = $readPolicyInteger('default_backup_retention', 2, 3);
+            $defaultClients = $readPolicyInteger('default_max_clients', 10, 100);
+            $defaultDatabases = $readPolicyInteger('default_max_databases', 1, 16);
             $instanceMemory = $readPolicyInteger('instance_default_memory_mib', 8, 64);
             $instanceDatabases = $readPolicyInteger('instance_default_databases', 1, 16);
             $historyRetention = $readPolicyInteger('instance_default_history_days', 7, 90);
             $instanceEviction = $_POST['instance_default_eviction'] ?? null;
             if (!in_array($submittedMode, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($submittedExposure, ['simple', 'developer', 'advanced'], true)
-                || $defaultMemory === null || $defaultRetention === null || $instanceMemory === null
+                || $defaultMemory === null || $defaultRetention === null || $defaultClients === null
+                || $defaultDatabases === null || $instanceMemory === null
                 || $instanceDatabases === null || $historyRetention === null
                 || !is_string($instanceEviction) || !in_array($instanceEviction, [
                     'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
@@ -473,6 +476,8 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     'enabled' => ($_POST['default_enabled'] ?? null) === '1',
                     'max_memory_mib' => $defaultMemory,
                     'backup_retention' => $defaultRetention,
+                    'max_clients' => $defaultClients,
+                    'max_databases' => $defaultDatabases,
                 ];
                 $updatedProviderPolicy['instance_defaults'] = [
                     'memory_mib' => $instanceMemory,
@@ -487,13 +492,18 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         if ($providerPolicyMessage === null && $providerAction === 'save-package') {
             $packageMemory = $readPolicyInteger('package_memory_mib', 8, 64);
             $packageRetention = $readPolicyInteger('package_backup_retention', 2, 3);
-            if (!$validPackageName || $packageMemory === null || $packageRetention === null) {
-                $providerPolicyMessage = 'Enter a valid package name, memory ceiling, and backup retention. No changes were saved.';
+            $packageClients = $readPolicyInteger('package_max_clients', 10, 100);
+            $packageDatabases = $readPolicyInteger('package_max_databases', 1, 16);
+            if (!$validPackageName || $packageMemory === null || $packageRetention === null
+                || $packageClients === null || $packageDatabases === null) {
+                $providerPolicyMessage = 'Enter a valid package name and resource ceilings. No changes were saved.';
             } else {
                 $updatedProviderPolicy['packages'][$packageName] = [
                     'enabled' => ($_POST['package_enabled'] ?? null) === '1',
                     'max_memory_mib' => $packageMemory,
                     'backup_retention' => $packageRetention,
+                    'max_clients' => $packageClients,
+                    'max_databases' => $packageDatabases,
                 ];
             }
         } elseif ($providerPolicyMessage === null && $providerAction === 'remove-package') {
@@ -1022,7 +1032,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <p role="alert">The root-owned provider policy could not be verified. No provider limits are being changed.</p>
       <?php else: ?>
         <?php if ($providerPolicyMessage !== null): ?><p role="status"><?= htmlspecialchars($providerPolicyMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
-        <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only logs policy violations without blocking. Warn allows the operation and shows a fixed notice in cPanel. Enforce blocks new provisions that exceed package or reseller limits and memory changes above package caps. Existing instances are grandfathered and are never rewritten by a policy change.</p>
+        <p>Mode: <strong><?= htmlspecialchars($providerPolicy['mode'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Report-only logs policy violations without blocking. Warn allows the operation and shows a fixed notice in cPanel. Enforce blocks new provisions that exceed package or reseller limits and memory or client increases above package caps. New instances use the lower of the global database default and package database ceiling. Existing instances are not rewritten by a policy change; a configured client value above a newly lowered ceiling may stay unchanged or be reduced.</p>
         <h3>Global defaults for new instances</h3>
         <form method="post">
           <input type="hidden" name="orm_action" value="provider.policy.update">
@@ -1059,6 +1069,10 @@ WHM::header('Open Redis Manager', 0, 0);
           <input id="orm-provider-default-memory" name="default_memory_mib" type="number" min="8" max="64" step="1" required value="<?= (int) $providerPolicy['default']['max_memory_mib'] ?>">
           <label for="orm-provider-default-retention">Default snapshot retention for this package rule</label>
           <input id="orm-provider-default-retention" name="default_backup_retention" type="number" min="2" max="3" step="1" required value="<?= (int) $providerPolicy['default']['backup_retention'] ?>">
+          <label for="orm-provider-default-clients">Default package client ceiling</label>
+          <input id="orm-provider-default-clients" name="default_max_clients" type="number" min="10" max="100" step="1" required value="<?= (int) $providerPolicy['default']['max_clients'] ?>">
+          <label for="orm-provider-default-databases">Default package database ceiling</label>
+          <input id="orm-provider-default-databases" name="default_max_databases" type="number" min="1" max="16" step="1" required value="<?= (int) $providerPolicy['default']['max_databases'] ?>">
           <button type="submit">Save default policy</button>
         </form>
         <h3>Provider branding</h3>
@@ -1196,12 +1210,16 @@ WHM::header('Open Redis Manager', 0, 0);
           <input id="orm-provider-package-memory" name="package_memory_mib" type="number" min="8" max="64" step="1" required value="64">
           <label for="orm-provider-package-retention">Snapshot retention</label>
           <input id="orm-provider-package-retention" name="package_backup_retention" type="number" min="2" max="3" step="1" required value="3">
+          <label for="orm-provider-package-clients">Maximum clients (10–100)</label>
+          <input id="orm-provider-package-clients" name="package_max_clients" type="number" min="10" max="100" step="1" required value="100">
+          <label for="orm-provider-package-databases">Maximum databases (1–16)</label>
+          <input id="orm-provider-package-databases" name="package_max_databases" type="number" min="1" max="16" step="1" required value="16">
           <button type="submit">Save package rule</button>
         </form>
         <?php if ($providerPolicy['packages'] !== []): ?>
           <h3>Configured package rules</h3>
           <table>
-            <thead><tr><th scope="col">Package</th><th scope="col">New instances</th><th scope="col">Memory ceiling</th><th scope="col">Snapshot retention</th><th scope="col">Action</th></tr></thead>
+            <thead><tr><th scope="col">Package</th><th scope="col">New instances</th><th scope="col">Memory ceiling</th><th scope="col">Snapshot retention</th><th scope="col">Client ceiling</th><th scope="col">Database ceiling</th><th scope="col">Action</th></tr></thead>
             <tbody>
               <?php foreach ($providerPolicy['packages'] as $packageName => $limits): ?>
                 <tr>
@@ -1209,6 +1227,8 @@ WHM::header('Open Redis Manager', 0, 0);
                   <td><?= $limits['enabled'] ? 'Allowed' : 'Disabled' ?></td>
                   <td><?= (int) $limits['max_memory_mib'] ?> MiB</td>
                   <td><?= (int) $limits['backup_retention'] ?></td>
+                  <td><?= (int) $limits['max_clients'] ?></td>
+                  <td><?= (int) $limits['max_databases'] ?></td>
                   <td>
                     <form method="post">
                       <input type="hidden" name="orm_action" value="provider.policy.update">

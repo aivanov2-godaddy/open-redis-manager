@@ -17,6 +17,10 @@ $assertions = [
         && str_contains($whmPage, 'instance_default_databases')
         && str_contains($whmPage, 'instance_default_history_days')
         && str_contains($whmPage, 'does not rewrite an existing instance'),
+    is_string($whmPage) && str_contains($whmPage, 'default_max_clients')
+        && str_contains($whmPage, 'default_max_databases') && str_contains($whmPage, 'package_max_clients')
+        && str_contains($whmPage, 'package_max_databases') && str_contains($whmPage, 'Client ceiling')
+        && str_contains($whmPage, 'Database ceiling'),
     is_string($whmPage) && str_contains($whmPage, 'WhmAuditEventWriter::providerPolicyChanged($providerAction)')
         && str_contains($whmPage, 'WhmAuditEventWriter::backendSelection($submittedBackend, true)'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
@@ -38,6 +42,7 @@ $assertions = [
         && str_contains($cpanelPage, "'provider_policy_unavailable'"),
     is_string($cpanelPage) && str_contains($cpanelPage, "'package_disabled' => 'this package is marked unavailable'")
         && str_contains($cpanelPage, "'memory_limit_exceeded' => 'the requested memory exceeds a package ceiling'")
+        && str_contains($cpanelPage, "'client_limit_exceeded' => 'the requested client limit exceeds a package ceiling'")
         && str_contains($cpanelPage, "'reseller_memory_quota_exceeded' => 'the reseller memory limit has been reached'"),
     is_string($cpanelPage) && str_contains($cpanelPage, '$developerExposure')
         && str_contains($cpanelPage, '$advancedExposure') && str_contains($cpanelPage, "request('provider.exposure')")

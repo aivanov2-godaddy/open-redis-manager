@@ -359,7 +359,7 @@ final class WhmAuditLog
                 '/\Aaccount_auth actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>auth\.(?:enable|rotate|disable)) result=' . $result . ' state=' . $state . '\z/',
                 '/\Abackup_restore actor_uid=' . $actor . ' account=' . $account
                     . ' backup=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|invalid) safety=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|none) result=' . $result . ' state=' . $state . '\z/',
-                '/\Aprovider_policy actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>policy\.violation) result=(?<result>report-only|warn|enforce) state=(?<state>(?:package_disabled|memory_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded)(?:,(?:package_disabled|memory_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded))*)\z/',
+                '/\Aprovider_policy actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>policy\.violation) result=(?<result>report-only|warn|enforce) state=(?<state>(?:package_disabled|memory_limit_exceeded|client_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded)(?:,(?:package_disabled|memory_limit_exceeded|client_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded))*)\z/',
             ];
         } else {
             $patterns = [
