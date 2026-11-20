@@ -7,7 +7,7 @@
     "id": "orm_cache_control"
   },
   {
-    "icon": "orm-cpanel-feature-v2.png",
+    "icon": "orm-cpanel-feature-v2.svg",
     "group_id": "orm_cache_control",
     "order": 1,
     "name": "Open Redis Manager",
