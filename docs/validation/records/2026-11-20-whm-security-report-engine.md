@@ -7,6 +7,7 @@
 - Platform: AlmaLinux 10.3, cPanel & WHM 138.0 RELEASE build 27.
 - PHP runtime: cPanel's `/usr/local/cpanel/3rdparty/bin/php` CLI.
 - Operation: root CLI invoked the installed ORM `BrokerClient`, `WhmAuditLog`, `WhmSecurityReportPolicyStore`, and `WhmSecurityReport` classes. Fleet metrics and normalized journal events were read; the report was built in memory.
+- Reproduction: the exact committed [`tests/whm-live-security-report-engine.php`](../../../tests/whm-live-security-report-engine.php) smoke script was transferred through a root-only temporary directory, executed with cPanel PHP CLI, and removed after completion.
 
 ## Scenario results
 

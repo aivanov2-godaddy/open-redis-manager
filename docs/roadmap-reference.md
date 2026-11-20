@@ -32,6 +32,8 @@ The reference [documentation roadmap](https://cpanelredismanager.com/documentati
 | 2.10.x | REST API, webhooks and automation events, Redis version management, and external Redis integration. |
 | 3.0.x | Shared architecture, DirectAdmin support, and cluster, Sentinel and scaling-oriented deployment. |
 
+The reference documentation also describes provider hook events for backend changes, denied access, quota limits and billing automation. This is a vendor-described capability, not evidence that ORM implements it. ORM tracks a separately designed, optional signed event adapter in [issue #143](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143); it must not couple core service control to WHMCS or send secrets and Redis data in event payloads.
+
 ## ORM planning rule
 
 ORM's implementation roadmap is maintained separately under [`project/README.md`](../project/README.md), and its verified feature state is in the [feature catalog](features/catalog.md). Reference ideas inform discovery; they do not establish implementation, compatibility, or production readiness. ORM release claims must be backed by repository and environment evidence. In particular, migration code exists but still requires disposable-host validation, and a general in-panel updater remains unimplemented.
