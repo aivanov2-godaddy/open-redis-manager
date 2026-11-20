@@ -201,7 +201,9 @@ while IFS='|' read -r key op src dst perm digest; do
 done <"$workspace/actions.txt"
 
 backup_keys="$(find "$workspace/backup" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)"
-expected_backup_keys="$(while IFS='|' read -r key op _; do [[ "$op" == replace && "$key" != whm_appconfig ]] && printf '%s\n' "$key"; done <"$workspace/actions.txt" | sort)"
+expected_backup_keys="$(while IFS='|' read -r key op _; do
+    if [[ "$op" == replace && "$key" != whm_appconfig ]]; then printf '%s\n' "$key"; else :; fi
+done <"$workspace/actions.txt" | sort)"
 [[ -z "$(find "$workspace/backup" -mindepth 1 -maxdepth 1 ! -type f -print -quit)" ]] || orm_die 'backup directory contains a non-regular or symlink entry.'
 [[ "$backup_keys" == "$expected_backup_keys" ]] || orm_die 'backup directory has missing or unexpected entries.'
 
