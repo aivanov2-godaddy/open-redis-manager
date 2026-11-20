@@ -110,7 +110,21 @@ def page_has_verified_account(body: str, expected_user: str) -> bool:
     return match is not None and html.unescape(match.group(1)) == expected_user
 
 
-def run(user: str | None, require_podman_cache: bool = False) -> int:
+def validate_spoof_accounts(accounts: list[str] | None, authenticated_user: str) -> list[str]:
+    """Return distinct, safe account values that must not change SSO identity."""
+    candidates = accounts if accounts else ["root"]
+    if any(USERNAME.fullmatch(account) is None for account in candidates):
+        raise ValueError("invalid-spoof-account")
+    if any(account == authenticated_user for account in candidates):
+        raise ValueError("spoof-account-must-differ")
+    return list(dict.fromkeys(candidates))
+
+
+def run(
+    user: str | None,
+    require_podman_cache: bool = False,
+    spoof_accounts: list[str] | None = None,
+) -> int:
     if os.geteuid() != 0:
         print("Run this check as root on the cPanel host.")
         return 2
@@ -125,11 +139,16 @@ def run(user: str | None, require_podman_cache: bool = False) -> int:
         target_url = plugin_url(landing_url)
         status, body, _ = read_page(opener, target_url)
         parts = urllib.parse.urlsplit(target_url)
-        spoofed_query = urllib.parse.urlencode({"user": "root", "username": "root", "account": "root"})
-        spoofed_url = urllib.parse.urlunsplit(
-            (parts.scheme, parts.netloc, parts.path, spoofed_query, parts.fragment)
-        )
-        spoofed_status, spoofed_body, _ = read_page(opener, spoofed_url)
+        for spoof_account in validate_spoof_accounts(spoof_accounts, account):
+            for parameter in ("user", "username", "account"):
+                spoofed_query = urllib.parse.urlencode({parameter: spoof_account})
+                spoofed_url = urllib.parse.urlunsplit(
+                    (parts.scheme, parts.netloc, parts.path, spoofed_query, parts.fragment)
+                )
+                spoofed_status, spoofed_body, _ = read_page(opener, spoofed_url)
+                if spoofed_status != 200 or not page_has_verified_account(spoofed_body, account):
+                    print("The cPanel page identity changed or failed under account query-parameter spoofing.")
+                    return 1
     except Exception as error:  # Keep URLs and account data out of diagnostics.
         print(f"Live cPanel smoke test failed ({type(error).__name__}).")
         return 1
@@ -140,10 +159,6 @@ def run(user: str | None, require_podman_cache: bool = False) -> int:
     if status != 200 or not page_has_verified_account(body, account):
         print(f"The ORM cPanel page did not verify the requested account identity (HTTP {status}).")
         return 1
-    if spoofed_status != 200 or not page_has_verified_account(spoofed_body, account):
-        print("The cPanel page identity changed or failed under account query-parameter spoofing.")
-        return 1
-
     if require_podman_cache and not page_has_reachable_podman_cache(body):
         print("The cPanel identity check passed, but no reachable Podman cache was shown.")
         return 1
@@ -162,9 +177,18 @@ def main() -> int:
         action="store_true",
         help="also require the authenticated page to show a reachable cPanel-managed Redis/Valkey socket",
     )
+    parser.add_argument(
+        "--spoof-account",
+        action="append",
+        help="also try this account in each identity query parameter; may be repeated",
+    )
     args = parser.parse_args()
     try:
-        return run(args.user, require_podman_cache=args.require_podman_cache)
+        return run(
+            args.user,
+            require_podman_cache=args.require_podman_cache,
+            spoof_accounts=args.spoof_account,
+        )
     except ValueError as error:
         print("Provide one valid cPanel account with --user, or run on a single-account test host.")
         return 2
