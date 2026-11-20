@@ -54,6 +54,8 @@ jobs:
         run: sudo bash tests/packaging-upgrade.sh
       - name: Check live cPanel smoke-test entry point
         run: python tests/cpanel-live-smoke.py --help >/dev/null
+      - name: Check live cPanel smoke assertions
+        run: python tests/cpanel-live-smoke-checks.py
       - name: Check broker Perl syntax and tests
         run: |
           for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl; do perl -I src -c "$file"; done

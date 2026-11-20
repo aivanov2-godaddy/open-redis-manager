@@ -52,6 +52,55 @@ $assert($results[1]['backend'] === 'valkey' && str_ends_with($results[1]['socket
 $assert(count($probed) === 2 && !str_contains(implode("\n", $probed), 'someone'),
     'never probe a container belonging to another account');
 
+if (function_exists('pcntl_fork')) {
+    $probeName = 'ea-redis62.ormtest.03';
+    mkdir($root . '/' . $probeName, 0700);
+    $probeSocket = $root . '/' . $probeName . '/redis.sock';
+    $probeServer = @stream_socket_server('unix://' . $probeSocket, $errno, $error);
+    if (!is_resource($probeServer)) {
+        fwrite(STDERR, "Unable to create the native PING socket fixture.\n");
+        exit(1);
+    }
+    chmod($probeSocket, 0600);
+    $child = pcntl_fork();
+    if ($child === -1) {
+        fwrite(STDERR, "Unable to fork the native PING fixture.\n");
+        exit(1);
+    }
+    if ($child === 0) {
+        $client = @stream_socket_accept($probeServer, 3);
+        if (!is_resource($client)) {
+            exit(2);
+        }
+        stream_set_timeout($client, 1);
+        $request = '';
+        while (strlen($request) < 14) {
+            $chunk = @fread($client, 14 - strlen($request));
+            if (!is_string($chunk) || $chunk === '') {
+                break;
+            }
+            $request .= $chunk;
+        }
+        $valid = $request === "*1\r\n\$4\r\nPING\r\n";
+        if ($valid) {
+            fwrite($client, "+PONG\r\n");
+        }
+        fclose($client);
+        fclose($probeServer);
+        exit($valid ? 0 : 3);
+    }
+    $method = new ReflectionMethod(PodmanCacheDiscovery::class, 'probePing');
+    $method->setAccessible(true);
+    $probeResult = $method->invoke(null, $probeSocket);
+    pcntl_waitpid($child, $childStatus);
+    $assert(($probeResult['reachable'] ?? false) === true && ($probeResult['version'] ?? 'invalid') === null
+        && pcntl_wifexited($childStatus) && pcntl_wexitstatus($childStatus) === 0,
+        'perform a bounded read-only RESP PING when the cPanel PHP runtime lacks PhpRedis');
+    fclose($probeServer);
+    @unlink($probeSocket);
+    @rmdir($root . '/' . $probeName);
+}
+
 foreach ($servers as $server) {
     fclose($server);
 }

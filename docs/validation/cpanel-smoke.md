@@ -14,7 +14,13 @@ On a multi-account test host, pass an explicit cPanel username:
 python3 tests/cpanel-live-smoke.py --user example
 ```
 
-The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
+To also require that the authenticated page finds a cPanel-managed Redis or Valkey socket and reports its read-only health probe as reachable, add `--require-podman-cache`. This assertion checks only the sanitized rendered status; it does not print account names, container identifiers, socket paths, or page content.
+
+```sh
+python3 tests/cpanel-live-smoke.py --user example --require-podman-cache
+```
+
+The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. The optional Podman assertion exercises the account page's existing read-only socket probe. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
 
 ## Current evidence
 
@@ -22,11 +28,13 @@ A live cPanel identity smoke passed on 2026-11-20 against the current entry poin
 
 Earlier evidence from three private test runs on 2026-11-16 is recorded in [`records/2026-11-16-identity-smoke.md`](records/2026-11-16-identity-smoke.md). That run also observed a Redis container managed by cPanel's Podman integration, but it did not perform Redis/Valkey operations or establish the deployed repository revision.
 
+On 2026-11-20, the opt-in Podman smoke passed on one account with an existing cPanel EA Podman Redis socket. The page's read-only RESP PING fallback reported the socket reachable when the cPanel internal PHP runtime lacked PhpRedis. The candidate PHP files were backed up and restored around this check; no cache keys or values were read. See [`records/2026-11-20-cpanel-podman-live-smoke.md`](records/2026-11-20-cpanel-podman-live-smoke.md).
+
 On 2026-11-17, the repository owner supplied a separate PHP 8.5 CLI/PhpRedis smoke result: the test account connected to its EA Podman Redis Unix socket and `PING` returned `1`. The provenance and exact scope are recorded in [`records/2026-11-17-ea-podman-phpredis-smoke.md`](records/2026-11-17-ea-podman-phpredis-smoke.md). This is a user-supplied result, not a run of the repository smoke harness.
 
 This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
 
-Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) records the accepted flattened-path icon package and sprite regeneration. Neither run verifies the cPanel identity smoke's other scenarios or establishes host support.
+Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) records the accepted flattened-path icon package and sprite regeneration. These checks do not establish host support.
 
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
 

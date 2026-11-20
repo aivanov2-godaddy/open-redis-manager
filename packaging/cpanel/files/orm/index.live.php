@@ -437,11 +437,11 @@ try {
                       <p><strong>Status:</strong> <?= htmlspecialchars(ucfirst(str_replace('-', ' ', $podmanCache['status'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $podmanCache['version'] !== null ? ' · version ' . htmlspecialchars($podmanCache['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?></p>
                       <p><strong>Private socket:</strong> <code><?= htmlspecialchars($podmanCache['socket_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
                       <?php if ($podmanCache['status'] === 'reachable'): ?>
-                        <p class="orm-note">The PHP Redis extension completed a read-only PING. No keys or values were read.</p>
+                        <p class="orm-note">The PHP runtime completed a bounded, read-only PING. No keys or values were read.</p>
                       <?php elseif ($podmanCache['status'] === 'unavailable'): ?>
                         <p class="orm-note">The account-owned socket exists, but the read-only health probe could not connect. Check the container in cPanel before using it.</p>
                       <?php else: ?>
-                        <p class="orm-note">The socket was found, but this PHP runtime does not provide the Redis extension for a read-only health probe.</p>
+                        <p class="orm-note">The account-owned socket exists, but the read-only PING did not confirm a response. Check the container in cPanel before using it.</p>
                       <?php endif; ?>
                       <details>
                         <summary>PHP with PhpRedis</summary>
