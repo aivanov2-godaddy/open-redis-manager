@@ -30,6 +30,19 @@ python3 tests/cpanel-live-smoke.py --user example --require-podman-cache
 
 The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. The query-spoof probe is a read-only GET. The optional Podman assertion exercises the account page's existing read-only socket probe. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
 
+## Live two-account broker isolation
+
+`tests/cpanel-live-isolation-smoke.py` probes the installed broker directly as two distinct cPanel Unix users using `runuser`. Supply two accounts and identify which one already owns the disposable ORM-managed instance:
+
+```sh
+python3 tests/cpanel-live-isolation-smoke.py \
+  --account-a example-one --account-b example-two --fixture-owner a
+```
+
+The check requires root, a running broker, safe cPanel account metadata, distinct non-root UIDs, and exactly one configured ORM instance across the two accounts. It compares each peer-credential identity with its own account, checks the instance status and backup-list response shapes, verifies the configured account sees its instance while the other reports `not_configured`, sends username-target fields that must be rejected by the fixed account-operation protocol, and confirms both non-root peers are denied the root-only reseller summary. It reads backup metadata only; it does not read Redis keys or backup contents, and it does not create accounts, instances, backups, services, or files. Rate-limited read probes wait briefly and retry up to two times. Output contains only a combined pass/fail result.
+
+The selection of the fixture owner must be based on prior disposable-host inventory. If no ORM-managed instance is already available for one account while the second account is unconfigured, this test cannot prove resource separation and must not be reported as a passing isolation run. The unit checks in `tests/cpanel-live-isolation-smoke-checks.py` exercise the harness assertions without a cPanel host.
+
 ## Current evidence
 
 On 2026-11-20, the current signed ORM `0.1.0-rc.3` package from merged source commit `87331b0` passed the live account identity, query-parameter spoof, and read-only Podman cache assertions. The package updater verified the v3 manifest, WHM registration, broker service state, and socket readiness; the authenticated cPanel entry point matched the signed package. The registered WHM AppConfig was preserved by design. See [`records/2026-11-20-rc3-source-matched-cpanel-smoke.md`](records/2026-11-20-rc3-source-matched-cpanel-smoke.md). This was an HTTP smoke, not an authenticated browser screenshot or visual review.
@@ -46,9 +59,9 @@ On 2026-11-20, the opt-in Podman smoke passed on one account with an existing cP
 
 On 2026-11-17, the repository owner supplied a separate PHP 8.5 CLI/PhpRedis smoke result: the test account connected to its EA Podman Redis Unix socket and `PING` returned `1`. The provenance and exact scope are recorded in [`records/2026-11-17-ea-podman-phpredis-smoke.md`](records/2026-11-17-ea-podman-phpredis-smoke.md). This is a user-supplied result, not a run of the repository smoke harness.
 
-This evidence does not verify fresh installation, cross-account denial, lifecycle controls, metrics, configuration, backups, restore, migration, recovery, uninstall, or a supported production matrix. Those remain release gates.
+The live two-account broker isolation check passed once on 2026-11-20 on the designated disposable cPanel system; see [`records/2026-11-20-cpanel-two-account-isolation.md`](records/2026-11-20-cpanel-two-account-isolation.md). This single run does not verify fresh installation, the full lifecycle controls, metrics, configuration, restore, migration, recovery, uninstall, reseller ACL behavior, or a supported production matrix. Those remain release gates.
 
-`tests/whm-acl.php` exercises the fail-closed reseller ACL parser with exact-match, missing-`all`, unrelated reseller, malformed record, CRLF, and oversized-input cases. It also checks that privileged WHM controls require a root identity and a valid request guard. This is local policy/parser coverage; it does not establish how a live reseller login is authorized by WHM. Live reseller-ACL behavior and two-account resource isolation remain unverified.
+`tests/whm-acl.php` exercises the fail-closed reseller ACL parser with exact-match, missing-`all`, unrelated reseller, malformed record, CRLF, and oversized-input cases. It also checks that privileged WHM controls require a root identity and a valid request guard. This is local policy/parser coverage; it does not establish how a live reseller login is authorized by WHM. Live reseller-ACL behavior remains unverified. Two-account resource isolation has one passing disposable-host run, recorded above.
 
 Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) records the accepted flattened-path icon package and sprite regeneration. These checks do not establish host support.
 
