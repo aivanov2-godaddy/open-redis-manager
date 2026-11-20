@@ -244,7 +244,7 @@ orm_installed_files_match_current_package() {
 }
 
 orm_validate_install_manifest() {
-    local manifest="$1" validation_mode="${2:-strict}" key source target mode expected_digest actual_digest owner manifest_mode file_owner file_mode header version records_start recorded_target extra expected_target expected_mode version_target
+    local manifest="$1" validation_mode="${2:-strict}" key source target mode expected_digest actual_digest owner manifest_mode file_owner file_mode header version records_start recorded_target extra expected_target expected_mode version_target=''
     local -a installed_version_lines=()
     local -A recorded=() expected=() expected_targets=()
     [[ "$validation_mode" == strict || "$validation_mode" == allow-known-subset ]] || return 1
