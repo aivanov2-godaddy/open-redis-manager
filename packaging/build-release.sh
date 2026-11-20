@@ -108,6 +108,13 @@ orm_path_permissions_are_private() {
     fi
 }
 
+orm_set_mode() {
+    if command -v cygpath >/dev/null 2>&1 && command -v powershell.exe >/dev/null 2>&1; then
+        return 0
+    fi
+    chmod "$@"
+}
+
 [[ "$private_key" == /* && -f "$private_key" && ! -L "$private_key" ]] \
     || orm_die 'private key must be an existing absolute regular file, not a symlink.'
 private_key_real="$(realpath -e -- "$private_key")" || orm_die 'could not resolve private key path.'
@@ -141,7 +148,8 @@ cleanup() {
 trap cleanup EXIT
 
 stage="$work_directory/orm-$version"
-mkdir -m 0755 -- "$stage"
+mkdir -- "$stage"
+orm_set_mode 0755 -- "$stage"
 while IFS= read -r relative_path || [[ -n "$relative_path" ]]; do
     [[ "$relative_path" =~ ^[A-Za-z0-9._/@-]+$ && "$relative_path" != *'..'* ]] \
         || orm_die 'required-file manifest contains an unsafe path.'
@@ -155,14 +163,16 @@ while IFS= read -r relative_path || [[ -n "$relative_path" ]]; do
     else
         cp -- "$source_file" "$target_file"
     fi
-    chmod 0644 -- "$target_file"
+    orm_set_mode 0644 -- "$target_file"
 done <"$package_root/release-required-files.txt"
-find "$stage" -type d -exec chmod 0755 {} +
+if ! command -v cygpath >/dev/null 2>&1 || ! command -v powershell.exe >/dev/null 2>&1; then
+    find "$stage" -type d -exec chmod 0755 {} +
+fi
 
 archive_path="$work_directory/orm-$version.tar.gz"
-tar --format=gnu --sort=name --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
+tar --format=gnu --sort=name --mode=0755 --mtime="@$source_epoch" --owner=0 --group=0 --numeric-owner \
     -cf - -C "$work_directory" "orm-$version" | gzip -n -9 >"$archive_path"
-chmod 0644 -- "$archive_path"
+orm_set_mode 0644 -- "$archive_path"
 archive_size="$(stat -c '%s' -- "$archive_path")" || orm_die 'could not measure release archive.'
 [[ "$archive_size" =~ ^[1-9][0-9]{0,8}$ && "$archive_size" -le "$ORM_RELEASE_ARTIFACT_MAX_BYTES" ]] \
     || orm_die 'release archive exceeds the verifier size limit.'
@@ -177,7 +187,7 @@ metadata_path="$work_directory/release.metadata"
     printf 'min_from_version|%s\nmax_from_version|%s\ncreated_at|%s\nexpires_at|%s\n' \
         "$minimum_version" "$maximum_version" "$created_at" "$expires_at"
 } >"$metadata_path"
-chmod 0644 -- "$metadata_path"
+orm_set_mode 0644 -- "$metadata_path"
 
 private_bits="$(openssl rsa -in "$private_key_real" -check -noout -text 2>/dev/null \
     | sed -nE '1s/.*\(([0-9]+) bit([,)]).*/\1/p')" || orm_die 'private key is not a valid RSA key.'
@@ -186,19 +196,20 @@ private_bits="$(openssl rsa -in "$private_key_real" -check -noout -text 2>/dev/n
 public_key_path="$work_directory/$key_id.pem"
 openssl rsa -in "$private_key_real" -pubout -out "$public_key_path" >/dev/null 2>&1 \
     || orm_die 'could not derive the public key for this release.'
-chmod 0644 -- "$public_key_path"
+orm_set_mode 0644 -- "$public_key_path"
 openssl dgst -sha256 -sign "$private_key_real" -out "$work_directory/release.sig" "$metadata_path" \
     || orm_die 'could not sign release metadata.'
-chmod 0644 -- "$work_directory/release.sig"
+orm_set_mode 0644 -- "$work_directory/release.sig"
 "$ORM_PERL" "$package_root/inspect-release-archive.pl" "$archive_path" "$version" >/dev/null \
     || orm_die 'built archive did not pass the release archive inspector.'
 openssl dgst -sha256 -verify "$public_key_path" -signature "$work_directory/release.sig" "$metadata_path" >/dev/null \
     || orm_die 'built release signature did not verify with its derived public key.'
 
 bundle_stage="$work_directory/bundle"
-mkdir -m 0755 -- "$bundle_stage"
+mkdir -- "$bundle_stage"
+orm_set_mode 0755 -- "$bundle_stage"
 cp -- "$archive_path" "$metadata_path" "$work_directory/release.sig" "$public_key_path" "$bundle_stage/"
-chmod 0644 -- "$bundle_stage"/*
+orm_set_mode 0644 -- "$bundle_stage"/*
 mv -T -- "$bundle_stage" "$release_directory" || orm_die 'could not publish complete release bundle.'
 cleanup
 work_directory=''
