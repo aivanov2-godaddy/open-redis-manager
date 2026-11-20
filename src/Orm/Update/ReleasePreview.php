@@ -102,7 +102,7 @@ final class ReleasePreview
             return ['ok' => false, 'message' => 'The signed-update verifier response did not meet ORM’s preview contract.'];
         }
 
-        foreach (['add', 'adopt', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $action) {
+        foreach (['add', 'adopt', 'normalize', 'replace', 'unchanged', 'move', 'conflict', 'retire'] as $action) {
             if (!isset($preview['summary'][$action]) || !is_int($preview['summary'][$action])
                 || $preview['summary'][$action] < 0) {
                 return ['ok' => false, 'message' => 'The signed-update verifier returned an invalid file summary.'];
@@ -112,8 +112,10 @@ final class ReleasePreview
         foreach ($preview['fileActions'] as $entry) {
             if (!is_array($entry) || !is_string($entry['key'] ?? null)
                 || !preg_match('/\A[a-z_]{1,64}\z/D', $entry['key'])
-                || !in_array($entry['action'] ?? null, ['add', 'adopt', 'replace', 'unchanged', 'move', 'conflict', 'retire'], true)
-                || (($entry['action'] ?? null) === 'adopt' && ($entry['requiresReview'] ?? null) !== true)
+                || !in_array($entry['action'] ?? null, ['add', 'adopt', 'normalize', 'replace', 'unchanged', 'move', 'conflict', 'retire'], true)
+                || (in_array(($entry['action'] ?? null), ['adopt', 'normalize'], true) && ($entry['requiresReview'] ?? null) !== true)
+                || (($entry['action'] ?? null) === 'normalize' && (!is_string($entry['observedSha256'] ?? null)
+                    || !preg_match('/\A[a-f0-9]{64}\z/D', $entry['observedSha256'])))
                 || !is_string($entry['target'] ?? null)
                 || !self::isManagedTarget($entry['target'], $allowedTargets)) {
                 return ['ok' => false, 'message' => 'The signed-update verifier returned an invalid file action.'];
@@ -123,6 +125,7 @@ final class ReleasePreview
                 'action' => $entry['action'],
                 'target' => $entry['target'],
                 'requiresReview' => ($entry['requiresReview'] ?? false) === true,
+                'observedSha256' => ($entry['action'] ?? null) === 'normalize' ? $entry['observedSha256'] : null,
             ];
         }
 

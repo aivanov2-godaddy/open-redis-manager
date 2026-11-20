@@ -121,6 +121,17 @@ sub file_digest {
     return $digest->hexdigest;
 }
 
+sub crlf_normalized_digest {
+    my ($path) = @_;
+    open my $handle, '<:raw', $path or fail('could not read a potential line-ending-only target');
+    local $/;
+    my $bytes = <$handle>;
+    close $handle or fail('could not finish reading a potential line-ending-only target');
+    return undef if !defined($bytes) || $bytes !~ /\r\n/ || $bytes =~ /\x00/ || $bytes =~ /\r(?!\n)/;
+    $bytes =~ s/\r\n/\n/g;
+    return Digest::SHA::sha256_hex($bytes);
+}
+
 if (defined $test_target_root) {
     $test_target_root =~ m{\A/} && -d $test_target_root && !-l $test_target_root
         or fail('test target root is invalid');
@@ -273,13 +284,14 @@ for my $key (sort keys %installed) {
 }
 
 my @actions;
-my %action_counts = map { $_ => 0 } qw(add adopt replace unchanged move conflict retire);
+my %action_counts = map { $_ => 0 } qw(add adopt normalize replace unchanged move conflict retire);
 for my $key (sort keys %candidate) {
     my $next = $candidate{$key};
     my $before = $installed{$key};
     my $destination = physical_path($next->{target});
     check_safe_directory_chain($destination, 1);
     my $action;
+    my $observed_digest;
     if ($before) {
         if ($before->{integrityConflict}) {
             $action = 'conflict';
@@ -296,9 +308,19 @@ for my $key (sort keys %candidate) {
             my @destination_info = lstat($destination);
             if (@destination_info && S_ISREG($destination_info[2])
                 && $destination_info[4] == 0
-                && sprintf('%o', mode_of($destination_info[2])) eq $next->{mode}
-                && file_digest($destination) eq $next->{sha256}) {
-                $action = 'adopt';
+                && sprintf('%o', mode_of($destination_info[2])) eq $next->{mode}) {
+                my $actual_digest = file_digest($destination);
+                if ($actual_digest eq $next->{sha256}) {
+                    $action = 'adopt';
+                } else {
+                    my $normalized_digest = crlf_normalized_digest($destination);
+                    if (defined($normalized_digest) && $normalized_digest eq $next->{sha256}) {
+                        $action = 'normalize';
+                        $observed_digest = $actual_digest;
+                    } else {
+                        $action = 'conflict';
+                    }
+                }
             } else {
                 $action = 'conflict';
             }
@@ -314,7 +336,8 @@ for my $key (sort keys %candidate) {
         target => $next->{target},
         mode => $next->{mode},
         sha256 => $next->{sha256},
-        requiresReview => $action eq 'conflict' || $action eq 'adopt' ? JSON::PP::true : JSON::PP::false,
+        requiresReview => $action eq 'conflict' || $action eq 'adopt' || $action eq 'normalize' ? JSON::PP::true : JSON::PP::false,
+        (defined($observed_digest) ? (observedSha256 => $observed_digest) : ()),
     };
     if ($before && $before->{integrityConflict}) {
         $actions[-1]{conflictReason} = $before->{integrityConflict}{reason};

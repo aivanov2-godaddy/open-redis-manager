@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/lib.sh"
+source "$ORM_PACKAGE_ROOT/release-lib.sh"
 
 usage() {
     cat <<'HELP'
@@ -90,7 +91,7 @@ cleanup_recovery() { rm -f -- "$temporary" "$candidate_manifest"; }
 trap cleanup_recovery EXIT
 
 # Parse and bind the journal and action file to this build's fixed package map.
-declare -A map_source=() map_target=() map_mode=() old_digest=() action=() source=() target=() mode=() candidate_digest=()
+declare -A map_source=() map_target=() map_mode=() old_digest=() previous_digest=() action=() source=() target=() mode=() candidate_digest=()
 while IFS='|' read -r key src dst perm extra; do
     [[ "$key" =~ ^[a-z_]+$ && -z "${extra:-}" && -z "${map_target[$key]+x}" ]] || orm_die 'compiled package allowlist is invalid.'
     map_source[$key]="$src"; map_target[$key]="$dst"; map_mode[$key]="$perm"
@@ -118,16 +119,22 @@ esac
 tail -n +6 -- "$workspace/journal" >"$temporary"
 cmp -s -- "$temporary" "$workspace/actions.txt" || orm_die 'journal actions do not exactly match actions.txt.'
 
-while IFS='|' read -r key op src dst perm digest extra || [[ -n "${key:-}" ]]; do
+while IFS='|' read -r key op src dst perm digest previous extra || [[ -n "${key:-}" ]]; do
     [[ "$key" =~ ^[a-z_]+$ ]] || orm_die 'journal contains an invalid action key.'
     expected_source="${map_source[$key]:-}"
     expected_source="${expected_source#${ORM_REPO_ROOT}/}"
     [[ -n "$key" && -z "${extra:-}" && -n "${map_target[$key]+x}" \
-        && -z "${action[$key]+x}" && "$op" =~ ^(add|adopt|replace|unchanged)$ \
+        && -z "${action[$key]+x}" && "$op" =~ ^(add|adopt|normalize|replace|unchanged)$ \
         && "$src" == "$expected_source" && "$dst" == "${map_target[$key]}" \
         && "$perm" == "${map_mode[$key]}" && "$digest" =~ ^[a-f0-9]{64}$ ]] \
         || orm_die 'journal contains an unknown, duplicate, or malformed package action.'
+    if [[ "$op" == normalize ]]; then
+        [[ "${previous:-}" =~ ^[a-f0-9]{64}$ ]] || orm_die 'normalize journal action has no previous file digest.'
+    else
+        [[ -z "${previous:-}" ]] || orm_die 'journal contains an unexpected previous file digest.'
+    fi
     action[$key]="$op"; source[$key]="$src"; target[$key]="$dst"; mode[$key]="$perm"; candidate_digest[$key]="$digest"
+    previous_digest[$key]="${previous:-}"
 done <"$workspace/actions.txt"
 [[ ${#action[@]} -eq ${#map_target[@]} ]] || orm_die 'journal does not cover the complete compiled package allowlist.'
 broker_files_changed=0
@@ -152,7 +159,7 @@ while IFS='|' read -r key perm digest dst extra || [[ -n "${key:-}" ]]; do
 done < <(tail -n +3 -- "$workspace/install-manifest.old")
 [[ ${#old_digest[@]} -gt 0 ]] || orm_die 'old manifest has no managed files.'
 
-while IFS='|' read -r key op src dst perm digest; do
+while IFS='|' read -r key op src dst perm digest previous; do
     [[ "$key" != whm_appconfig ]] || {
         [[ ( "$op" == unchanged || "$op" == replace ) && -n "${old_digest[$key]+x}" ]] \
             || orm_die 'WHM AppConfig changes are outside signed-release recovery.'
@@ -167,6 +174,7 @@ while IFS='|' read -r key op src dst perm digest; do
     case "$op" in
         add) [[ -z "${old_digest[$key]+x}" ]] || orm_die "add action conflicts with the old manifest: $key" ;;
         adopt) [[ -z "${old_digest[$key]+x}" ]] || orm_die "adopt action conflicts with the old manifest: $key" ;;
+        normalize) [[ -z "${old_digest[$key]+x}" ]] || orm_die "normalize action conflicts with the old manifest: $key" ;;
         replace|unchanged) [[ -n "${old_digest[$key]+x}" ]] || orm_die "action is missing from the old manifest: $key" ;;
     esac
     [[ "$op" != unchanged || "$digest" == "${old_digest[$key]}" ]] || orm_die "unchanged action differs from the old manifest: $key"
@@ -188,6 +196,19 @@ while IFS='|' read -r key op src dst perm digest; do
         current="$(sha256sum "$physical" | awk '{print $1}')"
         [[ "$current" == "${old_digest[$key]}" || "$current" == "$digest" ]] \
             || orm_die "replacement target has an unexpected digest; preserve it for administrator review: $key"
+    elif [[ "$op" == normalize ]]; then
+        backup="$workspace/backup/$key"
+        [[ -z "${old_digest[$key]+x}" && -f "$backup" && ! -L "$backup" \
+            && "$(stat -c '%u:%g:%a' "$backup")" == "0:0:$perm" \
+            && "$(sha256sum "$backup" | awk '{print $1}')" == "${previous_digest[$key]}" ]] \
+            || orm_die "normalize backup is missing, unsafe, or does not match the recorded previous file: $key"
+        [[ -f "$physical" && ! -L "$physical" && "$(stat -c '%u:%a' "$physical")" == "0:$perm" ]] \
+            || orm_die "normalized target is missing or unsafe: $key"
+        current="$(sha256sum "$physical" | awk '{print $1}')"
+        [[ "$current" == "${previous_digest[$key]}" || "$current" == "$digest" ]] \
+            || orm_die "normalized target has an unexpected digest; preserve it for administrator review: $key"
+        [[ "$(orm_release_crlf_normalized_sha256 "$backup")" == "$digest" ]] \
+            || orm_die "normalize backup does not normalize to the signed candidate: $key"
     elif [[ "$op" == add ]]; then
         if [[ -e "$physical" || -L "$physical" ]]; then
             [[ -f "$physical" && ! -L "$physical" && "$(stat -c '%u:%a' "$physical")" == "0:$perm" \
@@ -207,7 +228,7 @@ done <"$workspace/actions.txt"
 
 backup_keys="$(find "$workspace/backup" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | sort)"
 expected_backup_keys="$(while IFS='|' read -r key op _; do
-    if [[ "$op" == replace && "$key" != whm_appconfig ]]; then printf '%s\n' "$key"; else :; fi
+    if [[ ( "$op" == replace || "$op" == normalize ) && "$key" != whm_appconfig ]]; then printf '%s\n' "$key"; else :; fi
 done <"$workspace/actions.txt" | sort)"
 [[ -z "$(find "$workspace/backup" -mindepth 1 -maxdepth 1 ! -type f -print -quit)" ]] || orm_die 'backup directory contains a non-regular or symlink entry.'
 [[ "$backup_keys" == "$expected_backup_keys" ]] || orm_die 'backup directory has missing or unexpected entries.'
@@ -216,7 +237,7 @@ done <"$workspace/actions.txt" | sort)"
 # the installed one with either that value or the byte-identical old manifest.
 {
     printf 'orm-install-manifest-v3\nversion|%s\n' "$candidate_version"
-    while IFS='|' read -r key op src dst perm digest; do
+    while IFS='|' read -r key op src dst perm digest previous; do
         [[ "$key" != whm_appconfig ]] || digest="${old_digest[$key]}"
         printf '%s|%s|%s|%s\n' "$key" "$perm" "$digest" "$dst"
     done <"$workspace/actions.txt"
@@ -257,7 +278,8 @@ for ((index=${#action_keys[@]}-1; index>=0; index--)); do
         fi
     else
         current="$(sha256sum "$physical" | awk '{print $1}')"
-        if [[ "$current" != "${old_digest[$key]}" ]]; then
+        expected_old="${old_digest[$key]:-${previous_digest[$key]:-}}"
+        if [[ "$current" != "$expected_old" ]]; then
             temp_file="$(mktemp "$(dirname -- "$physical")/.orm-recover.XXXXXXXX")"
             if ! cp -p -- "$workspace/backup/$key" "$temp_file" \
                 || ! chown root:root "$temp_file" || ! chmod "${mode[$key]}" "$temp_file" \

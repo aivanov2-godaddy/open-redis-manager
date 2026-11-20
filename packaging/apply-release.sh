@@ -254,10 +254,10 @@ write_preview() {
             or die "release contains unsupported migration actions\n";
         ref($preview->{fileActions}) eq "ARRAY" or die "invalid preview actions\n";
         for my $action (@{$preview->{fileActions}}) {
-            $action->{action} =~ /\A(?:add|adopt|replace|unchanged)\z/
+            $action->{action} =~ /\A(?:add|adopt|normalize|replace|unchanged)\z/
                 or die "preview contains an unsupported action\n";
-            $action->{action} ne "adopt" || $action->{requiresReview}
-                or die "adopt action does not require explicit review\n";
+            $action->{action} !~ /\A(?:adopt|normalize)\z/ || $action->{requiresReview}
+                or die "adopt or normalize action does not require explicit review\n";
         }
         print JSON::PP->new->canonical->encode($preview), "\n";
     ' <"$preview_file" >"$workspace/checked-preview.json" \
@@ -273,14 +273,20 @@ write_preview() {
             my $source = $action->{source} // q{};
             $source =~ /\A[A-Za-z0-9._\/\@-]*\z/ or die "unsafe archive source\n";
             join(q{|}, @{$action}{qw(key action)}, $source,
-                @{$action}{qw(target mode sha256)}) =~ /\A[a-z_]+\|(?:add|adopt|replace|unchanged)\|[^|]*\|\/[^|]+\|(?:600|644|755)\|[a-f0-9]{64}\z/
+                @{$action}{qw(target mode sha256)}) =~ /\A[a-z_]+\|(?:add|adopt|normalize|replace|unchanged)\|[^|]*\|\/[^|]+\|(?:600|644|755)\|[a-f0-9]{64}\z/
                 or die "unsafe preview row\n";
-            if ($action->{action} eq "adopt") {
+            my $observed_digest = $action->{observedSha256} // q{};
+            if ($action->{action} eq "adopt" || $action->{action} eq "normalize") {
                 defined($action->{requiresReview}) && $action->{requiresReview}
-                    or die "adopt action does not require explicit review\n";
+                    or die "adopt or normalize action does not require explicit review\n";
+            }
+            if ($action->{action} eq "normalize") {
+                $observed_digest =~ /\A[a-f0-9]{64}\z/ or die "normalize action lacks its previous digest\n";
+            } else {
+                $observed_digest eq q{} or die "unexpected previous digest on non-normalize action\n";
             }
             print join(q{|}, @{$action}{qw(key action)}, $source,
-                @{$action}{qw(target mode sha256)}), "\n";
+                @{$action}{qw(target mode sha256)}, $observed_digest), "\n";
         }
     ' <"$preview_file" >"$actions_file" \
         || orm_die 'release preview contains an invalid file action.'
@@ -313,15 +319,22 @@ release_root="$staging/orm-$candidate_version"
 orm_release_install_map_is_compatible "$release_root/packaging/release-install-map.txt" "$ORM_PACKAGE_ROOT/release-install-map.txt" \
     || orm_die 'staged release install map differs from the updater allowlist.'
 
-declare -A candidate_digest=() installed_digest=() installed_mode=() action_for_key=() target_for_key=() mode_for_key=() source_for_key=()
-while IFS='|' read -r key action source target mode digest; do
+declare -A candidate_digest=() previous_digest=() installed_digest=() installed_mode=() action_for_key=() target_for_key=() mode_for_key=() source_for_key=()
+while IFS='|' read -r key action source target mode digest previous extra; do
     [[ "$key" =~ ^[a-z_]+$ && "$target" == /* && "$mode" =~ ^(600|644|755)$ && "$digest" =~ ^[a-f0-9]{64}$ ]] \
         || orm_die 'preview contains an invalid target record.'
+    [[ -z "${extra:-}" ]] || orm_die 'preview contains an extra target field.'
+    if [[ "$action" == normalize ]]; then
+        [[ "$previous" =~ ^[a-f0-9]{64}$ ]] || orm_die 'normalize action lacks its previous file digest.'
+    else
+        [[ -z "${previous:-}" ]] || orm_die 'preview contains an unexpected previous file digest.'
+    fi
     action_for_key[$key]="$action"
     target_for_key[$key]="$target"
     mode_for_key[$key]="$mode"
     source_for_key[$key]="$source"
     candidate_digest[$key]="$digest"
+    previous_digest[$key]="${previous:-}"
 done <"$actions_file"
 
 while IFS='|' read -r key mode digest target extra; do
@@ -331,7 +344,7 @@ while IFS='|' read -r key mode digest target extra; do
     installed_mode[$key]="$mode"
 done < <(awk 'NR > 2 { print }' "$install_manifest")
 
-while IFS='|' read -r key action source target mode digest; do
+while IFS='|' read -r key action source target mode digest previous; do
     physical="$(physical_target "$target")"
     if [[ "$key" == whm_appconfig ]]; then
         [[ "$action" == replace || "$action" == unchanged ]] \
@@ -356,6 +369,12 @@ while IFS='|' read -r key action source target mode digest; do
             && "$(stat -c '%a' -- "$physical")" == "$mode" \
             && "$(sha256sum -- "$physical" | awk '{print $1}')" == "$digest" ]] \
             || orm_die 'an adopt target no longer matches the exact signed candidate; no files were changed.'
+    elif [[ "$action" == normalize ]]; then
+        [[ -z "${installed_digest[$key]+x}" && -f "$physical" && ! -L "$physical" \
+            && "$(stat -c '%u:%a' -- "$physical")" == "0:$mode" \
+            && "$(sha256sum -- "$physical" | awk '{print $1}')" == "$previous" \
+            && "$(orm_release_crlf_normalized_sha256 "$physical")" == "$digest" ]] \
+            || orm_die 'a normalize target no longer differs from the exact signed candidate only by CRLF line endings; no files were changed.'
     elif [[ "$action" == add ]]; then
         [[ ! -e "$physical" && ! -L "$physical" ]] || orm_die 'an add target appeared after preview; refusing to overwrite it.'
     else
@@ -387,17 +406,17 @@ fi
 cp -a -- "$install_manifest" "$manifest_backup"
 chmod 0600 -- "$manifest_backup"
 chown root:root -- "$manifest_backup"
-while IFS='|' read -r key action source target mode digest; do
+while IFS='|' read -r key action source target mode digest previous; do
     [[ "$action" == unchanged || "$action" == adopt || "$key" == whm_appconfig ]] && continue
     physical="$(physical_target "$target")"
-    if [[ "$action" == replace ]]; then
+    if [[ "$action" == replace || "$action" == normalize ]]; then
         cp -a -- "$physical" "$backup_root/$key" || orm_die 'could not snapshot an ORM-managed target.'
     fi
 done <"$actions_file"
 
 write_journal applying || orm_die 'could not record the durable update recovery journal.'
 mutated=1
-while IFS='|' read -r key action source target mode digest; do
+while IFS='|' read -r key action source target mode digest previous; do
     [[ "$action" == unchanged || "$action" == adopt || "$key" == whm_appconfig ]] && continue
     physical="$(physical_target "$target")"
     parent="$(dirname -- "$physical")"
@@ -408,6 +427,12 @@ while IFS='|' read -r key action source target mode digest; do
     orm_safe_target_parent_chain "$physical" || orm_die 'target directory changed during update.'
     if [[ "$action" == add ]]; then
         [[ ! -e "$physical" && ! -L "$physical" ]] || orm_die 'an add target changed immediately before installation.'
+    elif [[ "$action" == normalize ]]; then
+        [[ -f "$physical" && ! -L "$physical" \
+            && "$(stat -c '%u:%a' -- "$physical")" == "0:$mode" \
+            && "$(sha256sum -- "$physical" | awk '{print $1}')" == "$previous" \
+            && "$(orm_release_crlf_normalized_sha256 "$physical")" == "$digest" ]] \
+            || orm_die 'a normalize target changed immediately before installation.'
     else
         [[ -f "$physical" && ! -L "$physical" \
             && "$(stat -c '%u' -- "$physical")" == 0 \
@@ -435,7 +460,7 @@ fi
 
 {
     printf 'orm-install-manifest-v3\nversion|%s\n' "$candidate_version"
-    while IFS='|' read -r key action source target mode digest; do
+    while IFS='|' read -r key action source target mode digest previous; do
         physical="$(physical_target "$target")"
         if [[ "$key" == whm_appconfig ]]; then
             digest="$(sha256sum -- "$physical" | awk '{print $1}')" || orm_die 'could not hash registered WHM AppConfig.'
