@@ -47,3 +47,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: cpanel-icon-assets
+        name: cPanel icon asset checks
+        entry: python tests/cpanel-icon-assets.py
+        language: system
+        pass_filenames: false
+        always_run: true
