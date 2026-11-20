@@ -23,4 +23,6 @@ Use the transaction journal and installed manifest to inspect every action:
 
 The updater does not modify Redis/Valkey instance data, account records, credentials, backend choice, provider policy, cPanel plugin registration, or WHM AppConfig. Do not restore or remove those paths as part of ORM update recovery. If any file is missing from the recovery workspace, its digest differs unexpectedly, or service state cannot be verified, stop and use the host snapshot with cPanel support rather than guessing.
 
+Linux integration CI exercises a hard process termination after an atomic managed-file replacement but before the next journal checkpoint. It verifies that the prior manifest, root-owned transaction journal, and file backup remain available, that account and Redis fixture data is unchanged, that no success audit entry is written, and that a retry fails closed. This is isolated fixture evidence; it does not replace live cPanel interruption and manual-recovery validation.
+
 The audit log at `/var/cpanel/orm/updates/update-audit.jsonl` contains fixed metadata fields (actor, versions, artifact digest, timestamp and outcome); it does not contain credentials or file contents. Process termination can occur before an outcome record is appended, so the retained transaction journal is authoritative for an interrupted transaction.

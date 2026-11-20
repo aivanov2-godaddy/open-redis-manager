@@ -38,7 +38,7 @@ jobs:
         run: sudo bash tests/packaging-release-build.sh
       - name: Check signed release archive structure
         run: sudo bash tests/packaging-release-archive.sh
-      - name: Check signed release apply and rollback
+      - name: Check signed release apply, rollback, and interruption
         run: sudo bash tests/packaging-release-apply.sh
       - name: Check signed update preview contract
         run: php tests/release-preview.php
