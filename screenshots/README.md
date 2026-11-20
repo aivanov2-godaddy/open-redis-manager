@@ -25,7 +25,7 @@ Screenshots below are local prototype captures using sample data. The logo, cPan
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |
 | [WHM security](whm-security.png) | Security signals and report-only policy | 1500 × 1200 |
-| [WHM security report](whm-security-report.png) | Report-only resource findings, measured counter-rate windows, partial evidence and explicit unknown authentication signals | Static sample-data preview; [HTML source](previews/whm-security-report.html) |
+| [WHM security report](whm-security-report.png) | Report-only resource findings, configurable advisory thresholds, measured counter-rate windows, partial evidence and explicit unknown authentication signals | 1440 × 1660 static sample-data preview; [HTML source](previews/whm-security-report.html) |
 | [WHM package and reseller policy](whm-package-policy.png) | Root-only mode and exposure defaults, package ceilings, reseller usage, and quotas | Static preview; [HTML source](previews/whm-package-policy.html) |
 | [WHM provider branding](whm-provider-branding.png) | Provider identity controls and a synthetic live cPanel preview | Static preview; [HTML source](previews/whm-provider-branding.html) |
 | [WHM audit log](whm-audit-log.png) | Root-only UTC filters, source coverage status, normalized events, and JSON export | Synthetic sample data; [HTML source](previews/whm-audit-log.html) |

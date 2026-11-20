@@ -22,6 +22,7 @@ src/Orm/Security/SessionRequestGuard.php
 src/Orm/Security/WhmAuditLog.php
 src/Orm/Security/WhmAuditEventWriter.php
 src/Orm/Security/WhmSecurityReport.php
+src/Orm/Security/WhmSecurityReportPolicyStore.php
 src/Orm/Cpanel/AuthenticatedAccountContext.php
 src/Orm/Cpanel/BrokerIdentityVerifier.php
 src/Orm/Cpanel/BrokerClient.php

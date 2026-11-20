@@ -77,8 +77,15 @@ final class WhmSecurityReport
     /** @param array<string,mixed>|null $fleet @param array<string,mixed>|null $audit
      *  @return array<string,mixed>
      */
-    public static function build(?array $fleet, ?array $audit, int $generatedAt): array
+    public static function build(?array $fleet, ?array $audit, int $generatedAt,
+        ?array $securityPolicy = null, bool $policyAvailable = true): array
     {
+        $policy = $securityPolicy === null
+            ? self::defaultSecurityReportPolicy()
+            : WhmSecurityReportPolicyStore::normalize($securityPolicy);
+        $policyValid = $policyAvailable && $policy !== null;
+        $policy ??= self::defaultSecurityReportPolicy();
+        $thresholds = $policy['thresholds'];
         $metrics = is_array($fleet['metrics'] ?? null) ? $fleet['metrics'] : null;
         $fleetValid = ($fleet['success'] ?? null) === true && is_array($metrics)
             && is_int($metrics['fresh_accounts'] ?? null) && $metrics['fresh_accounts'] >= 0
@@ -153,8 +160,14 @@ final class WhmSecurityReport
             && is_bool($audit['partial'] ?? null) && is_array($audit['sources'] ?? null);
         $partial = !$fleetValid || !$ratesValid || !$authRatesValid || !$auditValid || ($fleet['partial'] ?? true) !== false
             || ($audit['partial'] ?? true) !== false || ($ratesValid && $metrics['rate_missing_accounts'] > 0);
-        $partial = $partial || ($authRatesValid && $metrics['auth_rate_missing_accounts'] > 0);
+        $partial = $partial || ($authRatesValid && $metrics['auth_rate_missing_accounts'] > 0) || !$policyValid;
         $findings = [];
+
+        if (!$policyValid) {
+            $findings[] = self::finding('report_policy_unavailable', 'unknown', null,
+                'The root-owned security report policy could not be verified; optional abuse thresholds were not evaluated.',
+                'Repair or restore the root-owned report policy before relying on threshold-based findings.');
+        }
 
         if ($fleetValid) {
             $sampledAt = $metrics['latest_sampled_at'];
@@ -179,15 +192,27 @@ final class WhmSecurityReport
                 . ' managed accounts have valid counter windows; ' . $metrics['rate_missing_accounts'] . ' are unknown.';
             $window = ' Individual intervals were ' . $metrics['rate_window_min_seconds'] . '–'
                 . $metrics['rate_window_max_seconds'] . ' seconds, spanning ' . $windowStart . ' through ' . $windowEnd . '.';
-            $findings[] = self::finding('eviction_rate', 'info', $metrics['eviction_activity_accounts'],
+            $evictionThreshold = $thresholds['evictions_per_window'];
+            $evictionExceeded = $policyValid && $evictionThreshold > 0
+                && $metrics['max_evictions_per_window'] >= $evictionThreshold;
+            $findings[] = self::finding('eviction_rate', $evictionExceeded ? 'warning' : 'info', $metrics['eviction_activity_accounts'],
                 $coverage . ' ' . $metrics['eviction_activity_accounts'] . ' accounts recorded evictions; the largest per-account delta was '
-                . $metrics['max_evictions_per_window'] . '.' . $window,
-                'Review eviction policy and cache capacity when evictions are unexpected.',
+                . $metrics['max_evictions_per_window'] . '.' . $window
+                . ($evictionThreshold > 0 ? ' Report-only threshold: ' . $evictionThreshold . ' evictions per sampled interval.' : ''),
+                $evictionExceeded
+                    ? 'Review eviction policy and cache capacity. This aggregate threshold is not an abuse verdict and takes no automatic action.'
+                    : 'Review eviction policy and cache capacity when evictions are unexpected.',
                 gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
-            $findings[] = self::finding('operation_rate', 'info', $metrics['rate_accounts'],
+            $operationThreshold = $thresholds['operations_per_second'];
+            $operationExceeded = $policyValid && $operationThreshold > 0
+                && $metrics['max_operations_per_second'] >= $operationThreshold;
+            $findings[] = self::finding('operation_rate', $operationExceeded ? 'warning' : 'info', $metrics['rate_accounts'],
                 $coverage . ' The maximum observed average was ' . $metrics['max_operations_per_second']
-                . ' operations per second.' . $window . ' This is descriptive load evidence, not an abuse verdict.',
-                'Compare measured rates and timing with the expected application workload; no abuse threshold is configured.',
+                . ' operations per second.' . $window . ' This is descriptive load evidence, not an abuse verdict.'
+                . ($operationThreshold > 0 ? ' Report-only threshold: ' . $operationThreshold . ' operations per second.' : ''),
+                $operationExceeded
+                    ? 'Compare measured rates and timing with the expected application workload. This threshold is advisory and takes no automatic action.'
+                    : 'Compare measured rates and timing with the expected application workload; no operation-rate threshold is configured.',
                 gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
         } else {
             $findings[] = self::finding('eviction_rate', 'unknown', null,
@@ -204,14 +229,20 @@ final class WhmSecurityReport
             $authCoverage = $metrics['auth_rate_accounts'] . ' of ' . $fleet['managed_count']
                 . ' managed accounts expose valid authentication-failure counter windows; '
                 . $metrics['auth_rate_missing_accounts'] . ' are unknown.';
-            $findings[] = self::finding('client_authentication_failures', 'info', $metrics['auth_failure_accounts'],
+            $authThreshold = $thresholds['auth_failures_per_window'];
+            $authExceeded = $policyValid && $authThreshold > 0
+                && $metrics['max_auth_failures_per_window'] >= $authThreshold;
+            $findings[] = self::finding('client_authentication_failures', $authExceeded ? 'warning' : 'info', $metrics['auth_failure_accounts'],
                 $authCoverage . ' ' . $metrics['auth_failure_accounts'] . ' accounts recorded one or more failures; '
                 . 'the largest per-account counter delta was ' . $metrics['max_auth_failures_per_window']
                 . '. These aggregate backend counters do not identify clients or distinguish mistakes from attacks. '
                 . 'Individual intervals were ' . $metrics['auth_rate_window_min_seconds'] . '–'
                 . $metrics['auth_rate_window_max_seconds'] . ' seconds, spanning ' . $authWindowStart
-                . ' through ' . $authWindowEnd . '.' ,
-                'Review application credentials and expected connection behavior; no abuse threshold is configured.',
+                . ' through ' . $authWindowEnd . '.'
+                . ($authThreshold > 0 ? ' Report-only threshold: ' . $authThreshold . ' failures per sampled interval.' : ''),
+                $authExceeded
+                    ? 'Review application credentials and expected connection behavior. This anonymous aggregate threshold does not identify a client or take automatic action.'
+                    : 'Review application credentials and expected connection behavior; no authentication-failure threshold is configured.',
                 gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_latest_end_at']));
         } else {
             $findings[] = self::finding('client_authentication_failures', 'unknown', null,
@@ -260,6 +291,19 @@ final class WhmSecurityReport
             'partial' => $partial,
             'findings' => $findings,
             'unmeasured' => $unmeasured,
+        ];
+    }
+
+    /** @return array{version:int,thresholds:array{evictions_per_window:int,operations_per_second:int,auth_failures_per_window:int}} */
+    private static function defaultSecurityReportPolicy(): array
+    {
+        return [
+            'version' => 1,
+            'thresholds' => [
+                'evictions_per_window' => 0,
+                'operations_per_second' => 0,
+                'auth_failures_per_window' => 0,
+            ],
         ];
     }
 

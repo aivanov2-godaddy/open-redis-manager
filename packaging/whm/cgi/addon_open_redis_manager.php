@@ -9,6 +9,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReportPolicyStore.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Update/ReleasePreview.php';
@@ -23,6 +24,8 @@ $policyStore = new \Orm\Backend\BackendPolicyStore();
 $policy = $rootAuthorized ? $policyStore->selectedBackend() : null;
 $providerPolicyStore = new \Orm\Backend\ProviderPolicyStore();
 $providerPolicy = $rootAuthorized ? $providerPolicyStore->load() : null;
+$securityReportPolicyStore = new \Orm\Security\WhmSecurityReportPolicyStore();
+$securityReportPolicy = $rootAuthorized ? $securityReportPolicyStore->load() : null;
 $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 10000]]);
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
@@ -60,6 +63,45 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
 }
 $securityReport = null;
 $securityReportMessage = null;
+$securityReportPolicyMessage = $rootAuthorized && $securityReportPolicy === null
+    ? ['type' => 'error', 'text' => 'The root-owned report policy could not be verified. Thresholds are not evaluated until the policy is repaired.']
+    : null;
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'security.policy.update') {
+    $readSecurityThreshold = static function (string $key): ?int {
+        $raw = $_POST[$key] ?? null;
+        if (!is_string($raw) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', $raw) !== 1) {
+            return null;
+        }
+        $value = filter_var($raw, FILTER_VALIDATE_INT);
+        return is_int($value) && $value >= 0 && $value <= 9_000_000_000_000_000 ? $value : null;
+    };
+    $evictionsThreshold = $readSecurityThreshold('security_evictions_threshold');
+    $operationsThreshold = $readSecurityThreshold('security_operations_threshold');
+    $authThreshold = $readSecurityThreshold('security_auth_failures_threshold');
+    $submittedPolicy = [
+        'version' => 1,
+        'thresholds' => [
+            'evictions_per_window' => $evictionsThreshold,
+            'operations_per_second' => $operationsThreshold,
+            'auth_failures_per_window' => $authThreshold,
+        ],
+    ];
+    if ($evictionsThreshold === null || $operationsThreshold === null || $authThreshold === null
+        || !$securityReportPolicyStore->save($submittedPolicy)) {
+        $securityReportPolicyMessage = ['type' => 'error', 'text' => 'The report-only thresholds are invalid or could not be saved securely. No changes were applied.'];
+        \Orm\Security\WhmAuditEventWriter::securityReportPolicyChanged(false);
+    } else {
+        $securityReportPolicy = $securityReportPolicyStore->load();
+        $auditLogged = \Orm\Security\WhmAuditEventWriter::securityReportPolicyChanged(true);
+        $securityReportPolicyMessage = [
+            'type' => 'success',
+            'text' => $auditLogged
+                ? 'Report-only thresholds saved. No automatic enforcement or service changes were applied.'
+                : 'Report-only thresholds were saved, but the audit event could not be confirmed.',
+        ];
+    }
+}
 if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'security.report') {
     $generatedAt = time();
@@ -71,7 +113,9 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         $securityAudit = (new \Orm\Security\WhmAuditLog())->read(
             max(0, $generatedAt - 86400), $generatedAt
         );
-        $securityReport = \Orm\Security\WhmSecurityReport::build($securityFleet, $securityAudit, $generatedAt);
+        $securityReport = \Orm\Security\WhmSecurityReport::build(
+            $securityFleet, $securityAudit, $generatedAt, $securityReportPolicy, $securityReportPolicy !== null
+        );
         $auditLogged = \Orm\Security\WhmAuditEventWriter::securityReportGenerated();
         $securityReportMessage = [
             'type' => $securityFleet === null ? 'error' : 'success',
@@ -812,7 +856,21 @@ WHM::header('Open Redis Manager', 0, 0);
         <?php endif; ?>
         <section aria-labelledby="orm-security-report-title">
           <h3 id="orm-security-report-title">Security and abuse review</h3>
-          <p>This report is read-only and report-only. It uses fresh fleet metrics, verified counter deltas from bounded sample windows, and normalized ORM AUTH management events. Where supported, backend authentication-failure counters are anonymous and aggregate; they do not identify clients or distinguish mistakes from attacks. Missing fields and resets remain unknown. Rates are descriptive signals without an abuse threshold; the report does not inspect passwords or Redis keys and does not enforce or remediate.</p>
+          <p>This report is read-only and report-only. It uses fresh fleet metrics, verified counter deltas from bounded sample windows, and normalized ORM AUTH management events. Where supported, backend authentication-failure counters are anonymous and aggregate; they do not identify clients or distinguish mistakes from attacks. Missing fields and resets remain unknown. Optional thresholds only change report severity; they do not enforce, remediate, or change the separate provider capacity policy. The report does not inspect passwords or Redis keys.</p>
+          <?php if ($securityReportPolicyMessage !== null): ?><p role="<?= $securityReportPolicyMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportPolicyMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+          <?php if ($rootAuthorized): ?>
+          <form method="post" aria-label="Configure report-only thresholds">
+            <input type="hidden" name="orm_action" value="security.policy.update">
+            <label for="orm-security-evictions">Evictions per sampled interval (0 disables)</label>
+            <input id="orm-security-evictions" name="security_evictions_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['evictions_per_window'] ?? 0) ?>" required>
+            <label for="orm-security-operations">Average operations per second (0 disables)</label>
+            <input id="orm-security-operations" name="security_operations_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['operations_per_second'] ?? 0) ?>" required>
+            <label for="orm-security-auth">Authentication failures per sampled interval (0 disables)</label>
+            <input id="orm-security-auth" name="security_auth_failures_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['auth_failures_per_window'] ?? 0) ?>" required>
+            <p>Intervals vary by the actual collected samples (up to 26 hours). Thresholds are disabled by default and are advisory only.</p>
+            <button type="submit">Save report thresholds</button>
+          </form>
+          <?php endif; ?>
           <?php if ($securityReportMessage !== null): ?><p role="<?= $securityReportMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
           <form method="post">
             <input type="hidden" name="orm_action" value="security.report">
@@ -1320,7 +1378,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report'] as $action): ?>
+          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
