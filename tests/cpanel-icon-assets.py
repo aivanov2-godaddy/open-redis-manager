@@ -20,8 +20,8 @@ def main() -> int:
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
     if group is None or group.get("icon") != "orm-cpanel-group-v2.svg":
         raise SystemExit("the cPanel group must use the cache-busted ORM group SVG")
-    if feature is None or feature.get("icon") != "orm-cpanel-feature-v2.png":
-        raise SystemExit("the cPanel launcher must use the cache-busted ORM feature PNG")
+    if feature is None or feature.get("icon") != "orm-cpanel-feature-v2.svg":
+        raise SystemExit("the cPanel launcher must use the cache-busted ORM feature SVG")
 
     svg_path = ROOT / "icons" / "orm-cpanel-group-v2.svg"
     root = ET.parse(svg_path).getroot()
@@ -35,6 +35,15 @@ def main() -> int:
         or len(root.findall(f"{SVG_NS}path")) != 6
     ):
         raise SystemExit("the 32x32 cPanel group SVG must retain the approved red tile and white cache-cube mark")
+
+    feature_svg = ET.parse(ROOT / "icons" / "orm-cpanel-feature-v2.svg").getroot()
+    if (
+        feature_svg.tag != f"{SVG_NS}svg"
+        or (feature_svg.get("width"), feature_svg.get("height")) != ("48", "48")
+        or feature_svg.get("viewBox") != "0 0 256 256"
+        or len(feature_svg.findall(f"{SVG_NS}path")) != 6
+    ):
+        raise SystemExit("the cPanel launcher SVG must use the approved cache-cube artwork at 48x48 pixels")
 
     pngs = []
     for name in ("orm-cpanel-group-v2", "orm-cpanel-feature-v2"):
