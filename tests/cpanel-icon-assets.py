@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import struct
 import sys
 import xml.etree.ElementTree as ET
@@ -12,6 +13,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "packaging" / "cpanel"
 SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def has_flat_pixel_paths(root: ET.Element, expected_count: int, size: int) -> bool:
+    paths = list(root.iter(f"{SVG_NS}path"))
+    if len(paths) != expected_count or not all(path in root for path in paths):
+        return False
+    if any(node.get("transform") for node in root.iter()):
+        return False
+    return all(
+        all(abs(float(value)) <= size for value in re.findall(r"[-+]?(?:\d*\.)?\d+", path.get("d", "")))
+        for path in paths
+    )
 
 
 def main() -> int:
@@ -33,20 +46,18 @@ def main() -> int:
         or root.get("viewBox") != "0 0 32 32"
         or not any(node.get("fill") == "#D92D20" for node in root.iter(f"{SVG_NS}rect"))
         or not {"#FFFFFF", "#FFE5E1", "#F9BDB6"}.issubset(fills)
-        or len(paths) != 6
-        or not any(node.get("transform") == "scale(0.125)" for node in root.iter(f"{SVG_NS}g"))
+        or not has_flat_pixel_paths(root, expected_count=6, size=32)
     ):
-        raise SystemExit("the 32x32 cPanel group SVG must retain the approved cache-cube mark in pixel-space coordinates")
+        raise SystemExit("the 32x32 cPanel group SVG must use the approved cache-cube mark as explicit pixel-space paths without transforms")
 
     feature_svg = ET.parse(ROOT / "icons" / "orm-cpanel-feature-v2.svg").getroot()
     if (
         feature_svg.tag != f"{SVG_NS}svg"
         or (feature_svg.get("width"), feature_svg.get("height")) != ("48", "48")
         or feature_svg.get("viewBox") != "0 0 48 48"
-        or len(list(feature_svg.iter(f"{SVG_NS}path"))) != 6
-        or not any(node.get("transform") == "scale(0.1875)" for node in feature_svg.iter(f"{SVG_NS}g"))
+        or not has_flat_pixel_paths(feature_svg, expected_count=6, size=48)
     ):
-        raise SystemExit("the cPanel launcher SVG must use the approved cache-cube mark in 48x48 pixel-space coordinates")
+        raise SystemExit("the cPanel launcher SVG must use the approved cache-cube mark as explicit pixel-space paths without transforms")
 
     pngs = []
     for name in ("orm-cpanel-group-v2", "orm-cpanel-feature-v2"):

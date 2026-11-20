@@ -64,3 +64,11 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - Inspection of cPanel's installed Jupiter application icon showed that its sprite processing rewrites SVG `<rect>` width and height values to the icon's pixel dimensions, while preserving the viewBox. The previous 256-unit viewBox therefore did not match cPanel's transformed SVG.
 - The group and launcher SVGs now use 32×32 and 48×48 viewBoxes, respectively, with the existing approved cache-cube artwork scaled into those pixel coordinate spaces. The installed launcher SVG contains the expected 48×48 viewBox and correctly scaled background geometry; the 48×48 PNG fallback remains present.
 - Browser rendering was not captured, so visual appearance in Jupiter is still unverified. No ORM service, broker state, Redis/Valkey instance, or account data was changed.
+
+## Flattened SVG path refresh — 2026-11-20
+
+- The owner supplied a Jupiter screenshot showing only the red background tile for both ORM icons. The packaged and installed SVGs had the cube artwork inside a scaled `<g>`, indicating that cPanel's generated sprite did not display those transformed paths.
+- The same approved artwork was retained. The scale was applied to each path coordinate and stroke width so all artwork is expressed directly inside the group and launcher pixel-space viewBoxes; the PNG fallback and README logo were not changed.
+- An icon-only ZIP with `install.json` and the four SVG/PNG assets was accepted by cPanel's `install_plugin --theme jupiter`. cPanel scheduled the sprite update. The installed group and feature SVGs contain the flattened paths, and the spritemap modification time advanced after the update.
+- I extracted the exact group and feature entries from cPanel's regenerated spritemap and rasterized them locally; both generated sprite entries show the complete cube and tile. A post-update authenticated browser capture could not be made because Windows screenshot capture returned `GetCursorPos failed: Access is denied`; appearance in the browser remains unverified, and a hard refresh may be needed to discard cached assets.
+- No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed by this icon-only refresh. No host, account, credential, session URL, or raw operational output is recorded here.
