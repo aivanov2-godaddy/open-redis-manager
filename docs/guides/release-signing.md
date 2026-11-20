@@ -32,11 +32,13 @@ The builder requires the candidate release to be newer than the maximum installe
 The command creates a new `orm-VERSION/` directory containing:
 
 - `orm-VERSION.tar.gz` — the allowlisted release payload, with normalized file ownership, timestamps and modes;
-- `release.metadata` — version, compatibility range, channel, key ID, artifact size/digest, and validity window;
+- `release.metadata` — version, compatibility range, channel, key ID, artifact size/digest, validity window, and the signed `state_migrations|none` declaration;
 - `release.sig` — an RSA/SHA-256 detached signature over the exact metadata bytes;
 - `KEY_ID.pem` — the derived public key to distribute through a separately reviewed trust-key change.
 
 It validates the archive structure and checks the signature against the derived public key before publishing the output directory atomically. Existing output for the same version is never overwritten. The tool does not upload, publish, install, or stage files on a server.
+
+The updater accepts only the no-migration declaration. Releases that need to alter persistent ORM state must wait for a separately reviewed, versioned migration path with backup, rollback, and interruption recovery. See the [reviewed no-migration release contract](update-lifecycle.md#reviewed-no-migration-release-contract).
 
 ## Trust and stage the bundle
 

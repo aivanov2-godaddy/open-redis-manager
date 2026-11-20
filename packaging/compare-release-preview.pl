@@ -191,10 +191,10 @@ $metadata_info[7] <= 8192 or fail('verified release metadata exceeds the size li
 open my $metadata_handle, '<:raw', $metadata_path or fail('could not read verified release metadata');
 my @metadata_lines = <$metadata_handle>;
 close $metadata_handle or fail('could not finish reading verified release metadata');
-@metadata_lines == 12 or fail('verified release metadata has an invalid field count');
-my @metadata_keys = qw(product key_id version channel artifact artifact_size artifact_sha256 min_from_version max_from_version created_at expires_at);
+@metadata_lines == 13 or fail('verified release metadata has an invalid field count');
+my @metadata_keys = qw(product key_id version channel state_migrations artifact artifact_size artifact_sha256 min_from_version max_from_version created_at expires_at);
 my %metadata;
-shift(@metadata_lines) eq "orm-release-metadata-v1\n" or fail('verified release metadata header is invalid');
+shift(@metadata_lines) eq "orm-release-metadata-v2\n" or fail('verified release metadata header is invalid');
 for my $index (0 .. $#metadata_keys) {
     my $line = $metadata_lines[$index];
     $line =~ s/\n\z//;
@@ -205,6 +205,8 @@ for my $index (0 .. $#metadata_keys) {
 }
 $metadata{version} eq $inventory->{version}
     or fail('verified metadata version differs from the inspected archive');
+$metadata{state_migrations} eq 'none'
+    or fail('release declares unsupported ORM state migrations');
 
 my (%candidate, %candidate_by_target, %archive_files);
 for my $file (@{$inventory->{files}}) {
@@ -335,6 +337,7 @@ print JSON::PP->new->canonical->encode({
     release => {
         keyId => $metadata{key_id},
         channel => $metadata{channel},
+        stateMigrations => $metadata{state_migrations},
         artifact => $metadata{artifact},
         artifactSize => 0 + $metadata{artifact_size},
         artifactSha256 => $metadata{artifact_sha256},

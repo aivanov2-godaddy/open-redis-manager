@@ -39,8 +39,8 @@ future_expiry="$(date -u -d '+30 days' '+%Y-%m-%dT%H:%M:%SZ')"
 artifact_size="$(stat -c '%s' "$artifact")"
 artifact_digest="$(sha256sum "$artifact" | awk '{print $1}')"
 {
-    printf 'orm-release-metadata-v1\n'
-    printf 'product|orm\nkey_id|test-release\nversion|%s\nchannel|stable\n' "$release_version"
+    printf 'orm-release-metadata-v2\n'
+    printf 'product|orm\nkey_id|test-release\nversion|%s\nchannel|stable\nstate_migrations|none\n' "$release_version"
     printf 'artifact|orm-%s.tar.gz\nartifact_size|%s\nartifact_sha256|%s\n' "$release_version" "$artifact_size" "$artifact_digest"
     printf 'min_from_version|%s\nmax_from_version|%s\n' "$installed_version" "$installed_version"
     printf 'created_at|%s\nexpires_at|%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$future_expiry"
