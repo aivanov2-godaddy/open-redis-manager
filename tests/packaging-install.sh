@@ -7,7 +7,7 @@ repo_root="$(cd -- "$(dirname -- "$BASH_SOURCE")/.." && pwd -P)"
 source "$repo_root/packaging/lib.sh"
 python3 "$repo_root/tests/cpanel-icon-assets.py"
 base_path="$PATH"
-test_case_root="$(mktemp -d /tmp/orm-install-test.XXXXXXXX)"
+test_case_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-install-test.XXXXXXXX")"
 test_root=""
 trap '[[ -z "$test_case_root" || ! -d "$test_case_root" ]] || rm -rf -- "$test_case_root"' EXIT
 
