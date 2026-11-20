@@ -37,6 +37,14 @@ $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecuri
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');
+$fleetPageGuard = strpos($whm, '<?php if ($fleetPage === null): ?>');
+$summaryForm = strpos($whm, 'name="orm_action" value="fleet.summary"');
+$securitySection = strpos($whm, '<section aria-labelledby="orm-security-report-title">');
+$securitySectionEnd = $securitySection === false ? false : strpos($whm, '</section>', $securitySection);
+$assert(is_int($fleetPageGuard) && is_int($summaryForm) && is_int($securitySection)
+    && is_int($securitySectionEnd) && $summaryForm < $fleetPageGuard
+    && $securitySection < $fleetPageGuard && $securitySectionEnd < $fleetPageGuard,
+    'render the fleet summary and security report independently from transient fleet-list availability');
 $assert(str_contains($whm, 'Counter-rate samples') && str_contains($whm, 'resets, and missing baselines')
     && str_contains($whm, 'actual sample times') && str_contains($whm, 'advisory only'),
     'explain bounded rate evidence, unknown resets, and report-only threshold behavior');

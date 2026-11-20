@@ -10,16 +10,27 @@ const ORM_CPanel_ROOT = '/usr/local/cpanel';
 const ORM_INSTALL_ROOT = '/usr/local/cpanel/3rdparty/orm';
 
 if (in_array('--help', $argv, true)) {
-    fwrite(STDOUT, "Usage: php tests/whm-live-security-report-form.php --confirm-report-write\n"
-        . "Requires root on a disposable cPanel & WHM host. Generates one report, consumes the one-minute throttle,\n"
-        . "and writes a metadata-only audit event. Output contains sanitized status and response diagnostics only.\n");
+    fwrite(STDOUT, "Usage: php tests/whm-live-security-report-form.php (--fleet-summary-only | --fleet-summary-fast | --confirm-report-write | --confirm-report-fast)\n"
+        . "Requires root on a disposable cPanel & WHM host. The fleet-summary modes submit only a read-only POST.\n"
+        . "The fast modes skip waits to exercise rapid submits while fleet operations may be rate-limited.\n"
+        . "The report-write mode generates one report, consumes its one-minute throttle, and writes a metadata-only\n"
+        . "audit event. Output contains sanitized status and response diagnostics only.\n");
     exit(0);
 }
 
-if (!in_array('--confirm-report-write', $argv, true)) {
-    fwrite(STDERR, "Refusing to submit a WHM report without --confirm-report-write. See --help.\n");
+$fleetSummaryOnly = in_array('--fleet-summary-only', $argv, true);
+$fleetSummaryFast = in_array('--fleet-summary-fast', $argv, true);
+$confirmReportWrite = in_array('--confirm-report-write', $argv, true);
+$confirmReportFast = in_array('--confirm-report-fast', $argv, true);
+$selectedModes = (int) $fleetSummaryOnly + (int) $fleetSummaryFast
+    + (int) $confirmReportWrite + (int) $confirmReportFast;
+if ($selectedModes !== 1) {
+    fwrite(STDERR, "Choose exactly one live smoke mode. See --help.\n");
     exit(2);
 }
+$fleetSummaryOnly = $fleetSummaryOnly || $fleetSummaryFast;
+$confirmReportWrite = $confirmReportWrite || $confirmReportFast;
+$fastMode = $fleetSummaryFast || $confirmReportFast;
 
 if (PHP_SAPI !== 'cli' || !function_exists('posix_geteuid') || posix_geteuid() !== 0
     || !is_file(ORM_CPanel_ROOT . '/bin/whmapi1') || !is_file(ORM_INSTALL_ROOT . '/src/Orm/Security/WhmAuditLog.php')
@@ -185,11 +196,26 @@ try {
         throw new RuntimeException('Authenticated WHM page did not render the security report form');
     }
 
+    // The page GET immediately above uses the fleet.list broker rate bucket.
+    // A real user submits after the page is rendered; don't race that 1/sec limit.
+    if (!$fastMode) {
+        usleep(1_100_000);
+    }
     $summary = $request($host, $reportPath, $cookieFile, ['orm_action' => 'fleet.summary'],
         'https://' . $host . ':2087' . $reportPath);
     $result['summary'] = $summary['code'] === 200
         && str_contains($summary['body'], 'Verified fleet summary');
 
+    if ($fleetSummaryOnly && !$result['summary']) {
+        throw new RuntimeException('WHM fleet-summary POST did not render the expected summary markup');
+    }
+    if ($fleetSummaryFast
+        && (!str_contains($summary['body'], 'Security and abuse review')
+            || !str_contains($summary['body'], 'Generate report-only review'))) {
+        throw new RuntimeException('Rapid fleet-list throttling hid the WHM security report form');
+    }
+
+    if (!$fleetSummaryOnly) {
     $beforeAudit = (new \Orm\Security\WhmAuditLog())->read(max(0, time() - 10), time() + 1, [
         'action' => 'security.report', 'result' => 'success',
     ]);
@@ -198,6 +224,11 @@ try {
     }
     $beforeCount = (int) ($beforeAudit['record_count'] ?? 0);
     $reportStartedAt = time();
+    // The fleet-summary POST above consumes a separate 1/sec broker bucket.
+    // Let it expire before the report requests fresh summary metrics.
+    if (!$fastMode) {
+        usleep(1_100_000);
+    }
     $report = $request($host, $reportPath, $cookieFile, ['orm_action' => 'security.report'],
         'https://' . $host . ':2087' . $reportPath);
     $reportBody = $report['body'];
@@ -248,6 +279,7 @@ try {
     if (!$result['audit']) {
         throw new RuntimeException('WHM report audit event was not verified');
     }
+    }
 } catch (Throwable $error) {
     fwrite(STDERR, "Live WHM report-form smoke failed: " . $error->getMessage() . "\n");
     $exitCode = 1;
@@ -266,4 +298,9 @@ if (isset($exitCode) && $exitCode !== 0) {
     exit($exitCode);
 }
 
-fwrite(STDOUT, "Live WHM report form passed: authenticated SSO; form rendered; report POST rendered; audit event verified.\n");
+if ($fleetSummaryOnly) {
+    $mode = $fleetSummaryFast ? 'fast ' : '';
+    fwrite(STDOUT, "Live WHM {$mode}fleet-summary form passed: authenticated SSO; form rendered; read-only summary POST rendered.\n");
+} else {
+    fwrite(STDOUT, "Live WHM report form passed: authenticated SSO; form rendered; report POST rendered; audit event verified.\n");
+}

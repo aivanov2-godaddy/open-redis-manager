@@ -839,12 +839,6 @@ WHM::header('Open Redis Manager', 0, 0);
         </tbody></table>
         <p>Only fixed, read-only Redis/Valkey probes are used. This report contains counters and configuration metrics; it does not return keys, values, credentials, or raw command output.</p>
       <?php endif; ?>
-      <?php if ($fleetPage === null): ?>
-        <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
-      <?php else: ?>
-        <?php $fleetPageCount = count($fleetPage['entries']); $fleetFirstAccount = $fleetPageCount > 0 ? $fleetOffset + 1 : 0; $fleetLastAccount = $fleetOffset + $fleetPageCount; ?>
-        <p><strong><?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> verified configured ORM accounts in the full inventory. Showing <?= $fleetPageCount > 0 ? $fleetFirstAccount . '–' . $fleetLastAccount : 'no accounts' ?> of <?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
-        <p>State counts for this page only (<?= $fleetPageCount ?> accounts): running <?= $fleetPageStateCounts['running'] ?>, stopped <?= $fleetPageStateCounts['stopped'] ?>, starting <?= $fleetPageStateCounts['starting'] ?>, stopping <?= $fleetPageStateCounts['stopping'] ?>, failed <?= $fleetPageStateCounts['failed'] ?>, unverifiable <?= $fleetPageStateCounts['unhealthy'] ?>. “Unverifiable” means ORM could not confirm the manifest, ownership, or service state.</p>
         <?php if ($fleetSummaryMessage !== null): ?><p role="<?= $fleetSummaryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetSummaryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
         <form method="post" class="orm-fleet-actions">
           <input type="hidden" name="orm_action" value="fleet.summary">
@@ -895,6 +889,12 @@ WHM::header('Open Redis Manager', 0, 0);
             <details><summary>Signals not evaluated</summary><ul><?php foreach ($securityReport['unmeasured'] as $signal => $reason): ?><li><?= htmlspecialchars(ucwords(str_replace('_', ' ', $signal)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>: <?= htmlspecialchars($reason, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li><?php endforeach; ?></ul></details>
           <?php endif; ?>
         </section>
+      <?php if ($fleetPage === null): ?>
+        <p role="status">The managed-instance inventory is unavailable. Backend discovery and existing services are unchanged.</p>
+      <?php else: ?>
+        <?php $fleetPageCount = count($fleetPage['entries']); $fleetFirstAccount = $fleetPageCount > 0 ? $fleetOffset + 1 : 0; $fleetLastAccount = $fleetOffset + $fleetPageCount; ?>
+        <p><strong><?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> verified configured ORM accounts in the full inventory. Showing <?= $fleetPageCount > 0 ? $fleetFirstAccount . '–' . $fleetLastAccount : 'no accounts' ?> of <?= htmlspecialchars((string) $fleetPage['total'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>.</p>
+        <p>State counts for this page only (<?= $fleetPageCount ?> accounts): running <?= $fleetPageStateCounts['running'] ?>, stopped <?= $fleetPageStateCounts['stopped'] ?>, starting <?= $fleetPageStateCounts['starting'] ?>, stopping <?= $fleetPageStateCounts['stopping'] ?>, failed <?= $fleetPageStateCounts['failed'] ?>, unverifiable <?= $fleetPageStateCounts['unhealthy'] ?>. “Unverifiable” means ORM could not confirm the manifest, ownership, or service state.</p>
         <?php if ($fleetPage['total'] > 0): ?>
         <label for="orm-fleet-search">Search this page</label>
         <input id="orm-fleet-search" type="search" autocomplete="off">
