@@ -25,25 +25,28 @@ def main() -> int:
 
     svg_path = ROOT / "icons" / "orm-cpanel-group-v2.svg"
     root = ET.parse(svg_path).getroot()
-    fills = {node.get("fill") for node in root.findall(f"{SVG_NS}path")}
+    paths = list(root.iter(f"{SVG_NS}path"))
+    fills = {node.get("fill") for node in paths}
     if (
         root.tag != f"{SVG_NS}svg"
         or (root.get("width"), root.get("height")) != ("32", "32")
-        or root.get("viewBox") != "0 0 256 256"
-        or not any(node.get("fill") == "#D92D20" for node in root.findall(f"{SVG_NS}rect"))
+        or root.get("viewBox") != "0 0 32 32"
+        or not any(node.get("fill") == "#D92D20" for node in root.iter(f"{SVG_NS}rect"))
         or not {"#FFFFFF", "#FFE5E1", "#F9BDB6"}.issubset(fills)
-        or len(root.findall(f"{SVG_NS}path")) != 6
+        or len(paths) != 6
+        or not any(node.get("transform") == "scale(0.125)" for node in root.iter(f"{SVG_NS}g"))
     ):
-        raise SystemExit("the 32x32 cPanel group SVG must retain the approved red tile and white cache-cube mark")
+        raise SystemExit("the 32x32 cPanel group SVG must retain the approved cache-cube mark in pixel-space coordinates")
 
     feature_svg = ET.parse(ROOT / "icons" / "orm-cpanel-feature-v2.svg").getroot()
     if (
         feature_svg.tag != f"{SVG_NS}svg"
         or (feature_svg.get("width"), feature_svg.get("height")) != ("48", "48")
-        or feature_svg.get("viewBox") != "0 0 256 256"
-        or len(feature_svg.findall(f"{SVG_NS}path")) != 6
+        or feature_svg.get("viewBox") != "0 0 48 48"
+        or len(list(feature_svg.iter(f"{SVG_NS}path"))) != 6
+        or not any(node.get("transform") == "scale(0.1875)" for node in feature_svg.iter(f"{SVG_NS}g"))
     ):
-        raise SystemExit("the cPanel launcher SVG must use the approved cache-cube artwork at 48x48 pixels")
+        raise SystemExit("the cPanel launcher SVG must use the approved cache-cube mark in 48x48 pixel-space coordinates")
 
     pngs = []
     for name in ("orm-cpanel-group-v2", "orm-cpanel-feature-v2"):
