@@ -1,6 +1,6 @@
 # Live cPanel smoke test
 
-`tests/cpanel-live-smoke.py` checks the installed cPanel entry point on a disposable cPanel & WHM host. It uses WHM's temporary single-sign-on session, requests the ORM page, and verifies that the LiveAPI account matches the identity returned by the local broker. It performs no Redis/Valkey operation.
+`tests/cpanel-live-smoke.py` checks the installed cPanel entry point on a disposable cPanel & WHM host. It uses WHM's temporary single-sign-on session, requires the page's displayed LiveAPI account to exactly match the selected SSO account, and repeats the read-only request with `user`, `username`, and `account` query parameters set to `root`. The identity must remain bound to the SSO account. It performs no Redis/Valkey operation.
 
 Run as root on a test host with exactly one cPanel account:
 
@@ -20,7 +20,7 @@ To also require that the authenticated page finds a cPanel-managed Redis or Valk
 python3 tests/cpanel-live-smoke.py --user example --require-podman-cache
 ```
 
-The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. The optional Podman assertion exercises the account page's existing read-only socket probe. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
+The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. The query-spoof probe is a read-only GET. The optional Podman assertion exercises the account page's existing read-only socket probe. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
 
 ## Current evidence
 

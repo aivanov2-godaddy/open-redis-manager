@@ -8,6 +8,7 @@ stay in memory and are never printed or written to disk.
 from __future__ import annotations
 
 import argparse
+import html
 import http.cookiejar
 import json
 import os
@@ -29,6 +30,10 @@ PODMAN_SECTION = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 REACHABLE_STATUS = re.compile(r'<strong>\s*Status:\s*</strong>\s*Reachable\b', re.IGNORECASE)
+VERIFIED_ACCOUNT = re.compile(
+    r'<p\b[^>]*>\s*Verified cPanel account:\s*<code\b[^>]*>([^<]*)</code>\s*</p>',
+    re.IGNORECASE,
+)
 
 
 def select_account(user: str | None) -> str:
@@ -99,6 +104,12 @@ def page_has_reachable_podman_cache(body: str) -> bool:
     return match is not None and REACHABLE_STATUS.search(match.group(0)) is not None
 
 
+def page_has_verified_account(body: str, expected_user: str) -> bool:
+    """Require the page's displayed LiveAPI identity to match the SSO account."""
+    match = VERIFIED_ACCOUNT.search(body)
+    return match is not None and html.unescape(match.group(1)) == expected_user
+
+
 def run(user: str | None, require_podman_cache: bool = False) -> int:
     if os.geteuid() != 0:
         print("Run this check as root on the cPanel host.")
@@ -113,24 +124,34 @@ def run(user: str | None, require_podman_cache: bool = False) -> int:
         _, _, landing_url = read_page(opener, login_url)
         target_url = plugin_url(landing_url)
         status, body, _ = read_page(opener, target_url)
+        parts = urllib.parse.urlsplit(target_url)
+        spoofed_query = urllib.parse.urlencode({"user": "root", "username": "root", "account": "root"})
+        spoofed_url = urllib.parse.urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, spoofed_query, parts.fragment)
+        )
+        spoofed_status, spoofed_body, _ = read_page(opener, spoofed_url)
     except Exception as error:  # Keep URLs and account data out of diagnostics.
         print(f"Live cPanel smoke test failed ({type(error).__name__}).")
         return 1
 
-    if status == 200 and "Verified cPanel account:" in body:
-        if require_podman_cache and not page_has_reachable_podman_cache(body):
-            print("The cPanel identity check passed, but no reachable Podman cache was shown.")
-            return 1
-        if require_podman_cache:
-            print("Live cPanel account identity and Podman cache checks passed.")
-            return 0
-        print("Live cPanel account identity check passed.")
-        return 0
     if "could not be verified by the local ORM broker" in body:
         print("The cPanel page loaded, but the broker identity check failed.")
         return 1
-    print(f"The ORM cPanel page returned an unexpected response (HTTP {status}).")
-    return 1
+    if status != 200 or not page_has_verified_account(body, account):
+        print(f"The ORM cPanel page did not verify the requested account identity (HTTP {status}).")
+        return 1
+    if spoofed_status != 200 or not page_has_verified_account(spoofed_body, account):
+        print("The cPanel page identity changed or failed under account query-parameter spoofing.")
+        return 1
+
+    if require_podman_cache and not page_has_reachable_podman_cache(body):
+        print("The cPanel identity check passed, but no reachable Podman cache was shown.")
+        return 1
+    if require_podman_cache:
+        print("Live cPanel account identity, query-spoof, and Podman cache checks passed.")
+        return 0
+    print("Live cPanel account identity and query-spoof checks passed.")
+    return 0
 
 
 def main() -> int:
