@@ -123,7 +123,7 @@ while IFS='|' read -r key op src dst perm digest extra || [[ -n "${key:-}" ]]; d
     expected_source="${map_source[$key]:-}"
     expected_source="${expected_source#${ORM_REPO_ROOT}/}"
     [[ -n "$key" && -z "${extra:-}" && -n "${map_target[$key]+x}" \
-        && -z "${action[$key]+x}" && "$op" =~ ^(add|replace|unchanged)$ \
+        && -z "${action[$key]+x}" && "$op" =~ ^(add|adopt|replace|unchanged)$ \
         && "$src" == "$expected_source" && "$dst" == "${map_target[$key]}" \
         && "$perm" == "${map_mode[$key]}" && "$digest" =~ ^[a-f0-9]{64}$ ]] \
         || orm_die 'journal contains an unknown, duplicate, or malformed package action.'
@@ -133,7 +133,7 @@ done <"$workspace/actions.txt"
 broker_files_changed=0
 while IFS='|' read -r key op; do
     case "$key:$op" in
-        broker_*:unchanged|broker_bin:unchanged|broker_unit:unchanged|instance_unit:unchanged|metrics_service:unchanged|metrics_timer:unchanged) ;;
+        broker_*:unchanged|broker_*:adopt|broker_bin:unchanged|broker_bin:adopt|broker_unit:unchanged|broker_unit:adopt|instance_unit:unchanged|instance_unit:adopt|metrics_service:unchanged|metrics_service:adopt|metrics_timer:unchanged|metrics_timer:adopt) ;;
         broker_*:*|broker_bin:*|broker_unit:*|instance_unit:*|metrics_service:*|metrics_timer:*) broker_files_changed=1 ;;
     esac
 done <"$workspace/actions.txt"
@@ -166,6 +166,7 @@ while IFS='|' read -r key op src dst perm digest; do
     }
     case "$op" in
         add) [[ -z "${old_digest[$key]+x}" ]] || orm_die "add action conflicts with the old manifest: $key" ;;
+        adopt) [[ -z "${old_digest[$key]+x}" ]] || orm_die "adopt action conflicts with the old manifest: $key" ;;
         replace|unchanged) [[ -n "${old_digest[$key]+x}" ]] || orm_die "action is missing from the old manifest: $key" ;;
     esac
     [[ "$op" != unchanged || "$digest" == "${old_digest[$key]}" ]] || orm_die "unchanged action differs from the old manifest: $key"
@@ -193,6 +194,10 @@ while IFS='|' read -r key op src dst perm digest; do
                 && "$(sha256sum "$physical" | awk '{print $1}')" == "$digest" ]] \
                 || orm_die "added target is not the exact candidate file; preserve it for administrator review: $key"
         fi
+    elif [[ "$op" == adopt ]]; then
+        [[ -f "$physical" && ! -L "$physical" && "$(stat -c '%u:%a' "$physical")" == "0:$perm" \
+            && "$(sha256sum "$physical" | awk '{print $1}')" == "$digest" ]] \
+            || orm_die "adopted target is not the exact candidate file; preserve it for administrator review: $key"
     else
         [[ -f "$physical" && ! -L "$physical" && "$(stat -c '%u:%a' "$physical")" == "0:$perm" \
             && "$(sha256sum "$physical" | awk '{print $1}')" == "${old_digest[$key]}" ]] \
@@ -240,7 +245,7 @@ printf 'Confirmed rollback of %s: %s -> %s.\n' "$transaction_id" "$candidate_ver
 
 # Restore from verified backups in reverse package order. Each operation is
 # digest-classified before it runs, so a second invocation safely resumes.
-mapfile -t action_keys < <(awk -F'|' '$2 != "unchanged" && $1 != "whm_appconfig" { print $1 }' "$workspace/actions.txt")
+mapfile -t action_keys < <(awk -F'|' '$2 != "unchanged" && $2 != "adopt" && $1 != "whm_appconfig" { print $1 }' "$workspace/actions.txt")
 for ((index=${#action_keys[@]}-1; index>=0; index--)); do
     key="${action_keys[$index]}"; op="${action[$key]}"; physical="$(physical_target "${target[$key]}")"
     orm_safe_target_parent_chain "$physical" || orm_die "target parent changed during recovery: $key"

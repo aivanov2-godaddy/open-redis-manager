@@ -143,6 +143,12 @@ retired_digest="$(sha256sum -- "$retired_path" | awk '{print $1}')"
 chmod 0600 "$installed_manifest"
 printf 'operator-edited file\n' >"$third_path"
 third_observed_digest="$(sha256sum -- "$third_path" | awk '{print $1}')"
+adopt_key='application_discovery'
+IFS='|' read -r adopt_key adopt_source adopt_target adopt_mode < <(awk -F'|' '$1 == "application_discovery" { print }' "$repo_root/packaging/release-install-map.txt")
+adopt_path="$target_root$adopt_target"
+mkdir -p "$(dirname -- "$adopt_path")"
+cp -- "$test_root/orm-0.2.0/$adopt_source" "$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
 target_snapshot() {
     {
         find "$target_root" -printf '%P|%y|%u|%g|%m|%s\n' | sort
@@ -173,7 +179,7 @@ expected_state_migrations="$(awk -F'|' '$1 == "state_migrations" { print $2 }' "
 expected_source_commit="$(awk -F'|' '$1 == "source_commit" { print $2 }' "$metadata")"
 expected_created_at="$(awk -F'|' '$1 == "created_at" { print $2 }' "$metadata")"
 expected_expires_at="$(awk -F'|' '$1 == "expires_at" { print $2 }' "$metadata")"
-expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 4))"
+expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 5))"
 after_preview="$(target_snapshot)"
 [[ "$before_preview" == "$after_preview" && -f "$retired_path" ]] \
     || { printf 'release preview changed an installed fixture.\n' >&2; exit 1; }
@@ -202,8 +208,10 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     exit 1 unless $preview->{release}{maximumFromVersion} eq "0.1.0-dev";
     exit 1 unless ref($preview->{migrationActions}) eq "ARRAY" && !$preview->{migrationPlanAvailable};
     exit 1 unless $preview->{summary}{replace} == 1 && $preview->{summary}{add} == $expected_add;
+    exit 1 unless $preview->{summary}{adopt} == 1;
     exit 1 unless $preview->{summary}{conflict} == 2 && $preview->{summary}{retire} == 1;
     exit 1 unless grep { $_->{key} eq "cpanel_entry" && $_->{action} eq "replace" } @{$preview->{fileActions}};
+    exit 1 unless grep { $_->{key} eq "application_discovery" && $_->{action} eq "adopt" && $_->{requiresReview} } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "whm_cgi" && $_->{action} eq "conflict" && $_->{requiresReview} } @{$preview->{fileActions}};
     exit 1 unless grep {
         $_->{key} eq "whm_icon"
@@ -216,6 +224,39 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
 ' "$expected_artifact_digest" "$expected_artifact_size" "$expected_channel" "$expected_state_migrations" "$expected_source_commit" "$expected_artifact" \
     "$expected_created_at" "$expected_expires_at" "$third_target" "$third_observed_digest" "$expected_add" \
     || { printf 'release preview JSON did not report correct read-only target actions.\n' >&2; exit 1; }
+
+assert_adoption_is_conflict() {
+    local case_name="$1" result
+    result="$(printf '%s\n' "$raw_inventory" | "$ORM_PERL" \
+        "$repo_root/packaging/compare-release-preview.pl" "$installed_manifest" '0.1.0-dev' "$metadata" "$target_root")" \
+        || { printf 'candidate preview failed during %s adoption check.\n' "$case_name" >&2; exit 1; }
+    printf '%s\n' "$result" | "$ORM_PERL" -MJSON::PP -e '
+        local $/;
+        my $preview = decode_json(<STDIN>);
+        exit 1 unless grep { $_->{key} eq "application_discovery" && $_->{action} eq "conflict" } @{$preview->{fileActions}};
+    ' || { printf 'preview did not reject unsafe adoption case: %s.\n' "$case_name" >&2; exit 1; }
+}
+
+adopt_backup="$test_root/application-discovery.exact"
+cp -a -- "$adopt_path" "$adopt_backup"
+printf 'changed content\n' >"$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
+assert_adoption_is_conflict 'digest mismatch'
+cp -- "$adopt_backup" "$adopt_path"
+chmod 0600 "$adopt_path"
+assert_adoption_is_conflict 'mode mismatch'
+cp -- "$adopt_backup" "$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
+chown 1:1 "$adopt_path"
+assert_adoption_is_conflict 'owner mismatch'
+chown root:root "$adopt_path"
+mv -- "$adopt_path" "$adopt_path.saved"
+ln -s -- "$adopt_path.saved" "$adopt_path"
+assert_adoption_is_conflict 'symlink target'
+rm -- "$adopt_path"
+mv -- "$adopt_path.saved" "$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
+chown root:root "$adopt_path"
 
 for legacy_schema in v1 v2; do
     legacy_manifest="$test_root/legacy-$legacy_schema-manifest"

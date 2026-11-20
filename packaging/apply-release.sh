@@ -254,8 +254,10 @@ write_preview() {
             or die "release contains unsupported migration actions\n";
         ref($preview->{fileActions}) eq "ARRAY" or die "invalid preview actions\n";
         for my $action (@{$preview->{fileActions}}) {
-            $action->{action} =~ /\A(?:add|replace|unchanged)\z/
+            $action->{action} =~ /\A(?:add|adopt|replace|unchanged)\z/
                 or die "preview contains an unsupported action\n";
+            $action->{action} ne "adopt" || $action->{requiresReview}
+                or die "adopt action does not require explicit review\n";
         }
         print JSON::PP->new->canonical->encode($preview), "\n";
     ' <"$preview_file" >"$workspace/checked-preview.json" \
@@ -271,8 +273,12 @@ write_preview() {
             my $source = $action->{source} // q{};
             $source =~ /\A[A-Za-z0-9._\/\@-]*\z/ or die "unsafe archive source\n";
             join(q{|}, @{$action}{qw(key action)}, $source,
-                @{$action}{qw(target mode sha256)}) =~ /\A[a-z_]+\|(?:add|replace|unchanged)\|[^|]*\|\/[^|]+\|(?:600|644|755)\|[a-f0-9]{64}\z/
+                @{$action}{qw(target mode sha256)}) =~ /\A[a-z_]+\|(?:add|adopt|replace|unchanged)\|[^|]*\|\/[^|]+\|(?:600|644|755)\|[a-f0-9]{64}\z/
                 or die "unsafe preview row\n";
+            if ($action->{action} eq "adopt") {
+                defined($action->{requiresReview}) && $action->{requiresReview}
+                    or die "adopt action does not require explicit review\n";
+            }
             print join(q{|}, @{$action}{qw(key action)}, $source,
                 @{$action}{qw(target mode sha256)}), "\n";
         }
@@ -338,13 +344,19 @@ while IFS='|' read -r key action source target mode digest; do
         continue
     fi
     case "$key:$action" in
-        broker_*:unchanged|broker_bin:unchanged|broker_unit:unchanged|instance_unit:unchanged|metrics_service:unchanged|metrics_timer:unchanged) ;;
+        broker_*:unchanged|broker_*:adopt|broker_bin:unchanged|broker_bin:adopt|broker_unit:unchanged|broker_unit:adopt|instance_unit:unchanged|instance_unit:adopt|metrics_service:unchanged|metrics_service:adopt|metrics_timer:unchanged|metrics_timer:adopt) ;;
         broker_*:*|broker_bin:*|broker_unit:*|instance_unit:*|metrics_service:*|metrics_timer:*)
             broker_related_change=1
             ;;
     esac
     orm_safe_target_parent_chain "$physical" || orm_die 'installed target parent chain is unsafe.'
-    if [[ "$action" == add ]]; then
+    if [[ "$action" == adopt ]]; then
+        [[ -z "${installed_digest[$key]+x}" && -f "$physical" && ! -L "$physical" \
+            && "$(stat -c '%u' -- "$physical")" == 0 \
+            && "$(stat -c '%a' -- "$physical")" == "$mode" \
+            && "$(sha256sum -- "$physical" | awk '{print $1}')" == "$digest" ]] \
+            || orm_die 'an adopt target no longer matches the exact signed candidate; no files were changed.'
+    elif [[ "$action" == add ]]; then
         [[ ! -e "$physical" && ! -L "$physical" ]] || orm_die 'an add target appeared after preview; refusing to overwrite it.'
     else
         [[ -f "$physical" && ! -L "$physical" ]] || orm_die 'an installed target changed after preview.'
@@ -376,7 +388,7 @@ cp -a -- "$install_manifest" "$manifest_backup"
 chmod 0600 -- "$manifest_backup"
 chown root:root -- "$manifest_backup"
 while IFS='|' read -r key action source target mode digest; do
-    [[ "$action" == unchanged || "$key" == whm_appconfig ]] && continue
+    [[ "$action" == unchanged || "$action" == adopt || "$key" == whm_appconfig ]] && continue
     physical="$(physical_target "$target")"
     if [[ "$action" == replace ]]; then
         cp -a -- "$physical" "$backup_root/$key" || orm_die 'could not snapshot an ORM-managed target.'
@@ -386,7 +398,7 @@ done <"$actions_file"
 write_journal applying || orm_die 'could not record the durable update recovery journal.'
 mutated=1
 while IFS='|' read -r key action source target mode digest; do
-    [[ "$action" == unchanged || "$key" == whm_appconfig ]] && continue
+    [[ "$action" == unchanged || "$action" == adopt || "$key" == whm_appconfig ]] && continue
     physical="$(physical_target "$target")"
     parent="$(dirname -- "$physical")"
     if [[ ! -d "$parent" ]]; then

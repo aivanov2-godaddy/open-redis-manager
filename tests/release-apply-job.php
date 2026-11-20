@@ -20,16 +20,17 @@ $preview = [
     'installedVersion' => '0.1.0-dev',
     'candidateVersion' => '0.2.0',
     'release' => ['artifactSha256' => str_repeat('a', 64)],
-    'summary' => ['add' => 1, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
+    'summary' => ['add' => 1, 'adopt' => 1, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
     'fileActions' => [
         ['action' => 'replace'],
         ['action' => 'add'],
+        ['action' => 'adopt', 'requiresReview' => true],
         ['action' => 'unchanged'],
     ],
 ];
 $request = ['confirm_update' => '1', 'candidate_version' => '0.2.0', 'artifact_sha256' => str_repeat('a', 64)];
 $assert(ReleaseApplyJob::previewIsConflictFree($preview), 'a verified preview with only supported file actions is applicable');
-$assert(ReleaseApplyJob::submissionMatchesPreview($request, $preview), 'explicit confirmation binds to candidate version and artifact digest');
+$assert(ReleaseApplyJob::submissionMatchesPreview($request, $preview), 'explicit confirmation binds to candidate version, digest, and reviewed adopt action');
 $mismatch = $request;
 $mismatch['confirm_update'] = '0';
 $assert(!ReleaseApplyJob::submissionMatchesPreview($mismatch, $preview), 'missing explicit confirmation is rejected');
@@ -48,6 +49,9 @@ foreach ([['move', 1], ['conflict', 1], ['retire', 1]] as [$field, $value]) {
 $unsupported = $preview;
 $unsupported['fileActions'][0]['action'] = 'replace_and_execute';
 $assert(!ReleaseApplyJob::previewIsConflictFree($unsupported), 'an unknown file action is rejected');
+$unreviewedAdopt = $preview;
+$unreviewedAdopt['fileActions'][2]['requiresReview'] = false;
+$assert(!ReleaseApplyJob::previewIsConflictFree($unreviewedAdopt), 'an adopt action without operator review is rejected');
 $incomplete = $preview;
 unset($incomplete['summary']['unchanged']);
 $assert(!ReleaseApplyJob::previewIsConflictFree($incomplete), 'an incomplete file summary is rejected');
