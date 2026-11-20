@@ -6,7 +6,13 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$repo_root/packaging/lib.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-release-apply-test.XXXXXXXX")"
 chmod 0700 "$test_root"
-trap 'rm -rf -- "$test_root"' EXIT
+checkpoint='test initialization'
+cleanup_test() {
+    local status=$?
+    if [[ "$status" -ne 0 ]]; then printf 'release apply fixture failed during: %s\n' "$checkpoint" >&2; fi
+    rm -rf -- "$test_root"
+}
+trap cleanup_test EXIT
 key_dir="$test_root/trusted-keys"
 private_key="$test_root/private.pem"
 metadata="$test_root/release.metadata"
@@ -272,6 +278,7 @@ marker="$test_root/crash-marker"
 wrapper_pid_file="$test_root/crash-wrapper-pid"
 manifest_before_interrupt="$(sha256sum "$manifest" | awk '{print $1}')"
 original_install_tree="$(tree_snapshot "$target_root")"
+checkpoint='waiting for interrupted updater'
 TEST_REAL_MV="$real_mv" TEST_CRASH_MARKER="$marker" TEST_CRASH_WRAPPER_PID="$wrapper_pid_file" \
     PATH="$crash_bin:$PATH" setsid bash "$repo_root/packaging/apply-release.sh" \
     "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" \
@@ -299,6 +306,7 @@ set +e
 wait "$apply_pid"
 interruption_status=$?
 set -e
+checkpoint='validating retained interruption state'
 [[ "$interruption_status" -ne 0 ]] || {
     printf 'the interrupted release process unexpectedly reported success.\n' >&2
     exit 1
@@ -337,7 +345,7 @@ if grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-aud
     printf 'process interruption recorded a successful update outcome.\n' >&2
     exit 1
 fi
-trap 'test_status=$?; printf "release recovery fixture failed at line %s (status %s): %s\n" "$LINENO" "$test_status" "$BASH_COMMAND" >&2' ERR
+checkpoint='verifying interrupted retry refusal'
 before_retry="$(tree_snapshot "$target_root")"
 if bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" \
     "$installed_version" "$manifest" "$target_root" >"$test_root/interrupted-retry.out" 2>&1; then
@@ -356,6 +364,7 @@ grep -q 'failed integrity validation\|unfinished updater transaction' "$test_roo
 
 # Recovery requires an exact preview and explicit transaction ID. The hard-kill
 # point is between atomic replacement and its journal checkpoint.
+checkpoint='previewing interrupted release recovery'
 if ! bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-preview.out" 2>&1; then
     cat "$test_root/recovery-preview.out" >&2
     exit 1
@@ -366,6 +375,7 @@ grep -q 'No files changed' "$test_root/recovery-preview.out" || {
     exit 1
 }
 printf 'operator edit\n' >"$target_root$first_target"
+checkpoint='refusing recovery for an unexpected target digest'
 unknown_target_snapshot="$(tree_snapshot "$target_root")"
 if bash "$repo_root/packaging/recover-release.sh" --preview "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery-conflict.out" 2>&1; then
     printf 'recovery accepted a target with an unknown digest.\n' >&2
@@ -378,6 +388,7 @@ fi
 first_source="$(awk -F'|' -v target="$first_target" '$3 == target { print $2 }' "$repo_root/packaging/release-install-map.txt")"
 cp -- "$release_root/$first_source" "$target_root$first_target"
 chmod 644 "$target_root$first_target"
+checkpoint='confirming and verifying release recovery'
 if ! bash "$repo_root/packaging/recover-release.sh" --confirm "$(basename -- "$interrupted_workspace")" "$target_root" >"$test_root/recovery.out" 2>&1; then
     cat "$test_root/recovery.out" >&2
     exit 1
