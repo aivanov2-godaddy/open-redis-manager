@@ -192,6 +192,7 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanLifecycleManager.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php
     /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl

@@ -25,7 +25,8 @@ $root = $home . '/ea-podman.d';
 mkdir($root, 0700);
 $redisName = 'ea-redis62.ormtest.01';
 $valkeyName = 'ea-valkey72.ormtest.02';
-foreach ([$redisName, $valkeyName, 'ea-redis62.someone.01'] as $name) {
+$stoppedName = 'ea-redis62.ormtest.03';
+foreach ([$redisName, $valkeyName, $stoppedName, 'ea-redis62.someone.01'] as $name) {
     mkdir($root . '/' . $name, 0700);
 }
 $servers = [];
@@ -44,11 +45,13 @@ $results = PodmanCacheDiscovery::discover('ormtest', $home, $uid, static functio
     $probed[] = $socket;
     return ['reachable' => true, 'version' => str_contains($socket, 'valkey') ? '7.2.6' : '6.2.24'];
 });
-$assert(count($results) === 2, 'discover only the current account Redis and Valkey container sockets');
+$assert(count($results) === 3, 'discover current-account Redis and Valkey containers, including stopped ones');
 $assert($results[0]['backend'] === 'redis' && $results[0]['status'] === 'reachable'
     && $results[0]['version'] === '6.2.24', 'verify Redis pod metadata and bounded health data');
 $assert($results[1]['backend'] === 'valkey' && str_ends_with($results[1]['socket_path'], '/valkey.sock'),
     'use the distinct cPanel Valkey socket name');
+$assert($results[2]['container'] === $stoppedName && $results[2]['status'] === 'socket-missing',
+    'identify an installed account container whose service socket is absent');
 $assert(count($probed) === 2 && !str_contains(implode("\n", $probed), 'someone'),
     'never probe a container belonging to another account');
 
@@ -118,7 +121,7 @@ foreach ($servers as $server) {
 foreach ([$root . '/' . $redisName . '/redis.sock', $root . '/' . $valkeyName . '/valkey.sock'] as $socket) {
     @unlink($socket);
 }
-foreach ([$redisName, $valkeyName, 'ea-redis62.someone.01'] as $name) {
+foreach ([$redisName, $valkeyName, $stoppedName, 'ea-redis62.someone.01'] as $name) {
     @rmdir($root . '/' . $name);
 }
 @rmdir($root);

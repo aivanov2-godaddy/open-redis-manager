@@ -99,6 +99,7 @@ orm_package_file_map() {
         diagnostic_report "$ORM_REPO_ROOT/src/Orm/Cpanel/DiagnosticReport.php" "$ORM_3RDPARTY/src/Orm/Cpanel/DiagnosticReport.php" 644 \
         health_guidance "$ORM_REPO_ROOT/src/Orm/Cpanel/HealthGuidance.php" "$ORM_3RDPARTY/src/Orm/Cpanel/HealthGuidance.php" 644 \
         podman_cache_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/PodmanCacheDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/PodmanCacheDiscovery.php" 644 \
+        podman_lifecycle_manager "$ORM_REPO_ROOT/src/Orm/Cpanel/PodmanLifecycleManager.php" "$ORM_3RDPARTY/src/Orm/Cpanel/PodmanLifecycleManager.php" 644 \
         application_discovery "$ORM_REPO_ROOT/src/Orm/Cpanel/ApplicationDiscovery.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ApplicationDiscovery.php" 644 \
         backend_policy_store "$ORM_REPO_ROOT/src/Orm/Backend/BackendPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Backend/BackendPolicyStore.php" 644 \
         broker_bin "$ORM_REPO_ROOT/bin/orm-broker.pl" "$ORM_BROKER_BIN" 755 \

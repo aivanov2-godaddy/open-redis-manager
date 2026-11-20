@@ -45,8 +45,10 @@ $assert(str_contains($whm, 'Authentication-failure counters')
     && str_contains($whm, 'Older backends may not expose this optional INFO field'),
     'explain anonymous backend authentication counters and unknown older-backend coverage');
 $assert(str_contains($cpanel, 'PodmanCacheDiscovery::forCurrentAccount')
-    && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches'),
-    'show only verified current-account Podman cache sockets and their read-only probe status');
+    && str_contains($cpanel, 'PodmanLifecycleManager::manage')
+    && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches')
+    && str_contains($cpanel, 'orm_podman_action'),
+    'show verified current-account Podman containers, bounded probe status, and fixed lifecycle actions');
 $assert(str_contains($cpanel, 'valkey-via-containers') && str_contains($cpanel, 'redis-via-containers'),
     'link the cPanel Redis and Valkey container instructions');
 

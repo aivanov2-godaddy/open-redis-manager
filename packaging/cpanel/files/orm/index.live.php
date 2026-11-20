@@ -10,6 +10,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanLifecycleManager.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 
 $cpanel = new CPANEL();
@@ -17,6 +18,22 @@ $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
 $brokerVerified = $account !== null
     && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
 $instanceClient = new \Orm\Cpanel\BrokerClient();
+$podmanActionResult = null;
+$podmanActionMessage = null;
+$podmanAction = $_POST['orm_podman_action'] ?? null;
+if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && is_string($podmanAction) && in_array($podmanAction, ['start', 'stop', 'restart'], true)) {
+    $podmanContainer = $_POST['orm_podman_container'] ?? null;
+    $podmanActionResult = is_string($podmanContainer)
+        ? \Orm\Cpanel\PodmanLifecycleManager::manage($account->username(), $podmanContainer, $podmanAction)
+        : ['success' => false, 'reason' => 'invalid'];
+    $podmanActionMessage = match ($podmanActionResult['reason'] ?? 'failed') {
+        'ok' => 'The cPanel container action completed.',
+        'unsupported-shell' => 'This account shell does not support cPanel EA Podman controls. Ask your hosting administrator to enable a normal, non-jailed shell.',
+        'timeout' => 'The cPanel container action timed out. Check the container status in cPanel before trying again.',
+        default => 'The container action could not be completed. Confirm this is an existing container owned by your cPanel account and check its status in cPanel.',
+    };
+}
 $podmanCaches = $account !== null
     ? \Orm\Cpanel\PodmanCacheDiscovery::forCurrentAccount($account->username())
     : [];
@@ -428,7 +445,8 @@ try {
             <?php if ($podmanCaches !== []): ?>
               <section class="orm-card" aria-labelledby="orm-podman-title">
                 <h3 id="orm-podman-title">Existing cPanel Podman caches</h3>
-                <p>ORM found cache sockets owned by this cPanel account. These remain managed by cPanel’s EA Podman tools; ORM only checks the private socket and provides application connection settings. It does not change container settings or data.</p>
+                <p>These are existing Redis or Valkey containers owned by this cPanel account. cPanel’s EA Podman tools remain responsible for them. ORM can start, stop, or restart an existing container; it cannot install, remove, upgrade, or reconfigure containers.</p>
+                <?php if ($podmanActionMessage !== null): ?><p role="status"><?= htmlspecialchars($podmanActionMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
                 <?php foreach ($podmanCaches as $podmanIndex => $podmanCache): ?>
                   <?php $podmanDetails = \Orm\Cpanel\ConnectionDetails::forSocket($account->username(), $podmanCache['socket_path']); ?>
                   <?php if ($podmanDetails !== null): ?>
@@ -436,13 +454,24 @@ try {
                       <h4><?= htmlspecialchars(ucfirst($podmanCache['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> · cPanel container <?= htmlspecialchars($podmanCache['container'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
                       <p><strong>Status:</strong> <?= htmlspecialchars(ucfirst(str_replace('-', ' ', $podmanCache['status'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $podmanCache['version'] !== null ? ' · version ' . htmlspecialchars($podmanCache['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?></p>
                       <p><strong>Private socket:</strong> <code><?= htmlspecialchars($podmanCache['socket_path'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
-                      <?php if ($podmanCache['status'] === 'reachable'): ?>
+                      <?php if ($podmanCache['status'] === 'socket-missing'): ?>
+                        <p class="orm-note">The container is installed for this account, but its socket is absent. Start it before using the connection examples.</p>
+                      <?php elseif ($podmanCache['status'] === 'reachable'): ?>
                         <p class="orm-note">The PHP runtime completed a bounded, read-only PING. No keys or values were read.</p>
                       <?php elseif ($podmanCache['status'] === 'unavailable'): ?>
                         <p class="orm-note">The account-owned socket exists, but the read-only health probe could not connect. Check the container in cPanel before using it.</p>
                       <?php else: ?>
                         <p class="orm-note">The account-owned socket exists, but the read-only PING did not confirm a response. Check the container in cPanel before using it.</p>
                       <?php endif; ?>
+                      <form method="post" class="orm-inline-form">
+                        <input type="hidden" name="orm_podman_container" value="<?= htmlspecialchars($podmanCache['container'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                        <?php if ($podmanCache['status'] === 'socket-missing'): ?>
+                          <button type="submit" name="orm_podman_action" value="start">Start container</button>
+                        <?php else: ?>
+                          <button type="submit" name="orm_podman_action" value="restart">Restart container</button>
+                          <button type="submit" name="orm_podman_action" value="stop">Stop container</button>
+                        <?php endif; ?>
+                      </form>
                       <details>
                         <summary>PHP with PhpRedis</summary>
                         <pre><code><?= htmlspecialchars($podmanDetails['php_example'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></pre>
