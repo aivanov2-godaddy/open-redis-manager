@@ -72,3 +72,12 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - An icon-only ZIP with `install.json` and the four SVG/PNG assets was accepted by cPanel's `install_plugin --theme jupiter`. cPanel scheduled the sprite update. The installed group and feature SVGs contain the flattened paths, and the spritemap modification time advanced after the update.
 - I extracted the exact group and feature entries from cPanel's regenerated spritemap and rasterized them locally; both generated sprite entries show the complete cube and tile. A post-update authenticated browser capture could not be made because Windows screenshot capture returned `GetCursorPos failed: Access is denied`; appearance in the browser remains unverified, and a hard refresh may be needed to discard cached assets.
 - No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed by this icon-only refresh. No host, account, credential, session URL, or raw operational output is recorded here.
+
+## Sprite cache-key refresh — 2026-11-20
+
+- The owner supplied a later Jupiter screenshot that still showed the registered ORM icons as solid red tiles.
+- The installed group and launcher assets matched the approved package, and the generated SVG sprite contained their cube paths. The stylesheet still referenced an earlier cache key for that sprite, so a browser could continue using the red-only cached sprite.
+- Rebuilt the Jupiter sprite from cPanel's installed icon directory, then updated only the stylesheet's sprite cache key to the SHA-256 digest of the generated SVG. A root-only copy of the previous stylesheet was kept outside the repository for rollback.
+- The repository installer, upgrade and uninstall flows now refresh that generated cache key after cPanel regenerates its sprites. This makes future icon registration changes fetch the current sprite.
+- The authenticated browser appearance was not recaptured; Windows screen capture returned a black frame. The server-side CSS points at the regenerated SVG, but visible rendering still needs browser confirmation after a hard refresh.
+- No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed. No host, account, credential, session URL, or raw operational output is recorded here.

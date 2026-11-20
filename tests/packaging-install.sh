@@ -168,6 +168,15 @@ MOCK
 }
 
 configure_case success
+icon_sprite_root="$ORM_CPANEL_ROOT/base/frontend/jupiter/assets/application_icons/sprites"
+mkdir -p -- "$icon_sprite_root"
+printf '<svg>new sprite</svg>\n' >"$icon_sprite_root/icon_spritemap.svg"
+printf '.icon-open_redis_manager { background-image: url(icon_spritemap.svg?%064d_4.0); }\n' 0 \
+    >"$icon_sprite_root/icon_spritemap.css"
+orm_refresh_cpanel_icon_sprite_cache_key
+icon_sprite_digest="$(sha256sum -- "$icon_sprite_root/icon_spritemap.svg" | awk '{print $1}')"
+grep -Fq "icon_spritemap.svg?${icon_sprite_digest}_4.0" "$icon_sprite_root/icon_spritemap.css" \
+    || { printf 'installer did not refresh the generated cPanel sprite cache key.\n' >&2; exit 1; }
 TEST_FAIL_REGISTER=0
 export TEST_FAIL_REGISTER
 write_installer_runner

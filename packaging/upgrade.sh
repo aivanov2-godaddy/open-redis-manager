@@ -178,7 +178,11 @@ rollback_upgrade() {
         fi
     fi
     if [[ "$cpanel_changed" -eq 1 ]]; then
-        "$ORM_INSTALL_PLUGIN" "$rollback_archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
+        if "$ORM_INSTALL_PLUGIN" "$rollback_archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1; then
+            orm_refresh_cpanel_icon_sprite_cache_key
+        else
+            rollback_failed=1
+        fi
     fi
     if [[ "$legacy_install_kind" == managed ]]; then
         orm_validate_legacy_managed_v1 \
@@ -315,6 +319,7 @@ fi
 
 cpanel_changed=1
 "$ORM_INSTALL_PLUGIN" "$current_archive" --theme "$ORM_CPanel_THEME"
+orm_refresh_cpanel_icon_sprite_cache_key
 files_touched=1
 while IFS='|' read -r key source target mode; do
     # register_appconfig owns this file; it was validated and is included in the manifest,
