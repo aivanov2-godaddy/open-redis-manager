@@ -187,6 +187,176 @@ orm_validate_legacy_identity_v1() {
         || { printf 'ORM upgrader: legacy baseline manifest file count does not match the supported package.\n' >&2; return 1; }
 }
 
+orm_legacy_managed_v1_file_map() {
+    local map="$ORM_PACKAGE_ROOT/legacy/managed-v1/files.map"
+    local key source_kind source_rel target_kind target_rel mode digest extra source_root target_root source target current_line
+    local current_key current_source current_target current_mode count=0
+    local -A seen=()
+    [[ -f "$map" && ! -L "$map" ]] || return 1
+    while IFS='|' read -r key source_kind source_rel target_kind target_rel mode digest extra; do
+        [[ "$key" =~ ^[a-z_]+$ && -z "${seen[$key]+present}" \
+            && ( "$source_kind" == package || "$source_kind" == repo ) \
+            && "$source_rel" != /* && "$source_rel" != *'|'* \
+            && "$target_rel" != /* && "$target_rel" != *'|'* \
+            && "$mode" =~ ^[0-7]{3,4}$ && "$digest" =~ ^[a-f0-9]{64}$ \
+            && -z "${extra:-}" ]] || return 1
+        case "/$source_rel/" in *"/../"*|*"/./"*) return 1 ;; esac
+        case "/$target_rel/" in *"/../"*|*"/./"*) return 1 ;; esac
+        case "$source_kind" in
+            package) source_root="$ORM_PACKAGE_ROOT" ;;
+            repo) source_root="$ORM_REPO_ROOT" ;;
+        esac
+        case "$target_kind" in
+            cpanel-live) target_root="$ORM_CPanel_LIVE" ;;
+            whm-cgi) target_root="$ORM_WHM_CGI" ;;
+            whm-icons) target_root="$ORM_WHM_ICONS" ;;
+            thirdparty) target_root="$ORM_3RDPARTY" ;;
+            systemd) target_root="$(dirname -- "$ORM_BROKER_UNIT")" ;;
+            appconfig) target_root="$(dirname -- "$ORM_APPCONFIG")" ;;
+            *) return 1 ;;
+        esac
+        source="$source_root/$source_rel"
+        target="$target_root/$target_rel"
+        current_line="$(orm_package_file_map | awk -F'|' -v wanted="$key" '$1 == wanted { print; count++ } END { if (count != 1) exit 1 }')" || return 1
+        IFS='|' read -r current_key current_source current_target current_mode <<<"$current_line"
+        [[ "$current_key" == "$key" && "$current_source" == "$source" \
+            && "$current_target" == "$target" && "$current_mode" == "$mode" ]] || return 1
+        seen[$key]=1
+        ((count += 1))
+        printf '%s|%s|%s|%s|%s\n' "$key" "$source" "$target" "$mode" "$digest"
+    done <"$map"
+    [[ "$count" -eq 28 ]]
+}
+
+orm_legacy_managed_v1_expected_manifest() {
+    local key source target mode digest
+    printf 'orm-install-manifest-v1\n'
+    while IFS='|' read -r key source target mode digest; do
+        printf '%s|%s|%s\n' "$key" "$mode" "$digest"
+    done < <(orm_legacy_managed_v1_file_map)
+}
+
+orm_safe_root_owned_parent_chain() {
+    local parent owner mode mode_bits
+    parent="$(dirname -- "$1")"
+    while [[ "$parent" != / ]]; do
+        [[ -d "$parent" && ! -L "$parent" ]] || return 1
+        owner="$(stat -c '%u' -- "$parent")" || return 1
+        mode="$(stat -c '%a' -- "$parent")" || return 1
+        [[ "$owner" == 0 && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+        mode_bits=$((8#$mode))
+        if (( (mode_bits & 0022) != 0 && (mode_bits & 01000) == 0 )); then return 1; fi
+        parent="$(dirname -- "$parent")"
+    done
+}
+
+orm_validate_legacy_managed_v1_instance_roots() {
+    local path owner mode
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        orm_safe_root_owned_parent_chain "$path" || return 1
+        [[ ! -L "$path" ]] || return 1
+        [[ ! -e "$path" ]] && continue
+        [[ -d "$path" ]] || return 1
+        owner="$(stat -c '%u' -- "$path")" || return 1
+        mode="$(stat -c '%a' -- "$path")" || return 1
+        [[ "$owner" == 0 && "$mode" == 711 ]] || return 1
+    done
+}
+
+orm_record_upgrade_created_managed_directories() {
+    local baseline="$1" recorded="$2" path identity
+    [[ -f "$baseline" && ! -L "$baseline" && -f "$recorded" && ! -L "$recorded" ]] || return 1
+    while IFS= read -r path; do
+        [[ "$path" == "$ORM_3RDPARTY/"* ]] || return 1
+        grep -Fxq -- "$path" "$baseline" && continue
+        grep -Fq -- "$path|" "$recorded" && continue
+        identity="$(stat -c '%d:%i:%u:%g:%a' -- "$path")" || return 1
+        printf '%s|%s\n' "$path" "$identity" >>"$recorded" || return 1
+    done < <(find "$ORM_3RDPARTY" -mindepth 1 -type d -print)
+}
+
+orm_remove_upgrade_created_managed_directories() {
+    local recorded="$1" path identity actual
+    [[ -f "$recorded" && ! -L "$recorded" ]] || return 1
+    while IFS='|' read -r path identity; do
+        [[ "$path" == "$ORM_3RDPARTY/"* \
+            && "$identity" =~ ^[0-9]+:[0-9]+:0:0:[0-7]{3,4}$ ]] || return 1
+        [[ ! -e "$path" && ! -L "$path" ]] && continue
+        [[ -d "$path" && ! -L "$path" ]] || return 1
+        actual="$(stat -c '%d:%i:%u:%g:%a' -- "$path")" || return 1
+        [[ "$actual" == "$identity" ]] || return 1
+        rmdir -- "$path" || return 1
+    done < <(LC_ALL=C sort -t'|' -k1,1r -- "$recorded")
+}
+
+orm_prepare_upgrade_instance_directories() {
+    local path identity
+    ORM_CREATED_INSTANCE_ROOTS=()
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        if [[ -e "$path" ]]; then
+            [[ -d "$path" && ! -L "$path" \
+                && "$(stat -c '%u:%a' -- "$path")" == 0:711 ]] \
+                || orm_die 'an existing instance data root changed after preflight.'
+            continue
+        fi
+        [[ ! -L "$path" ]] || orm_die 'an unsafe instance data root appeared after preflight.'
+        mkdir -m 0711 -- "$path" || orm_die 'could not create an ORM runtime directory.'
+        identity="$(stat -c '%d:%i:%u:%a' -- "$path")" || orm_die 'could not verify a new ORM runtime directory.'
+        ORM_CREATED_INSTANCE_ROOTS+=("$path|$identity")
+        chown root:root -- "$path" || orm_die 'could not secure an ORM runtime directory.'
+        chmod 0711 -- "$path" || orm_die 'could not set private traversal permissions on an ORM runtime directory.'
+    done
+}
+
+orm_validate_legacy_managed_v1() {
+    local manifest="$ORM_INSTALL_MANIFEST" baseline="$ORM_PACKAGE_ROOT/legacy/managed-v1/install.manifest"
+    local key source target mode expected_digest actual_digest owner manifest_mode count=0
+    local expected_inventory actual_inventory expected_cpanel_file actual_cpanel_files
+    local -A targets=()
+    [[ -f "$baseline" && ! -L "$baseline" ]] || return 1
+    [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
+    owner="$(stat -c '%u' -- "$manifest")" || return 1
+    manifest_mode="$(stat -c '%a' -- "$manifest")" || return 1
+    [[ "$owner" == 0 && "$manifest_mode" == 600 ]] || return 1
+    cmp -s -- "$baseline" "$manifest" \
+        && cmp -s -- "$baseline" <(orm_legacy_managed_v1_expected_manifest) || return 1
+
+    while IFS='|' read -r key source target mode expected_digest; do
+        [[ -n "$key" && -z "${targets[$target]+present}" ]] || return 1
+        orm_safe_root_owned_parent_chain "$target" || return 1
+        [[ -f "$target" && ! -L "$target" ]] || return 1
+        [[ "$(stat -c '%u' -- "$target")" == 0 \
+            && "$(stat -c '%a' -- "$target")" == "$mode" ]] || return 1
+        actual_digest="$(sha256sum -- "$target" | awk '{print $1}')" || return 1
+        [[ "$actual_digest" == "$expected_digest" ]] || return 1
+        targets[$target]=1
+        ((count += 1))
+    done < <(orm_legacy_managed_v1_file_map)
+    [[ "$count" -eq 28 ]] || return 1
+
+    expected_inventory="$(
+        printf '%s\n' "$manifest"
+        while IFS='|' read -r key source target mode expected_digest; do
+            [[ "$target" == "$ORM_3RDPARTY/"* ]] || continue
+            printf '%s\n' "$target"
+            parent="$(dirname -- "$target")"
+            while [[ "$parent" == "$ORM_3RDPARTY/"* ]]; do
+                printf '%s\n' "$parent"
+                parent="$(dirname -- "$parent")"
+            done
+        done < <(orm_legacy_managed_v1_file_map)
+    )"
+    actual_inventory="$(find "$ORM_3RDPARTY" -mindepth 1 -print | LC_ALL=C sort)" || return 1
+    expected_inventory="$(printf '%s\n' "$expected_inventory" | LC_ALL=C sort -u)"
+    [[ "$actual_inventory" == "$expected_inventory" ]] || return 1
+
+    expected_cpanel_file="$ORM_CPanel_LIVE/index.live.php"
+    [[ -d "$ORM_CPanel_LIVE" && ! -L "$ORM_CPanel_LIVE" ]] || return 1
+    actual_cpanel_files="$(find "$ORM_CPanel_LIVE" -mindepth 1 -print | LC_ALL=C sort)" || return 1
+    [[ "$actual_cpanel_files" == "$expected_cpanel_file" ]] || return 1
+    orm_validate_legacy_managed_v1_instance_roots || return 1
+}
+
 orm_write_install_manifest() {
     local destination="$1" key source target mode digest owner temporary version
     version="$(orm_read_package_version)" || orm_die 'the package version file is missing or invalid.'
@@ -375,6 +545,20 @@ orm_make_legacy_identity_v1_cpanel_archive() {
         || ! install -m 0644 "$legacy/install.json" "$stage/orm/install.json" \
         || ! install -m 0644 "$legacy/icons/orm-group.svg" "$stage/orm/orm-group.svg" \
         || ! install -m 0644 "$legacy/icons/orm-feature.svg" "$stage/orm/orm-feature.svg" \
+        || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-feature.svg; then
+        rm -rf -- "$stage"
+        return 1
+    fi
+    rm -rf -- "$stage"
+}
+
+orm_make_legacy_managed_v1_cpanel_archive() {
+    local destination="$1" legacy="$ORM_PACKAGE_ROOT/legacy/managed-v1/cpanel" stage
+    stage="$(mktemp -d "${TMPDIR:-/tmp}/orm-cpanel-managed-legacy.XXXXXXXX")"
+    if ! mkdir -p "$stage/orm" \
+        || ! install -m 0644 "$legacy/install.json" "$stage/orm/install.json" \
+        || ! install -m 0644 "$legacy/orm-group.svg" "$stage/orm/orm-group.svg" \
+        || ! install -m 0644 "$legacy/orm-feature.svg" "$stage/orm/orm-feature.svg" \
         || ! tar -czf "$destination" -C "$stage/orm" install.json orm-group.svg orm-feature.svg; then
         rm -rf -- "$stage"
         return 1
