@@ -35,6 +35,58 @@ ORM_CREATED_INSTANCE_ROOTS=()
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
+orm_refresh_cpanel_icon_sprite_cache_key() {
+    local icon_root="$ORM_CPANEL_ROOT/base/frontend/$ORM_CPanel_THEME/assets/application_icons"
+    local sprite="$icon_root/sprites/icon_spritemap.svg"
+    local stylesheet="$icon_root/sprites/icon_spritemap.css"
+    local digest current temporary sprite_mode stylesheet_mode
+
+    [[ -f "$sprite" && ! -L "$sprite" && -f "$stylesheet" && ! -L "$stylesheet" ]] || return 0
+    orm_safe_root_owned_parent_chain "$sprite" && orm_safe_root_owned_parent_chain "$stylesheet" || {
+        printf 'ORM installer: could not safely refresh the cPanel icon sprite cache key.\n' >&2
+        return 0
+    }
+    sprite_mode="$(stat -c '%a' -- "$sprite" 2>/dev/null || true)"
+    stylesheet_mode="$(stat -c '%a' -- "$stylesheet" 2>/dev/null || true)"
+    [[ "$(stat -c '%u' -- "$sprite" 2>/dev/null || true)" == 0 \
+        && "$(stat -c '%u' -- "$stylesheet" 2>/dev/null || true)" == 0 \
+        && "$sprite_mode" =~ ^[0-7]{3,4}$ && "$stylesheet_mode" =~ ^[0-7]{3,4}$ ]] || {
+        printf 'ORM installer: cPanel icon sprite files are not root-owned; leaving the cache key unchanged.\n' >&2
+        return 0
+    }
+    (( (8#$sprite_mode & 0022) == 0 && (8#$stylesheet_mode & 0022) == 0 )) || {
+        printf 'ORM installer: cPanel icon sprite files are writable by another user; leaving the cache key unchanged.\n' >&2
+        return 0
+    }
+
+    digest="$(sha256sum -- "$sprite" 2>/dev/null | awk '{print $1}')"
+    [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+        printf 'ORM installer: could not hash the cPanel icon sprite; leaving the cache key unchanged.\n' >&2
+        return 0
+    }
+    current="$(grep -oE 'icon_spritemap\.svg\?[0-9a-f]+_[0-9]+(\.[0-9]+)*' "$stylesheet" | head -n 1 || true)"
+    [[ -n "$current" ]] || {
+        printf 'ORM installer: cPanel icon stylesheet has an unknown sprite URL; leaving it unchanged.\n' >&2
+        return 0
+    }
+    [[ "$current" != "icon_spritemap.svg?${digest}_"* ]] || return 0
+
+    temporary="$(mktemp "$(dirname -- "$stylesheet")/.icon-spritemap.css.XXXXXXXX")" || {
+        printf 'ORM installer: could not prepare the cPanel icon stylesheet cache refresh.\n' >&2
+        return 0
+    }
+    if ! ORM_ICON_SPRITE_CACHE_KEY="$digest" perl -0pe \
+        's{(icon_spritemap\.svg\?)[0-9a-f]+(_[0-9]+(?:\.[0-9]+)*)}{$1$ENV{ORM_ICON_SPRITE_CACHE_KEY}$2}g' \
+        -- "$stylesheet" >"$temporary" \
+        || ! chmod --reference="$stylesheet" -- "$temporary" \
+        || ! chown --reference="$stylesheet" -- "$temporary" \
+        || ! mv -f -- "$temporary" "$stylesheet"; then
+        rm -f -- "$temporary"
+        printf 'ORM installer: failed to refresh the cPanel icon sprite cache key.\n' >&2
+        return 0
+    fi
+}
+
 orm_acquire_lifecycle_lock() {
     local script_path="${1:-}" status lock_mode
     shift || true

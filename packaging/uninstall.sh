@@ -61,7 +61,11 @@ rollback_uninstall() {
         restore_uninstalled_files || rollback_failed=1
     fi
     if [[ "$cpanel_changed" -eq 1 ]]; then
-        "$ORM_INSTALL_PLUGIN" "$archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1 || rollback_failed=1
+        if "$ORM_INSTALL_PLUGIN" "$archive" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1; then
+            orm_refresh_cpanel_icon_sprite_cache_key
+        else
+            rollback_failed=1
+        fi
     fi
     if [[ "$whm_registered" -eq 1 ]]; then
         if orm_registration_state; then
@@ -174,6 +178,7 @@ fi
 
 cpanel_changed=1
 "$ORM_UNINSTALL_PLUGIN" "$archive" --theme="$ORM_CPanel_THEME"
+orm_refresh_cpanel_icon_sprite_cache_key
 files_touched=1
 while IFS='|' read -r key source target mode; do
     [[ "$key" == whm_appconfig ]] && continue

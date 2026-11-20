@@ -26,7 +26,9 @@ cleanup_on_error() {
             "$ORM_UNREGISTER_APPCONFIG" open_redis_manager >/dev/null 2>&1 || true
         fi
         if [[ "$registered_cpanel" -eq 1 ]]; then
-            "$ORM_UNINSTALL_PLUGIN" "$archive" --theme="$ORM_CPanel_THEME" >/dev/null 2>&1 || true
+            if "$ORM_UNINSTALL_PLUGIN" "$archive" --theme="$ORM_CPanel_THEME" >/dev/null 2>&1; then
+                orm_refresh_cpanel_icon_sprite_cache_key
+            fi
         fi
         if [[ "$installed_files" -eq 1 ]]; then
             local key source target mode
@@ -53,6 +55,7 @@ trap cleanup_on_error EXIT
 orm_make_cpanel_archive "$archive"
 registered_cpanel=1
 "$ORM_INSTALL_PLUGIN" "$archive" --theme "$ORM_CPanel_THEME"
+orm_refresh_cpanel_icon_sprite_cache_key
 
 umask 022
 installed_files=1
