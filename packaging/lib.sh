@@ -150,8 +150,10 @@ orm_appconfig_matches_package() {
     [[ -f "$target" && ! -L "$target" ]] || return 1
     # register_appconfig adds the registered application name after the packaged settings.
     if [[ -f "$source" && ! -L "$source" ]]; then
-        cmp -s -- "$target" <(cat -- "$source"; printf '\nname=open_redis_manager\n')
-        return
+        if cmp -s -- "$target" <(cat -- "$source"; printf '\nname=open_redis_manager\n'); then
+            return 0
+        fi
+        return 1
     fi
 
     # Older installs do not carry the package template beside the installed updater.
