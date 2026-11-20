@@ -116,8 +116,8 @@ archive_digest="$(sha256sum -- "$archive_path" | awk '{print $1}')" || orm_die '
 
 metadata_path="$work_directory/release.metadata"
 {
-    printf 'orm-release-metadata-v1\n'
-    printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|%s\n' "$key_id" "$version" "$channel"
+    printf 'orm-release-metadata-v2\n'
+    printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|%s\nstate_migrations|none\n' "$key_id" "$version" "$channel"
     printf 'artifact|orm-%s.tar.gz\nartifact_size|%s\nartifact_sha256|%s\n' "$version" "$archive_size" "$archive_digest"
     printf 'min_from_version|%s\nmax_from_version|%s\ncreated_at|%s\nexpires_at|%s\n' \
         "$minimum_version" "$maximum_version" "$created_at" "$expires_at"

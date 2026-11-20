@@ -68,7 +68,7 @@ write_artifact() {
 write_metadata() {
     local version="${1:-0.2.0}" minimum="${2:-0.1.0-dev}" maximum="${3:-0.1.0-dev}"
     local created="${4:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}" expires="${5:-$future_expiry}" key_id="${6:-test-release}"
-    local retired_target="${7:-}" install_map
+    local retired_target="${7:-}" state_migrations="${8:-none}" install_map
     local size digest
     write_artifact "$version"
     if [[ -n "$retired_target" ]]; then
@@ -82,8 +82,8 @@ write_metadata() {
     size="$(stat -c '%s' -- "$artifact")"
     digest="$(sha256sum -- "$artifact" | awk '{print $1}')"
     {
-        printf 'orm-release-metadata-v1\n'
-        printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|stable\n' "$key_id" "$version"
+        printf 'orm-release-metadata-v2\n'
+        printf 'product|orm\nkey_id|%s\nversion|%s\nchannel|stable\nstate_migrations|%s\n' "$key_id" "$version" "$state_migrations"
         printf 'artifact|orm-%s.tar.gz\nartifact_size|%s\nartifact_sha256|%s\n' "$version" "$size" "$digest"
         printf 'min_from_version|%s\nmax_from_version|%s\ncreated_at|%s\nexpires_at|%s\n' "$minimum" "$maximum" "$created" "$expires"
     } >"$metadata"
@@ -101,6 +101,9 @@ expect_invalid() {
 write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release "$retired_target"
 [[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
+write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release '' 'provider-v4-to-v5'
+expect_invalid 'a signed release declaring an unsupported state migration'
+write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release "$retired_target"
 
 target_root="$test_root/installed-targets"
 installed_manifest="$test_root/installed-manifest"
@@ -163,6 +166,7 @@ expected_artifact_digest="$(sha256sum -- "$artifact" | awk '{print $1}')"
 expected_artifact_size="$(stat -c '%s' -- "$artifact")"
 expected_artifact="$(awk -F'|' '$1 == "artifact" { print $2 }' "$metadata")"
 expected_channel="$(awk -F'|' '$1 == "channel" { print $2 }' "$metadata")"
+expected_state_migrations="$(awk -F'|' '$1 == "state_migrations" { print $2 }' "$metadata")"
 expected_created_at="$(awk -F'|' '$1 == "created_at" { print $2 }' "$metadata")"
 expected_expires_at="$(awk -F'|' '$1 == "expires_at" { print $2 }' "$metadata")"
 expected_add="$(($(wc -l <"$repo_root/packaging/release-install-map.txt") - 4))"
@@ -171,7 +175,7 @@ after_preview="$(target_snapshot)"
     || { printf 'release preview changed an installed fixture.\n' >&2; exit 1; }
 printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     local $/;
-    my ($expected_digest, $expected_size, $expected_channel, $expected_artifact,
+    my ($expected_digest, $expected_size, $expected_channel, $expected_state_migrations, $expected_artifact,
         $expected_created_at, $expected_expires_at, $expected_target, $expected_observed_digest, $expected_add) = @ARGV;
     my $preview = decode_json(<STDIN>);
     exit 1 unless $preview->{schema} eq "orm-update-preview-v2";
@@ -183,6 +187,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
     exit 1 unless $preview->{signatureVerified} && $preview->{signatureAlgorithm} eq "RSA-SHA256";
     exit 1 unless $preview->{release}{keyId} eq "test-release";
     exit 1 unless $preview->{release}{channel} eq $expected_channel;
+    exit 1 unless $preview->{release}{stateMigrations} eq $expected_state_migrations;
     exit 1 unless $preview->{release}{artifact} eq $expected_artifact;
     exit 1 unless $preview->{release}{createdAt} eq $expected_created_at;
     exit 1 unless $preview->{release}{expiresAt} eq $expected_expires_at;
@@ -203,7 +208,7 @@ printf '%s\n' "$preview" | "$ORM_PERL" -MJSON::PP -e '
             && $_->{observedSha256} eq $expected_observed_digest
     } @{$preview->{fileActions}};
     exit 1 unless grep { $_->{key} eq "obsolete_module" && $_->{action} eq "retire" && $_->{requiresReview} } @{$preview->{fileActions}};
-' "$expected_artifact_digest" "$expected_artifact_size" "$expected_channel" "$expected_artifact" \
+' "$expected_artifact_digest" "$expected_artifact_size" "$expected_channel" "$expected_state_migrations" "$expected_artifact" \
     "$expected_created_at" "$expected_expires_at" "$third_target" "$third_observed_digest" "$expected_add" \
     || { printf 'release preview JSON did not report correct read-only target actions.\n' >&2; exit 1; }
 

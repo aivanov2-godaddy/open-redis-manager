@@ -691,6 +691,7 @@ WHM::header('Open Redis Manager', 0, 0);
             <dt>Installed version</dt><dd><?= htmlspecialchars($updatePreview['installedVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
             <dt>Candidate version</dt><dd><?= htmlspecialchars($updatePreview['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
             <dt>Release channel</dt><dd><?= htmlspecialchars($updatePreview['release']['channel'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
+            <dt>ORM state migrations</dt><dd><?= htmlspecialchars($updatePreview['release']['stateMigrations'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
             <dt>Trusted key ID</dt><dd><?= htmlspecialchars($updatePreview['release']['keyId'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
             <dt>Artifact SHA-256</dt><dd><code><?= htmlspecialchars($updatePreview['release']['artifactSha256'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></dd>
           </dl>

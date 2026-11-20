@@ -79,12 +79,12 @@ orm_release_metadata_verify() {
     [[ $# -eq 5 ]] || return 2
     local metadata="$1" signature="$2" artifact="$3" trusted_key_dir="$4" installed_version="$5"
     local metadata_size signature_size artifact_size actual_digest line key value extra index input_owner input_mode parent parent_owner parent_mode
-    local expected_key product key_id version channel artifact_name expected_size expected_digest
+    local expected_key product key_id version channel state_migrations artifact_name expected_size expected_digest
     local minimum_version maximum_version created_at expires_at key_path key_owner key_mode key_bits
     local created_epoch expires_epoch current_epoch compare_result
     local -a lines=()
     local -A values=()
-    local -a expected_keys=(product key_id version channel artifact artifact_size artifact_sha256 min_from_version max_from_version created_at expires_at)
+    local -a expected_keys=(product key_id version channel state_migrations artifact artifact_size artifact_sha256 min_from_version max_from_version created_at expires_at)
 
     for line in "$metadata" "$signature" "$artifact"; do
         [[ "$line" == /* && "$line" != *//* ]] || return 1
@@ -121,7 +121,7 @@ orm_release_metadata_verify() {
     "$ORM_PERL" -0777 -ne 'exit($_ =~ /\A[\x20-\x7E]+\n(?:[\x20-\x7E]+\n)*\z/ ? 0 : 1)' "$metadata" || return 1
 
     mapfile -t lines <"$metadata" || return 1
-    [[ "${#lines[@]}" -eq 12 && "${lines[0]}" == orm-release-metadata-v1 ]] || return 1
+    [[ "${#lines[@]}" -eq 13 && "${lines[0]}" == orm-release-metadata-v2 ]] || return 1
     for index in "${!expected_keys[@]}"; do
         line="${lines[$((index + 1))]}"
         IFS='|' read -r key value extra <<<"$line"
@@ -134,6 +134,7 @@ orm_release_metadata_verify() {
     key_id="${values[key_id]}"
     version="${values[version]}"
     channel="${values[channel]}"
+    state_migrations="${values[state_migrations]}"
     artifact_name="${values[artifact]}"
     expected_size="${values[artifact_size]}"
     expected_digest="${values[artifact_sha256]}"
@@ -146,6 +147,7 @@ orm_release_metadata_verify() {
     [[ "$key_id" =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]] || return 1
     orm_valid_version "$version" && orm_valid_version "$minimum_version" && orm_valid_version "$maximum_version" || return 1
     [[ "$channel" == stable || "$channel" == preview ]] || return 1
+    [[ "$state_migrations" == none ]] || return 1
     [[ "$artifact_name" == "orm-${version}.tar.gz" && "$(basename -- "$artifact")" == "$artifact_name" ]] || return 1
     [[ "$expected_size" =~ ^[1-9][0-9]{0,8}$ && "$expected_size" == "$artifact_size" ]] || return 1
     [[ "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
