@@ -94,7 +94,9 @@ final class PodmanLifecycleManager
         }
         $resolved = @realpath(self::SCRIPT);
         if (!is_string($resolved) || str_contains($resolved, "\0")
-            || !(str_starts_with($resolved, '/usr/local/cpanel/') || str_starts_with($resolved, '/usr/local/opt/cpanel/'))
+            || !(str_starts_with($resolved, '/usr/local/cpanel/')
+                || str_starts_with($resolved, '/usr/local/opt/cpanel/')
+                || str_starts_with($resolved, '/opt/cpanel/'))
             || !self::hasSafeRootOwnedDirectoryChain(dirname($resolved))) {
             return null;
         }
