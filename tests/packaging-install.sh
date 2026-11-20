@@ -67,7 +67,7 @@ configure_case() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 [[ "$2" == --theme && "$3" == jupiter ]] || exit 60
-for member in install.json orm-cpanel-group-v2.svg orm-cpanel-group-v2.png orm-cpanel-feature-v2.svg orm-cpanel-feature-v2.png; do
+for member in install.json orm-cpanel-group-v3.svg orm-cpanel-group-v3.png orm-cpanel-feature-v3.svg orm-cpanel-feature-v3.png; do
     tar -tzf "$1" | grep -Fxq "$member" || exit 61
 done
 printf 'installed\n' >"$TEST_PLUGIN_STATE"
