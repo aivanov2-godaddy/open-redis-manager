@@ -68,6 +68,7 @@ Do not advertise any row as supported until a completed, reviewable validation r
 | Account identity | Live smoke checks LiveAPI identity against the local broker | Passed in three private test runs; the 2026-11-16 run used an explicitly selected test account and did not establish the deployed source revision |
 | Account boundary and WHM ACL | Broker and PHP tests cover peer identity and root-only request paths | Not recorded across the matrix |
 | Redis/Valkey discovery and lifecycle | Broker tests exercise service and backend operations with fixtures | One cPanel ea-podman Redis 6.2.24 container was observed during read-only inventory; ORM discovery and lifecycle operations were not run |
+| WHM security-report counter fields | Broker tests cover monotonic deltas, resets, gaps, and a missing optional auth counter while preserving supported rates | Read-only Redis 6.2.24 `INFO` probe found eviction/command fields and no optional ACL auth field; ORM sampling/report flow and Valkey remain untested. See the [sanitized probe record](records/2026-11-20-redis-6.2-security-counter-probe.md). |
 | Backup and restore | Broker tests exercise selected snapshots, validation, service restart, and rollback with fixtures | Not recorded |
 | Redis-to-Valkey migration | Broker tests exercise version gates, validation, success, and rollback with fixtures | Not recorded |
 | WHM recovery | Broker and fleet tests cover read-only scans and the fixed start repair | Not recorded |

@@ -43,7 +43,7 @@ Three live cPanel account-identity smoke runs passed during private testing. The
 
 - Automatic release discovery/download, hosted signing authority and key rotation operations, and automated first-time migration of older installations into the v3 updater baseline.
 - Automatic whole-fleet backup/restore/repair batches; current WHM snapshot batches intentionally cover at most two selected accounts per request.
-- Authentication counter availability and counter-reset behavior across supported Redis and Valkey versions, plus disposable-host validation of the report-only evidence.
+- The Redis 6.2.24 test service lacks the optional ACL auth-failure counter while exposing eviction and command counters; this direct read-only probe does not test ORM collection. Valkey/version coverage, counter-reset behavior on the supported matrix, and the live report-only flow remain open. See the [sanitized probe record](validation/records/2026-11-20-redis-6.2-security-counter-probe.md).
 - A production-supported cPanel/OS/PHP matrix. No ORM host combination has completed the full validation gate.
 
 ## Release gate
