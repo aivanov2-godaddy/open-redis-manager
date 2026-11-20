@@ -39,7 +39,7 @@ orm_refresh_cpanel_icon_sprite_cache_key() {
     local icon_root="$ORM_CPANEL_ROOT/base/frontend/$ORM_CPanel_THEME/assets/application_icons"
     local sprite="$icon_root/sprites/icon_spritemap.svg"
     local stylesheet="$icon_root/sprites/icon_spritemap.css"
-    local digest current temporary sprite_mode stylesheet_mode
+    local digest current temporary sprite_mode stylesheet_mode sprite_generator sprite_generator_mode
 
     [[ -f "$sprite" && ! -L "$sprite" && -f "$stylesheet" && ! -L "$stylesheet" ]] || return 0
     orm_safe_root_owned_parent_chain "$sprite" && orm_safe_root_owned_parent_chain "$stylesheet" || {
@@ -58,6 +58,40 @@ orm_refresh_cpanel_icon_sprite_cache_key() {
         printf 'ORM installer: cPanel icon sprite files are writable by another user; leaving the cache key unchanged.\n' >&2
         return 0
     }
+
+    # install_plugin schedules sprite generation, so it may rewrite the CSS
+    # cache URL after this function returns. Generate the current theme's sprite
+    # synchronously first, then key the CSS to the resulting SVG below.
+    sprite_generator="$ORM_CPANEL_ROOT/bin/sprite_generator"
+    if [[ -x "$sprite_generator" ]]; then
+        orm_safe_root_owned_parent_chain "$sprite_generator" || {
+            printf 'ORM installer: cPanel sprite generator path is unsafe; leaving the cache key unchanged.\n' >&2
+            return 0
+        }
+        [[ -f "$sprite_generator" && ! -L "$sprite_generator" \
+            && "$(stat -c '%u' -- "$sprite_generator" 2>/dev/null || true)" == 0 ]] || {
+            printf 'ORM installer: cPanel sprite generator is not a root-owned regular file; leaving the cache key unchanged.\n' >&2
+            return 0
+        }
+        sprite_generator_mode="$(stat -c '%a' -- "$sprite_generator" 2>/dev/null || true)"
+        [[ "$sprite_generator_mode" =~ ^[0-7]{3,4}$ ]] \
+            && (( (8#$sprite_generator_mode & 0022) == 0 )) || {
+            printf 'ORM installer: cPanel sprite generator has unsafe permissions; leaving the cache key unchanged.\n' >&2
+            return 0
+        }
+        if ! "$sprite_generator" --theme "$ORM_CPanel_THEME" >/dev/null 2>&1; then
+            printf 'ORM installer: cPanel sprite generation failed; leaving the cache key unchanged.\n' >&2
+            return 0
+        fi
+        [[ -f "$sprite" && ! -L "$sprite" && -f "$stylesheet" && ! -L "$stylesheet" ]] || return 0
+        orm_safe_root_owned_parent_chain "$sprite" && orm_safe_root_owned_parent_chain "$stylesheet" || return 0
+        sprite_mode="$(stat -c '%a' -- "$sprite" 2>/dev/null || true)"
+        stylesheet_mode="$(stat -c '%a' -- "$stylesheet" 2>/dev/null || true)"
+        [[ "$(stat -c '%u' -- "$sprite" 2>/dev/null || true)" == 0 \
+            && "$(stat -c '%u' -- "$stylesheet" 2>/dev/null || true)" == 0 \
+            && "$sprite_mode" =~ ^[0-7]{3,4}$ && "$stylesheet_mode" =~ ^[0-7]{3,4}$ ]] || return 0
+        (( (8#$sprite_mode & 0022) == 0 && (8#$stylesheet_mode & 0022) == 0 )) || return 0
+    fi
 
     digest="$(sha256sum -- "$sprite" 2>/dev/null | awk '{print $1}')"
     [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {

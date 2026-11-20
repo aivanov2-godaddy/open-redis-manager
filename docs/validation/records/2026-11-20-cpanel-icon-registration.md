@@ -81,3 +81,11 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - The repository installer, upgrade and uninstall flows now refresh that generated cache key after cPanel regenerates its sprites. This makes future icon registration changes fetch the current sprite.
 - The authenticated browser appearance was not recaptured; Windows screen capture returned a black frame. The server-side CSS points at the regenerated SVG, but visible rendering still needs browser confirmation after a hard refresh.
 - No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed. No host, account, credential, session URL, or raw operational output is recorded here.
+
+## Follow-up registration and cache synchronization — 2026-11-20
+
+- Re-registered the current versioned group and launcher assets with an icon-only package. The four installed SVG/PNG files match the repository package by SHA-256.
+- cPanel's `sprite_generator` regenerated the Jupiter sprite, then ORM's cache refresh updated the stylesheet URL to the generated SVG's SHA-256. The final sprite hash and stylesheet cache key match.
+- The package helper now runs cPanel's sprite generator synchronously before calculating the cache key, preventing the delayed `install_plugin` sprite update from leaving a stale URL. The isolated cPanel installer test covers this cache-key rewrite.
+- The authenticated browser appearance was not captured in this run; the existing image remains a local render of the packaged assets. A browser hard refresh and visual confirmation are still pending.
+- No ORM service, broker state, Redis/Valkey instance, account data, or WHM package was changed by this icon-only registration and sprite refresh. No host, account, credential, session URL, or raw operational output is recorded here.
