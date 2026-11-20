@@ -1,6 +1,6 @@
 # Host compatibility and validation matrix
 
-**Last checked against vendor documentation:** 2026-11-16
+**Last checked against vendor documentation:** 2026-11-20
 **ORM support status:** no production host combination has completed the ORM validation gate.
 
 This page separates cPanel & WHM's host-install requirements from ORM's own tested support. A host listed as installable by cPanel is not thereby validated for ORM. The vendor matrix changes over time; consult the linked pages before selecting a disposable test image.
@@ -35,6 +35,15 @@ The cPanel plugin page executes with cPanel's internal PHP runtime. EasyApache P
 | CloudLinux Alt-PHP / PHP Selector | Versions vary by CloudLinux release. PHP Selector requires CageFS, Alt-PHP, initialized/enabled CageFS, and a compatible handler; consult the current CloudLinux compatibility matrix. | Not validated. ORM socket visibility and client-extension behavior under CageFS/PHP Selector have not been exercised. |
 
 Sources: [cPanel internal PHP](https://docs.cpanel.net/knowledge-base/general-systems-administration/cpanel-php/), [EasyApache PHP versions](https://docs.cpanel.net/ea4/php/about-php/), [CloudLinux PHP Selector requirements](https://docs.cloudlinux.com/cloudlinuxos/cloudlinux_os_components/).
+
+## cPanel theme integration
+
+| Surface | Current package target | ORM validation |
+|---|---|---|
+| cPanel user interface | Jupiter only. The installer registers the plugin with cPanel's `install_plugin --theme jupiter` flow and places its LiveAPI page under Jupiter's interface directory. The group icon is a 32×32 SVG; the launcher is registered with a 48×48 PNG. | No theme/version combination is currently declared supported. Linux CI checks the package archive and registration contract, but the current icon change and lifecycle have not been reinstalled and visually verified on the live test host. |
+| WHM administrator interface | Native WHM AppConfig registration, separate from the cPanel theme. | No cPanel/WHM version has completed the disposable-host gate. |
+
+cPanel's [plugin registration guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins) documents Jupiter group and feature icon sizes and formats. Its [install_plugin reference](https://docs.cpanel.net/whm/scripts/the-install_plugin-script/) describes the theme-specific registration utility. ORM does not claim support for Paper Lantern or other cPanel themes.
 
 ## ORM disposable-host matrix
 
