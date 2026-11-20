@@ -57,3 +57,10 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - The icon-only archive was accepted by cPanel and a sprite refresh was scheduled. The installed 48×48 launcher PNG has the same SHA-256 digest as the packaged PNG.
 - The local package preview is [`screenshots/previews/cpanel-registration-icons.png`](../../../screenshots/previews/cpanel-registration-icons.png). It documents the supplied assets; it is not a live cPanel screenshot. Browser appearance remains unverified because no authenticated Jupiter capture was available.
 - No ORM service, broker state, Redis/Valkey instance, or account data was changed by this icon-only registration.
+
+## Pixel-space SVG refresh — 2026-11-20
+
+- The owner-designated cPanel test system accepted the icon-only ZIP with `install_plugin --theme jupiter` and scheduled a sprite refresh.
+- Inspection of cPanel's installed Jupiter application icon showed that its sprite processing rewrites SVG `<rect>` width and height values to the icon's pixel dimensions, while preserving the viewBox. The previous 256-unit viewBox therefore did not match cPanel's transformed SVG.
+- The group and launcher SVGs now use 32×32 and 48×48 viewBoxes, respectively, with the existing approved cache-cube artwork scaled into those pixel coordinate spaces. The installed launcher SVG contains the expected 48×48 viewBox and correctly scaled background geometry; the 48×48 PNG fallback remains present.
+- Browser rendering was not captured, so visual appearance in Jupiter is still unverified. No ORM service, broker state, Redis/Valkey instance, or account data was changed.
