@@ -528,6 +528,24 @@ delete $manager->{atomic_write_call};
 my $provisioned = $manager->dispatch('instance.provision', $account);
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
+my $instance_systemctl_call = $manager->{systemctl_call};
+$manager->{systemctl_call} = sub {
+    my (@args) = @_;
+    return (0, 'activating') if $args[0] eq 'is-active';
+    return $instance_systemctl_call->(@args);
+};
+my $starting_status = $manager->dispatch('instance.status', $account);
+ok($starting_status->{success} && $starting_status->{state} eq 'starting',
+    'report a systemd activating result as a valid starting instance state');
+$manager->{systemctl_call} = sub {
+    my (@args) = @_;
+    return (0, 'deactivating') if $args[0] eq 'is-active';
+    return $instance_systemctl_call->(@args);
+};
+my $stopping_status = $manager->dispatch('instance.status', $account);
+ok($stopping_status->{success} && $stopping_status->{state} eq 'stopping',
+    'report a systemd deactivating result as a valid stopping instance state');
+$manager->{systemctl_call} = $instance_systemctl_call;
 my $start_calls_before_healthy_recovery = scalar grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' } @systemctl_calls;
 is($manager->recovery_start_if_stopped($account)->{error}, 'repair_not_applicable',
     'do not offer a start repair when the manifest is verified and service is already running');

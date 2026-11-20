@@ -215,7 +215,9 @@ sub status {
     }
     return _failure('instance_unavailable') if !$manifest;
     my ($ok, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
-    return _failure('instance_unavailable') if !$ok && $state ne 'inactive' && $state ne 'failed';
+    return _failure('instance_unavailable') if !$ok
+        && $state ne 'inactive' && $state ne 'failed'
+        && $state ne 'activating' && $state ne 'reloading' && $state ne 'deactivating';
     return _state('running', $manifest) if $state eq 'active';
     return _state('starting', $manifest) if $state eq 'activating' || $state eq 'reloading';
     return _state('stopping', $manifest) if $state eq 'deactivating';

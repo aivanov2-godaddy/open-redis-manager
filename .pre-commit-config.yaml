@@ -77,3 +77,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: cpanel-live-isolation-smoke-checks
+        name: cPanel live isolation smoke assertions
+        entry: python tests/cpanel-live-isolation-smoke-checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
