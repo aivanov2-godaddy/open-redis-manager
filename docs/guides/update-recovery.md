@@ -11,7 +11,26 @@
 
 The normal recovery path contains the old v3 install manifest and a copy of each file that was replaced. An `add` action had no prior file. The action records include the fixed target and candidate digest; the signed install map and its hard-coded allowlist constrain those targets to ORM-owned paths.
 
-## Manual restoration
+## Recovery command
+
+The installed recovery command is `/usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh`. It shares the lifecycle lock with install, upgrade, and update operations. If that command is unavailable, run `packaging/recover-release.sh` from the exact ORM source revision that created the interrupted transaction. First list and inspect the exact retained transaction ID:
+
+```sh
+sudo bash /usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh --list
+sudo bash /usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh --preview transaction.ID
+```
+
+Review the preview and take the host snapshot before explicitly confirming that same ID:
+
+```sh
+sudo bash /usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh --confirm transaction.ID
+```
+
+The command validates the root-owned journal, action list, old manifest, every required backup, and every current target before the first change. It accepts a target only when its content is the recorded old or candidate digest. It then restores replaced files atomically, removes only exact candidate files added by the interrupted update, restores the old manifest, validates the restored installation and WHM registration, appends a rollback audit outcome, and removes the recovery workspace. If interrupted during recovery, run preview and confirmation again with the same ID; already-restored files are recognized by their old digest. A completed transaction is never rolled back by this command. Any unknown file state, malformed journal, unsafe path, or missing backup stops recovery and preserves the workspace for administrator review.
+
+If the recovery command is unavailable or its validation fails, do not guess at manual commands. Preserve the workspace and use the host snapshot with cPanel support.
+
+## Manual restoration (legacy releases)
 
 Use the transaction journal and installed manifest to inspect every action:
 
@@ -25,4 +44,4 @@ The updater does not modify Redis/Valkey instance data, account records, credent
 
 Linux integration CI exercises a hard process termination after an atomic managed-file replacement but before the next journal checkpoint. It verifies that the prior manifest, root-owned transaction journal, and file backup remain available, that account and Redis fixture data is unchanged, that no success audit entry is written, and that a retry fails closed. This is isolated fixture evidence; it does not replace live cPanel interruption and manual-recovery validation.
 
-The audit log at `/var/cpanel/orm/updates/update-audit.jsonl` contains fixed metadata fields (actor, versions, artifact digest, timestamp and outcome); it does not contain credentials or file contents. Process termination can occur before an outcome record is appended, so the retained transaction journal is authoritative for an interrupted transaction.
+The audit log at `/var/cpanel/orm/updates/update-audit.jsonl` contains fixed metadata fields (actor, versions, artifact digest, timestamp and outcome); recovery records also include the transaction ID to make audit retries idempotent. It does not contain credentials or file contents. Process termination can occur before an outcome record is appended, so the retained transaction journal is authoritative for an interrupted transaction.

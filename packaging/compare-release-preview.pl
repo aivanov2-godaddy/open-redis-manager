@@ -66,6 +66,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/VERSION
         /usr/local/cpanel/3rdparty/orm/packaging/preview-release.sh
         /usr/local/cpanel/3rdparty/orm/packaging/apply-release.sh
+        /usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh
         /usr/local/cpanel/3rdparty/orm/bin/orm-update-worker.pl
         /usr/local/cpanel/3rdparty/orm/packaging/lib.sh
         /usr/local/cpanel/3rdparty/orm/packaging/release-lib.sh

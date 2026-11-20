@@ -35,6 +35,7 @@ broker_provider_policy|src/Orm/Broker/ProviderPolicy.pm|/usr/local/cpanel/3rdpar
 release_version|VERSION|/usr/local/cpanel/3rdparty/orm/VERSION|644
 release_preview|packaging/preview-release.sh|/usr/local/cpanel/3rdparty/orm/packaging/preview-release.sh|755
 release_apply|packaging/apply-release.sh|/usr/local/cpanel/3rdparty/orm/packaging/apply-release.sh|755
+release_recover|packaging/recover-release.sh|/usr/local/cpanel/3rdparty/orm/packaging/recover-release.sh|755
 release_worker|bin/orm-update-worker.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-update-worker.pl|755
 release_package_lib|packaging/lib.sh|/usr/local/cpanel/3rdparty/orm/packaging/lib.sh|644
 release_verification_lib|packaging/release-lib.sh|/usr/local/cpanel/3rdparty/orm/packaging/release-lib.sh|644
