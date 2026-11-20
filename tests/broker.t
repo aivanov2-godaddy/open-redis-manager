@@ -1344,9 +1344,9 @@ $unit_state = 'inactive';
 is($manager->dispatch('instance.metrics', $account)->{error}, 'not_running',
     'preserve the stopped error when the saved sample is expired');
 ok(!-e $metrics_path, 'remove an expired root-owned snapshot on access');
-ok(!(grep { $_->[0] ne 'is-active' && $_->[-1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
+ok(!(grep { $_->[0] ne 'is-active' && $_->[-1] !~ /\A(?:orm-instance\@(?:ormtest|ormdefaults)\.service|orm-metrics-collect\@(?:ormtest|ormdefaults)\.timer)\z/ } @systemctl_calls),
     'only the account-specific service and metrics timer templates are controlled');
-ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\A(?:orm-instance\@ormtest\.service|orm-metrics-collect\@ormtest\.timer)\z/ } @systemctl_calls),
+ok(!(grep { $_->[0] eq 'is-active' && $_->[1] !~ /\A(?:orm-instance\@(?:ormtest|ormdefaults)\.service|orm-metrics-collect\@(?:ormtest|ormdefaults)\.timer)\z/ } @systemctl_calls),
     'status never queries a global Redis, Valkey or metrics unit');
 my %root_rates;
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 1, 1, 0), 'deny root broker requests by default');
