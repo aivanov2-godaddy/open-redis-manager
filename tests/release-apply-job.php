@@ -20,7 +20,7 @@ $preview = [
     'installedVersion' => '0.1.0-dev',
     'candidateVersion' => '0.2.0',
     'release' => ['artifactSha256' => str_repeat('a', 64)],
-    'summary' => ['add' => 1, 'adopt' => 1, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
+    'summary' => ['add' => 1, 'adopt' => 1, 'normalize' => 0, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
     'fileActions' => [
         ['action' => 'replace'],
         ['action' => 'add'],
@@ -52,6 +52,12 @@ $assert(!ReleaseApplyJob::previewIsConflictFree($unsupported), 'an unknown file 
 $unreviewedAdopt = $preview;
 $unreviewedAdopt['fileActions'][2]['requiresReview'] = false;
 $assert(!ReleaseApplyJob::previewIsConflictFree($unreviewedAdopt), 'an adopt action without operator review is rejected');
+$normalize = $preview;
+$normalize['summary']['normalize'] = 1;
+$normalize['fileActions'][] = ['action' => 'normalize', 'requiresReview' => true];
+$assert(ReleaseApplyJob::previewIsConflictFree($normalize), 'a reviewed normalize action can be applied');
+$normalize['fileActions'][4]['requiresReview'] = false;
+$assert(!ReleaseApplyJob::previewIsConflictFree($normalize), 'a normalize action without operator review is rejected');
 $incomplete = $preview;
 unset($incomplete['summary']['unchanged']);
 $assert(!ReleaseApplyJob::previewIsConflictFree($incomplete), 'an incomplete file summary is rejected');

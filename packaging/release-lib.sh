@@ -6,6 +6,21 @@ ORM_RELEASE_ARTIFACT_MAX_BYTES=134217728
 ORM_RELEASE_METADATA_MAX_AGE_SECONDS=7776000
 ORM_RELEASE_CLOCK_SKEW_SECONDS=300
 
+orm_release_crlf_normalized_sha256() {
+    local path="${1:-}"
+    [[ -n "$path" && -f "$path" && ! -L "$path" ]] || return 1
+    "$ORM_PERL" -MDigest::SHA=sha256_hex -0777 -e '
+        my $path = shift;
+        open my $handle, "<:raw", $path or exit 2;
+        local $/;
+        my $bytes = <$handle>;
+        close $handle or exit 2;
+        exit 1 if !defined($bytes) || $bytes !~ /\r\n/ || $bytes =~ /\x00/ || $bytes =~ /\r(?!\n)/;
+        $bytes =~ s/\r\n/\n/g;
+        print sha256_hex($bytes);
+    ' -- "$path"
+}
+
 orm_release_safe_root_directory() {
     local directory="${1:-}" owner mode rest component
     local -a components=()

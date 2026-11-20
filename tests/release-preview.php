@@ -25,7 +25,7 @@ $valid = [
         'keyId' => 'orm-release-2026',
         'artifactSha256' => str_repeat('a', 64),
     ],
-    'summary' => ['add' => 1, 'adopt' => 0, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
+    'summary' => ['add' => 1, 'adopt' => 0, 'normalize' => 0, 'replace' => 2, 'unchanged' => 3, 'move' => 0, 'conflict' => 0, 'retire' => 0],
     'fileActions' => [[
         'key' => 'whm_cgi',
         'action' => 'replace',
@@ -77,6 +77,22 @@ $adoptWithoutReview = $adoptAction;
 $adoptWithoutReview['fileActions'][0]['requiresReview'] = false;
 $assert(!(ReleasePreview::validate($json($adoptWithoutReview), '0.1.0-dev', $allowedTargets)['ok'] ?? false),
     'adopt actions without explicit review are rejected');
+$normalizeAction = $valid;
+$normalizeAction['summary']['normalize'] = 1;
+$normalizeAction['fileActions'][0]['action'] = 'normalize';
+$normalizeAction['fileActions'][0]['requiresReview'] = true;
+$normalizeAction['fileActions'][0]['observedSha256'] = str_repeat('b', 64);
+$normalized = ReleasePreview::validate($json($normalizeAction), '0.1.0-dev', $allowedTargets);
+$assert(($normalized['ok'] ?? false) === true && $normalized['fileActions'][0]['observedSha256'] === str_repeat('b', 64),
+    'a reviewed CRLF-only normalize action retains its previous digest');
+$normalizeWithoutReview = $normalizeAction;
+$normalizeWithoutReview['fileActions'][0]['requiresReview'] = false;
+$assert(!(ReleasePreview::validate($json($normalizeWithoutReview), '0.1.0-dev', $allowedTargets)['ok'] ?? false),
+    'normalize actions without explicit review are rejected');
+$normalizeWithoutDigest = $normalizeAction;
+unset($normalizeWithoutDigest['fileActions'][0]['observedSha256']);
+$assert(!(ReleasePreview::validate($json($normalizeWithoutDigest), '0.1.0-dev', $allowedTargets)['ok'] ?? false),
+    'normalize actions without the previous digest are rejected');
 
 $assert(!(ReleasePreview::validate($json($valid), '0.1.1', $allowedTargets)['ok'] ?? false), 'installed version must match');
 foreach (['verified', 'signatureVerified', 'mutationsApplied'] as $field) {

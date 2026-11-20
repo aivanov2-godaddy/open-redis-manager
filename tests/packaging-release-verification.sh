@@ -239,6 +239,20 @@ assert_adoption_is_conflict() {
 
 adopt_backup="$test_root/application-discovery.exact"
 cp -a -- "$adopt_path" "$adopt_backup"
+perl -pe 's/\r?\n/\r\n/g' "$adopt_backup" >"$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
+crlf_observed_digest="$(sha256sum -- "$adopt_path" | awk '{print $1}')"
+crlf_preview="$(printf '%s\n' "$raw_inventory" | "$ORM_PERL" \
+    "$repo_root/packaging/compare-release-preview.pl" "$installed_manifest" '0.1.0-dev' "$metadata" "$target_root")"
+printf '%s\n' "$crlf_preview" | "$ORM_PERL" -MJSON::PP -e '
+    local $/;
+    my $preview = decode_json(<STDIN>);
+    exit 1 unless $preview->{summary}{normalize} == 1;
+    exit 1 unless grep { $_->{key} eq "application_discovery" && $_->{action} eq "normalize"
+        && $_->{requiresReview} && $_->{observedSha256} eq $ARGV[0] } @{$preview->{fileActions}};
+' "$crlf_observed_digest" || { printf 'preview did not classify the exact CRLF-only candidate as reviewed normalization.\n' >&2; exit 1; }
+cp -- "$adopt_backup" "$adopt_path"
+chmod "$adopt_mode" "$adopt_path"
 printf 'changed content\n' >"$adopt_path"
 chmod "$adopt_mode" "$adopt_path"
 assert_adoption_is_conflict 'digest mismatch'

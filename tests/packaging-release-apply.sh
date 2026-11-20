@@ -246,6 +246,20 @@ grep -Fqx "application_discovery|644|$adopt_digest_before|$adopt_target" "$manif
     exit 1
 }
 
+# A CRLF-only candidate difference is reviewed, backed up, and replaced with
+# the exact signed LF file.
+prepare_installation "$target_root" "$manifest" 'application_discovery'
+normalize_target="$target_root$adopt_target"
+perl -pe 's/\r?\n/\r\n/g' "$normalize_target" >"$normalize_target.next"
+mv -- "$normalize_target.next" "$normalize_target"
+chmod 644 "$normalize_target"
+bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/normalize-apply.out"
+cmp -s "$release_root/$(awk -F'|' '$1 == "application_discovery" { print $2 }' "$repo_root/packaging/release-install-map.txt")" "$normalize_target" \
+    && grep -Fqx "application_discovery|644|$(sha256sum "$normalize_target" | awk '{print $1}')|$adopt_target" "$manifest" || {
+    printf 'signed apply did not normalize the reviewed CRLF-only file to the exact candidate.\n' >&2
+    exit 1
+}
+
 # A clean fixture applies and advances the v3 manifest without touching service data.
 prepare_installation "$target_root" "$manifest"
 bash "$repo_root/packaging/apply-release.sh" "$metadata" "$signature" "$artifact" "$key_dir" "$installed_version" "$manifest" "$target_root" >"$test_root/apply.out"
@@ -288,6 +302,10 @@ grep -q '"outcome":"success"' "$target_root/var/cpanel/orm/updates/update-audit.
 # journal checkpoint. The transaction must remain recoverable and retries must
 # not treat the partial installation as a completed release.
 prepare_installation "$target_root" "$manifest" 'application_discovery'
+adopt_file="$target_root$(awk -F'|' '$1 == "application_discovery" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
+perl -pe 's/\r?\n/\r\n/g' "$adopt_file" >"$adopt_file.next"
+mv -- "$adopt_file.next" "$adopt_file"
+chmod 644 "$adopt_file"
 crash_bin="$test_root/crash-bin"
 mkdir -m 0700 "$crash_bin"
 real_mv="$(command -v mv)"
@@ -311,7 +329,6 @@ marker="$test_root/crash-marker"
 wrapper_pid_file="$test_root/crash-wrapper-pid"
 manifest_before_interrupt="$(sha256sum "$manifest" | awk '{print $1}')"
 adopt_file="$target_root$(awk -F'|' '$1 == "application_discovery" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
-adopt_inode_before_interrupt="$(stat -c '%i' "$adopt_file")"
 adopt_digest_before_interrupt="$(sha256sum "$adopt_file" | awk '{print $1}')"
 original_install_tree="$(tree_snapshot "$target_root")"
 checkpoint='waiting for interrupted updater'
@@ -362,12 +379,12 @@ grep -Fqx 'phase|applying' "$interrupted_workspace/journal" || {
     printf 'interrupted transaction journal did not preserve its in-progress phase.\n' >&2
     exit 1
 }
-grep -Fq 'application_discovery|adopt|' "$interrupted_workspace/journal" || {
-    printf 'interrupted transaction did not preserve its adopted-file action in the journal.\n' >&2
+grep -Fq 'application_discovery|normalize|' "$interrupted_workspace/journal" || {
+    printf 'interrupted transaction did not preserve its normalized-file action in the journal.\n' >&2
     exit 1
 }
-cmp -s "$release_root/packaging/cpanel/files/orm/index.live.php" "$target_root$first_target" || {
-    printf 'process interruption did not leave the fixture at the expected partial replacement point.\n' >&2
+cmp -s "$release_root/$(awk -F'|' '$1 == "application_discovery" { print $2 }' "$repo_root/packaging/release-install-map.txt")" "$adopt_file" || {
+    printf 'process interruption did not leave the normalized file at the expected candidate state.\n' >&2
     exit 1
 }
 [[ "$(orm_install_manifest_version "$manifest")" == "$installed_version" \
@@ -440,9 +457,8 @@ fi
     cat "$test_root/recovery.out" >&2
     exit 1
 }
-[[ "$(stat -c '%i' "$adopt_file")" == "$adopt_inode_before_interrupt" \
-    && "$(sha256sum "$adopt_file" | awk '{print $1}')" == "$adopt_digest_before_interrupt" ]] || {
-    printf 'recovery changed the pre-existing adopted file.\n' >&2
+[[ "$(sha256sum "$adopt_file" | awk '{print $1}')" == "$adopt_digest_before_interrupt" ]] || {
+    printf 'recovery did not restore the original CRLF bytes for the normalized file.\n' >&2
     exit 1
 }
 [[ -z "$(find "$target_root/var/cpanel/orm/updates" -mindepth 1 -maxdepth 1 -name 'transaction.*' -print -quit)" ]] || {

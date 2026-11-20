@@ -26,6 +26,8 @@ The **Check update status** form reads the sanitized job record. Terminal states
 
 If a candidate file is absent from the installed v3 manifest but already exists at its fixed managed path, the preview labels it **Adopt exact file** only when it is a regular non-symlink file owned by root with the candidate mode and exact signed SHA-256. Adoption is marked for operator review. Apply rechecks all of those conditions under the update lock, adds the record to the new manifest, and leaves the existing file untouched. Any mismatch remains a conflict and blocks apply. WHM AppConfig cannot be adopted by this workflow.
 
+An unmanifested file with the expected root ownership and mode is labeled **Normalize line endings** only when converting CRLF pairs to LF produces the exact signed candidate digest. NUL bytes, bare carriage returns, other content differences, unsafe file types, ownership, and mode mismatches remain conflicts. This action requires explicit review, snapshots the original bytes, and atomically installs the signed candidate; recovery restores the original bytes if the update is interrupted.
+
 ## Current boundaries
 
 - No remote update feed or automatic downloader is configured; staging remains a root-operated task.
