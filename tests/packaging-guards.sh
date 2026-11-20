@@ -31,6 +31,64 @@ grep -Fq 'metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-packaging-guards.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
 
+# The release updater checks that the broker retains its pre-update state and,
+# when active, still exposes the correctly owned runtime socket.
+health_root="$test_root/broker-health"
+mkdir -m 0700 "$health_root" "$health_root/bin"
+cat >"$health_root/bin/systemctl" <<'SH'
+#!/usr/bin/env bash
+set -e
+case "$1 $2" in
+    'is-enabled orm-broker.service') printf '%s\n' "${TEST_BROKER_ENABLED:-enabled}" ;;
+    'is-active orm-broker.service') printf '%s\n' "${TEST_BROKER_ACTIVE:-inactive}" ;;
+    *) exit 1 ;;
+esac
+SH
+chmod 0755 "$health_root/bin/systemctl"
+ORM_SYSTEMCTL="$health_root/bin/systemctl"
+ORM_BROKER_SOCKET="$health_root/run/orm/broker.sock"
+mkdir -p "$(dirname -- "$ORM_BROKER_SOCKET")"
+chmod 0755 "$health_root/run" "$(dirname -- "$ORM_BROKER_SOCKET")"
+export TEST_BROKER_ENABLED=enabled TEST_BROKER_ACTIVE=active
+orm_capture_broker_state
+if orm_broker_health_matches_initial; then
+    printf 'active broker health accepted a missing socket.\n' >&2
+    exit 1
+fi
+"$ORM_PERL" -MSocket -e 'socket(my $socket, PF_UNIX, SOCK_STREAM, 0) or die "socket: $!"; bind($socket, sockaddr_un($ARGV[0])) or die "bind: $!";' "$ORM_BROKER_SOCKET"
+chmod 0666 "$ORM_BROKER_SOCKET"
+orm_broker_health_matches_initial || {
+    printf 'healthy active broker state and socket were rejected.\n' >&2
+    exit 1
+}
+export TEST_BROKER_ACTIVE=inactive
+if orm_broker_health_matches_initial; then
+    printf 'broker active-state drift was accepted.\n' >&2
+    exit 1
+fi
+export TEST_BROKER_ACTIVE=active TEST_BROKER_ENABLED=disabled
+if orm_broker_health_matches_initial; then
+    printf 'broker enabled-state drift was accepted.\n' >&2
+    exit 1
+fi
+export TEST_BROKER_ACTIVE=inactive TEST_BROKER_ENABLED=disabled
+orm_capture_broker_state
+orm_broker_health_matches_initial || {
+    printf 'a deliberately inactive and disabled broker state was not preserved.\n' >&2
+    exit 1
+}
+export TEST_BROKER_ACTIVE=activating
+if orm_capture_broker_state; then
+    printf 'an unknown transitional broker state was accepted.\n' >&2
+    exit 1
+fi
+export TEST_BROKER_ACTIVE=failed
+orm_capture_broker_state
+if orm_broker_health_matches_initial; then
+    printf 'a failed broker service was accepted as healthy.\n' >&2
+    exit 1
+fi
+
 ORM_INSTANCE_ROOT="$test_root/metadata"
 ORM_INSTANCE_DATA="$test_root/data"
 

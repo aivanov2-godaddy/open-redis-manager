@@ -102,6 +102,7 @@ transaction_succeeded=0
 keep_backup=0
 copied_count=0
 broker_related_change=0
+broker_state_captured=0
 new_manifest_installed=0
 declare -a changed_keys=()
 declare -a changed_targets=()
@@ -192,6 +193,9 @@ rollback_release() {
             "$ORM_SYSTEMCTL" start orm-broker.service >/dev/null 2>&1 || rollback_failed=1
             [[ "$test_target_root" != "" ]] || orm_wait_for_broker_socket || rollback_failed=1
         fi
+    fi
+    if (( broker_state_captured )) && ! orm_broker_health_matches_initial; then
+        rollback_failed=1
     fi
     for target in "${created_directories[@]}"; do rmdir -- "$target" 2>/dev/null || true; done
     if [[ "$rollback_failed" -ne 0 ]]; then
@@ -357,9 +361,15 @@ done <"$actions_file"
 
 if (( broker_related_change )); then
     [[ -z "$test_target_root" ]] || orm_die 'the fixture apply path does not exercise broker restart and socket-drain behavior.'
+fi
+if [[ -z "$test_target_root" ]]; then
     orm_capture_broker_state || orm_die 'could not determine broker state before update.'
-    [[ "$ORM_BROKER_ACTIVE_BEFORE" != active ]] \
-        || orm_die 'this transaction slice refuses broker or systemd updates while the broker is active; use the maintenance procedure.'
+    broker_state_captured=1
+    orm_broker_health_matches_initial \
+        || orm_die 'the broker service state or active socket is not healthy before update.'
+    if (( broker_related_change )) && [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
+        orm_die 'this transaction slice refuses broker or systemd updates while the broker is active; use the maintenance procedure.'
+    fi
 fi
 
 cp -a -- "$install_manifest" "$manifest_backup"
@@ -444,13 +454,12 @@ if [[ -z "$test_target_root" ]]; then
     orm_validate_install_manifest "$install_manifest" || orm_die 'updated manifest verification failed.'
     orm_appconfig_matches_package "$ORM_APPCONFIG" || orm_die 'WHM AppConfig changed during update.'
     orm_registration_state || orm_die 'WHM registration could not be verified after update.'
-    if (( broker_related_change )); then
-        orm_broker_state_matches_initial || orm_die 'broker enabled or active state changed during update.'
-    fi
+    orm_broker_health_matches_initial \
+        || orm_die 'broker service state or active socket readiness changed during update.'
 fi
 
 write_journal complete || orm_die 'could not record update completion in the recovery journal.'
 append_audit success || orm_die 'could not record the completed update in the protected audit log.'
 transaction_succeeded=1
-printf 'Open Redis Manager files updated from %s to %s. Redis/Valkey instance data and backend selection were not changed. WHM registration and service integration updates remain outside this transaction slice.\n' \
+printf 'Open Redis Manager files updated from %s to %s. Managed files, package version, WHM registration, broker service state, and active broker socket readiness were verified. Redis/Valkey instance data and backend selection were not changed.\n' \
     "$installed_version" "$candidate_version"
