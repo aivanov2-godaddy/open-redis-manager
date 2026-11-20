@@ -13,6 +13,8 @@ These notes distinguish repository implementation from deployment readiness. A f
 
 ## Implemented
 
+- WHM security reports now support separate root-owned, report-only thresholds for eviction deltas, average operations per second, and optional authentication-failure deltas. All thresholds default to disabled; a threshold only changes finding severity. Automated enforcement remains unimplemented. See the [threshold guide](guides/security-report-thresholds.md).
+
 - Standalone sample-data PHP prototype for reviewing layout and workflows; it does not connect to Redis.
 - Application guides and copyable connection examples; ORM does not edit application files or establish client compatibility for a specific host.
 - Broker-backed Redis/Valkey per-account provisioning, status, bounded configuration, lifecycle controls, metrics, and hourly history.

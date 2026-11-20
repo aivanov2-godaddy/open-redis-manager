@@ -41,6 +41,18 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-whm-security-report
+        name: WHM security report checks
+        entry: php tests/whm-security-report.php
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: php-whm-security-report-policy
+        name: WHM security report policy checks
+        entry: php tests/whm-security-report-policy.php
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: php-release-preview
         name: WHM signed release preview checks
         entry: php tests/release-preview.php

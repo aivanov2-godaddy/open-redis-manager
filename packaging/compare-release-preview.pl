@@ -38,6 +38,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php
+        /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReportPolicyStore.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php
         /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php

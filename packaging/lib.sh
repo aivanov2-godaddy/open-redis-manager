@@ -91,6 +91,7 @@ orm_package_file_map() {
         whm_audit_log "$ORM_REPO_ROOT/src/Orm/Security/WhmAuditLog.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAuditLog.php" 644 \
         whm_audit_event_writer "$ORM_REPO_ROOT/src/Orm/Security/WhmAuditEventWriter.php" "$ORM_3RDPARTY/src/Orm/Security/WhmAuditEventWriter.php" 644 \
         whm_security_report "$ORM_REPO_ROOT/src/Orm/Security/WhmSecurityReport.php" "$ORM_3RDPARTY/src/Orm/Security/WhmSecurityReport.php" 644 \
+        whm_security_report_policy "$ORM_REPO_ROOT/src/Orm/Security/WhmSecurityReportPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Security/WhmSecurityReportPolicyStore.php" 644 \
         account_context "$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" 644 \
         broker_identity "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" 644 \
         broker_client "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" 644 \

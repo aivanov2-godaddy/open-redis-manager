@@ -14,6 +14,14 @@ $cpanel = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/inde
 $assert(is_string($whm) && is_string($cpanel), 'read the installed WHM and cPanel interfaces');
 $assert(str_contains($whm, "requestFleetSummary()") && str_contains($whm, "'fleet.summary'"),
     'request fleet aggregates only through the root WHM POST action');
+$assert(str_contains($whm, "'security.policy.update'")
+    && str_contains($whm, 'WhmSecurityReportPolicyStore')
+    && str_contains($whm, 'Configure report-only thresholds')
+    && str_contains($whm, 'security.thresholds.update'),
+    'expose separately stored, root-authorized, auditable report-only thresholds');
+$assert(str_contains($whm, 'Thresholds are disabled by default and are advisory only')
+    && str_contains($whm, 'do not enforce, remediate'),
+    'explain default-off thresholds and prevent any implication of automatic enforcement');
 $assert(str_contains($whm, 'count($selected) <= 2') && str_contains($whm, 'array_is_list($selected)'),
     'cap and validate the browser-selected batch account list');
 $assert(str_contains($whm, "hash_equals(\$backup['id'], \$backupId)"),
@@ -30,8 +38,8 @@ $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');
 $assert(str_contains($whm, 'Counter-rate samples') && str_contains($whm, 'resets, and missing baselines')
-    && str_contains($whm, 'actual sample times') && str_contains($whm, 'without an abuse threshold'),
-    'explain bounded rate evidence, unknown resets, and neutral operation-rate interpretation');
+    && str_contains($whm, 'actual sample times') && str_contains($whm, 'advisory only'),
+    'explain bounded rate evidence, unknown resets, and report-only threshold behavior');
 $assert(str_contains($whm, 'Authentication-failure counters')
     && str_contains($whm, 'do not identify clients')
     && str_contains($whm, 'Older backends may not expose this optional INFO field'),

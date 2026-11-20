@@ -24,7 +24,7 @@ final class WhmAuditLog
         'diagnostics.read', 'recovery.scan', 'recovery.start', 'auth.enable', 'auth.rotate', 'auth.disable',
         'provider.default', 'provider.package.save', 'provider.package.remove',
         'provider.reseller.save', 'provider.reseller.remove', 'provider.branding.save',
-        'backend.select', 'policy.violation', 'security.report',
+        'backend.select', 'policy.violation', 'security.report', 'security.thresholds.update',
     ];
 
     /** @var null|\Closure(string,int,int,int):array{status:string,lines?:list<string>} */
@@ -366,6 +366,7 @@ final class WhmAuditLog
                 '/\Aprovider_policy actor_uid=0 account=global action=(?<action>provider\.(?:default|package\.save|package\.remove|reseller\.save|reseller\.remove|branding\.save)) result=(?<result>success) state=(?<state>updated)\z/',
                 '/\Abackend_policy actor_uid=0 account=global action=(?<action>backend\.select) result=(?<result>success|failure) state=(?<state>redis|valkey|unavailable)\z/',
                 '/\Asecurity_report actor_uid=0 account=global action=(?<action>security\.report) result=(?<result>success) state=(?<state>generated)\z/',
+                '/\Asecurity_report_policy actor_uid=0 account=global action=(?<action>security\.thresholds\.update) result=(?<result>success|failure) state=(?<state>updated|rejected)\z/',
             ];
         }
         foreach ($patterns as $pattern) {

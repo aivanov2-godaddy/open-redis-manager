@@ -2,8 +2,10 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/src/Orm/Security/WhmSecurityReport.php';
+require dirname(__DIR__) . '/src/Orm/Security/WhmSecurityReportPolicyStore.php';
 
 use Orm\Security\WhmSecurityReport;
+use Orm\Security\WhmSecurityReportPolicyStore;
 
 $checks = 0;
 $assert = static function (bool $condition, string $message) use (&$checks): void {
@@ -73,7 +75,7 @@ $assert(($byCategory['client_authentication_failures']['count'] ?? null) === 2
     && str_contains($byCategory['client_authentication_failures']['evidence'], 'largest per-account counter delta was 4')
     && str_contains($byCategory['client_authentication_failures']['evidence'], 'do not identify clients')
     && str_contains($byCategory['client_authentication_failures']['evidence'], '3600–7200 seconds')
-    && str_contains($byCategory['client_authentication_failures']['recommendation'], 'no abuse threshold'),
+    && str_contains($byCategory['client_authentication_failures']['recommendation'], 'no authentication-failure threshold'),
     'report anonymous supported authentication-failure counter evidence without identifying clients or alleging attacks');
 $assert(($byCategory['auth_management_events']['count'] ?? null) === 4
     && str_contains($byCategory['auth_management_events']['evidence'], '1 unsuccessful')
@@ -86,6 +88,56 @@ $assert(isset($report['unmeasured']['credential_strength'])
     && !isset($report['unmeasured']['client_authentication_failures'])
     && !isset($report['unmeasured']['eviction_rate']) && !isset($report['unmeasured']['operation_rate']),
     'explicitly disclose signal categories that are not measured');
+
+$thresholdPolicy = WhmSecurityReportPolicyStore::defaults();
+$thresholdPolicy['thresholds'] = [
+    'evictions_per_window' => 7,
+    'operations_per_second' => 120,
+    'auth_failures_per_window' => 4,
+];
+$thresholdReport = WhmSecurityReport::build($fleet, $audit, $now, $thresholdPolicy);
+$thresholdFindings = array_column($thresholdReport['findings'], null, 'category');
+$assert($thresholdReport['mode'] === 'report-only'
+    && $thresholdFindings['eviction_rate']['severity'] === 'warning'
+    && str_contains($thresholdFindings['eviction_rate']['evidence'], 'Report-only threshold: 7')
+    && $thresholdFindings['operation_rate']['severity'] === 'warning'
+    && str_contains($thresholdFindings['operation_rate']['evidence'], 'Report-only threshold: 120')
+    && $thresholdFindings['client_authentication_failures']['severity'] === 'warning'
+    && str_contains($thresholdFindings['client_authentication_failures']['evidence'], 'Report-only threshold: 4')
+    && str_contains($thresholdFindings['client_authentication_failures']['recommendation'], 'does not identify a client'),
+    'raise advisory severity at configured aggregate thresholds without taking enforcement action');
+
+$belowThresholdPolicy = WhmSecurityReportPolicyStore::defaults();
+$belowThresholdPolicy['thresholds'] = [
+    'evictions_per_window' => 8,
+    'operations_per_second' => 121,
+    'auth_failures_per_window' => 5,
+];
+$belowThreshold = WhmSecurityReport::build($fleet, $audit, $now, $belowThresholdPolicy);
+$belowThresholdFindings = array_column($belowThreshold['findings'], null, 'category');
+$assert($belowThresholdFindings['eviction_rate']['severity'] === 'info'
+    && $belowThresholdFindings['operation_rate']['severity'] === 'info'
+    && $belowThresholdFindings['client_authentication_failures']['severity'] === 'info',
+    'leave counter evidence informational below the configured inclusive threshold');
+
+$disabledReport = WhmSecurityReport::build($fleet, $audit, $now, WhmSecurityReportPolicyStore::defaults());
+$disabledFindings = array_column($disabledReport['findings'], null, 'category');
+$assert($disabledFindings['eviction_rate']['severity'] === 'info'
+    && $disabledFindings['operation_rate']['severity'] === 'info'
+    && $disabledFindings['client_authentication_failures']['severity'] === 'info',
+    'keep optional abuse thresholds disabled by default');
+
+$invalidPolicyReport = WhmSecurityReport::build($fleet, $audit, $now, ['version' => 1, 'mode' => 'enforce']);
+$invalidPolicyFindings = array_column($invalidPolicyReport['findings'], null, 'category');
+$assert($invalidPolicyReport['partial'] && $invalidPolicyFindings['report_policy_unavailable']['count'] === null
+    && $invalidPolicyFindings['operation_rate']['severity'] === 'info',
+    'mark malformed report policy unknown and do not apply any threshold from it');
+
+$unavailablePolicyReport = WhmSecurityReport::build($fleet, $audit, $now, null, false);
+$unavailablePolicyFindings = array_column($unavailablePolicyReport['findings'], null, 'category');
+$assert($unavailablePolicyReport['partial']
+    && $unavailablePolicyFindings['report_policy_unavailable']['count'] === null,
+    'mark unreadable root policy as partial instead of implying configured thresholds were checked');
 
 $legacyFleet = $fleet;
 foreach (['rate_accounts', 'rate_missing_accounts', 'eviction_activity_accounts', 'max_evictions_per_window',

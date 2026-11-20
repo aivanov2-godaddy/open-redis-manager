@@ -35,6 +35,12 @@ final class WhmAuditEventWriter
         return self::write('security_report actor_uid=0 account=global action=security.report result=success state=generated');
     }
 
+    public static function securityReportPolicyChanged(bool $success): bool
+    {
+        return self::write('security_report_policy actor_uid=0 account=global action=security.thresholds.update result='
+            . ($success ? 'success' : 'failure') . ' state=' . ($success ? 'updated' : 'rejected'));
+    }
+
     private static function write(string $message): bool
     {
         if (!function_exists('openlog') || !function_exists('syslog') || !function_exists('closelog')

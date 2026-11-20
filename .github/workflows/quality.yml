@@ -70,6 +70,8 @@ jobs:
         run: php tests/fleet-ui.php
       - name: Check WHM report-only security findings and throttling
         run: php tests/whm-security-report.php
+      - name: Check WHM security report threshold policy
+        run: php tests/whm-security-report-policy.php
       - name: Check cPanel diagnostic report
         run: php tests/cpanel-diagnostic-report.php
       - name: Check cPanel health guidance
