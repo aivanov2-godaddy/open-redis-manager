@@ -40,7 +40,7 @@ Sources: [cPanel internal PHP](https://docs.cpanel.net/knowledge-base/general-sy
 
 | Surface | Current package target | ORM validation |
 |---|---|---|
-| cPanel user interface | Jupiter only. The installer registers the plugin with cPanel's `install_plugin --theme jupiter` flow and places its LiveAPI page under Jupiter's interface directory. The group icon is a 32×32 SVG; the launcher is registered with a 48×48 PNG. | No theme/version combination is currently declared supported. Linux CI checks the package archive and registration contract, but the current icon change and lifecycle have not been reinstalled and visually verified on the live test host. |
+| cPanel user interface | Jupiter only. The installer registers the plugin with cPanel's `install_plugin --theme jupiter` flow and places its LiveAPI page under Jupiter's interface directory. Both source icons are transparent 48×48 SVGs; matching 48×48 RGBA PNGs are included as fallbacks. cPanel's generated group entry displays at 32×32. | The icon registration refresh was accepted by `install_plugin` on the owner-designated test system on 2026-11-20; see the [sanitized record](records/2026-11-20-cpanel-icon-registration.md). The browser rendering was not captured. No theme/version combination is declared supported, and lifecycle behavior remains unvalidated. |
 | WHM administrator interface | Native WHM AppConfig registration, separate from the cPanel theme. | No cPanel/WHM version has completed the disposable-host gate. |
 
 cPanel's [plugin registration guide](https://api.docs.cpanel.net/guides/guide-to-cpanel-plugins/guide-to-cpanel-plugins-add-plugins) documents Jupiter group and feature icon sizes and formats. Its [install_plugin reference](https://docs.cpanel.net/whm/scripts/the-install_plugin-script/) describes the theme-specific registration utility. ORM does not claim support for Paper Lantern or other cPanel themes.
@@ -64,7 +64,7 @@ Do not advertise any row as supported until a completed, reviewable validation r
 | Scenario | Existing automated evidence | Disposable cPanel evidence |
 |---|---|---|
 | Fresh install | Linux CI runs the installer in an isolated mock cPanel root and checks deployed files, manifest, AppConfig, service state, instance-root permissions, and rollback after registration failure | Not recorded |
-| Upgrade and uninstall | Linux CI mocks the identity-v1 upgrade, registration failures, rollback, and uninstall paths | Not recorded |
+| Upgrade and uninstall | Linux CI mocks identity-v1 and exact managed-v1 upgrades, registration failures, rollback, interruption recovery, and uninstall paths | Exact managed-v1 upgrade passed on one owner-designated test cPanel system; see the [sanitized record](records/2026-11-20-managed-v1-upgrade.md). Other upgrade baselines and uninstall remain unrecorded on cPanel. |
 | Account identity | Live smoke checks LiveAPI identity against the local broker | Passed in three private test runs; the 2026-11-16 run used an explicitly selected test account and did not establish the deployed source revision |
 | Account boundary and WHM ACL | Broker and PHP tests cover peer identity and root-only request paths | Not recorded across the matrix |
 | Redis/Valkey discovery and lifecycle | Broker tests exercise service and backend operations with fixtures | One cPanel ea-podman Redis 6.2.24 container was observed during read-only inventory; ORM discovery and lifecycle operations were not run |
