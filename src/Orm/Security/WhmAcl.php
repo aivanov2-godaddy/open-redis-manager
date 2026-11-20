@@ -27,7 +27,16 @@ final class WhmAcl
         }
         $contents = stream_get_contents($handle, self::MAX_RESELLERS_FILE_BYTES + 1);
         fclose($handle);
-        if (!is_string($contents) || strlen($contents) > self::MAX_RESELLERS_FILE_BYTES) {
+        if (!is_string($contents)) {
+            return false;
+        }
+
+        return self::resellerFileAllowsAdministrativeAccess($authenticatedUser, $contents);
+    }
+
+    private static function resellerFileAllowsAdministrativeAccess(string $authenticatedUser, string $contents): bool
+    {
+        if (strlen($contents) > self::MAX_RESELLERS_FILE_BYTES) {
             return false;
         }
 
