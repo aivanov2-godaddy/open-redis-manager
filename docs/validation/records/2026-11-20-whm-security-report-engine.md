@@ -17,15 +17,15 @@
 | ORM report construction | PASS | The report builder generated a report in `report-only` mode. |
 | Audit source read | PASS | The bounded ORM journal read completed. No event contents were retained. |
 | Report completeness | PARTIAL | The generated report marked its evidence partial; the live report content was not retained. |
-| Authenticated WHM form submission | NOT VALIDATED | The scripted SSO POST returned a cPanel login response without the rendered report. No report result was claimed from that request. |
+| Authenticated WHM form submission | NOT IN THIS SMOKE | This engine-only check did not submit the form. A later root SSO form smoke is recorded separately; its POST wrote an audit event but did not return ORM report markup. |
 | Policy or backend mutation | NOT RUN | The check did not write policy, create an audit event, consume the report rate limit, change a backend, or inspect Redis keys. |
 | Valkey coverage | NOT RUN | No Valkey backend was queried. |
 
 ## Result
 
-- Overall result: live report-engine path passed with partial evidence; the authenticated WHM form flow remains unverified.
+- Overall result: live report-engine path passed with partial evidence. End-user report rendering remains unverified; see the [separate authenticated form record](2026-11-20-whm-security-report-form.md).
 - ORM support decision: `NOT ESTABLISHED`.
-- Follow-up: complete the report action in an authenticated WHM browser session and verify the rendered output and audit event; repeat against Valkey.
+- Follow-up: reproduce the authenticated form response in a WHM browser session and verify rendered output; repeat the counter probe against Valkey.
 
 ## Sanitization review
 
