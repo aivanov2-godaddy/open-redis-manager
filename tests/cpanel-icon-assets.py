@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Check the cPanel Jupiter icon registration and transparent red artwork."""
+"""Check the cPanel Jupiter registration and v4 ORM mark assets."""
 
 from __future__ import annotations
 
 import json
-import re
 import struct
 import sys
 import xml.etree.ElementTree as ET
@@ -13,32 +12,24 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1] / "packaging" / "cpanel"
+ICON_NAMES = ("orm-cpanel-group-v4", "orm-cpanel-feature-v4")
 SVG_NS = "{http://www.w3.org/2000/svg}"
-ICON_NAMES = ("orm-cpanel-group-v3", "orm-cpanel-feature-v3")
-RED = "#D92D20"
 
 
 def check_svg(path: Path, size: int) -> None:
     root = ET.parse(path).getroot()
+    rectangles = list(root.iter(f"{SVG_NS}rect"))
     paths = list(root.iter(f"{SVG_NS}path"))
     if (
         root.tag != f"{SVG_NS}svg"
-        or (root.get("width"), root.get("height")) != (str(size), str(size))
-        or root.get("viewBox") != f"0 0 {size} {size}"
-        or len(paths) != 5
-        or len(list(root)) != 7  # title, description, and five direct paths
-        or any(node.tag not in {f"{SVG_NS}title", f"{SVG_NS}desc", f"{SVG_NS}path"} for node in root)
+        or (root.get("width"), root.get("height"), root.get("viewBox")) != (str(size), str(size), f"0 0 {size} {size}")
+        or len(rectangles) != 2
+        or len(paths) != 6
         or any(node.get("transform") for node in root.iter())
-        or any(path_node.get("fill") != "none" for path_node in paths)
-        or any(path_node.get("stroke") != RED for path_node in paths)
-        or any(float(path_node.get("stroke-width", "0")) <= 0 for path_node in paths)
-        or not all(
-            abs(float(value)) <= size
-            for path_node in paths
-            for value in re.findall(r"[-+]?(?:\d*\.)?\d+", path_node.get("d", ""))
-        )
+        or rectangles[0].get("fill") != "#D92D20"
+        or any(path_node.get("fill") not in {"#FFFFFF", "#FFE5E1", "#F9BDB6", "#D92D20", "none"} for path_node in paths)
     ):
-        raise SystemExit(f"{path.name} must be transparent red line art in a {size}x{size} pixel-space viewBox")
+        raise SystemExit(f"{path.name} must show the approved mark with direct {size}x{size} SVG paths")
 
 
 def check_png(path: Path) -> bytes:
@@ -99,7 +90,17 @@ def check_png(path: Path) -> bytes:
         for y in range(height)
         for x in range(width)
     ):
-        raise SystemExit(f"{path.name} must contain visible Redis-red icon pixels")
+        raise SystemExit(f"{path.name} must contain the Redis-red ORM mark")
+    white_detail = sum(
+        rows[y][x * 4] > 220
+        and rows[y][x * 4 + 1] > 220
+        and rows[y][x * 4 + 2] > 220
+        and alpha(x, y) > 200
+        for y in range(height)
+        for x in range(width)
+    )
+    if white_detail < 50:
+        raise SystemExit(f"{path.name} must retain the white cache-cube detail on the red brand tile")
     return data
 
 
@@ -108,9 +109,9 @@ def main() -> int:
     group = next((entry for entry in entries if entry.get("type") == "group"), None)
     feature = next((entry for entry in entries if entry.get("type") == "link"), None)
     if group is None or group.get("icon") != f"{ICON_NAMES[0]}.svg":
-        raise SystemExit("the cPanel group must use the cache-busted v3 group SVG")
+        raise SystemExit("the cPanel group must use the v4 direct-path SVG")
     if feature is None or feature.get("icon") != f"{ICON_NAMES[1]}.svg":
-        raise SystemExit("the cPanel launcher must use the cache-busted v3 feature SVG")
+        raise SystemExit("the cPanel launcher must use the v4 direct-path SVG")
 
     check_svg(ROOT / "icons" / f"{ICON_NAMES[0]}.svg", 32)
     check_svg(ROOT / "icons" / f"{ICON_NAMES[1]}.svg", 48)
@@ -118,7 +119,7 @@ def main() -> int:
     if pngs[0] != pngs[1]:
         raise SystemExit("the cPanel group PNG fallback and launcher PNG must use identical artwork")
 
-    print("cPanel icon assets passed: transparent red line-art SVGs and matching 48x48 RGBA PNGs.")
+    print("cPanel icon assets passed: v4 SVG sprite art and 48x48 PNG fallbacks preserve the approved mark.")
     return 0
 
 
