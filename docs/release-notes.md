@@ -1,6 +1,6 @@
 # Unreleased development notes
 
-**Updated:** 2026-11-17
+**Updated:** 2026-11-20
 **Release:** none published; the project is targeting milestone 0.1.0.
 
 These notes distinguish repository implementation from deployment readiness. A feature can exist in the code while remaining experimental for cPanel deployments.
@@ -20,6 +20,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Advisory cPanel health guidance for service state, configured memory/client limits, and cumulative hit ratio; metric findings pause for missing or stale samples.
 - Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
 - Account-scoped discovery of existing cPanel EA Podman Redis/Valkey sockets with optional PhpRedis PING, safe version reporting, and application connection examples. cPanel retains container lifecycle and data ownership.
+- cPanel Jupiter registration uses dedicated 48×48 layered-cache icons with matching SVG and PNG assets, preserving the approved ORM logo while remaining legible in the smaller launcher tile.
 - On-demand fleet status and fresh scheduled-metrics aggregates, plus sequential create/restore batches capped at two visible running accounts with independent audited outcomes.
 - Root-only WHM signed-release preview and apply for manually staged bundles: signature and digest verification, explicit conflict-free confirmation, candidate-bound asynchronous transaction jobs, bounded status, and recovery-required reporting. Existing installs must have an exact v3 manifest; v1/v2 manifest adoption only succeeds for an exact match. Live disposable cPanel validation remains open.
 - Offline release bundle builder for clean, version-matched Git checkouts. It signs bounded metadata with an external RSA private key, derives the public key, validates the archive, and refuses dirty source, unsafe key/output paths, and overwriting an existing bundle. It does not automate publishing or key rotation.

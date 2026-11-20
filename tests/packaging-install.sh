@@ -5,6 +5,7 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "$BASH_SOURCE")/.." && pwd -P)"
 source "$repo_root/packaging/lib.sh"
+python3 "$repo_root/tests/cpanel-icon-assets.py"
 base_path="$PATH"
 test_case_root="$(mktemp -d /tmp/orm-install-test.XXXXXXXX)"
 test_root=""
@@ -66,7 +67,7 @@ configure_case() {
 #!/usr/bin/env bash
 set -Eeuo pipefail
 [[ "$2" == --theme && "$3" == jupiter ]] || exit 60
-for member in install.json orm-group.svg orm-feature.svg; do
+for member in install.json orm-group.svg orm-group.png orm-feature.svg orm-feature.png; do
     tar -tzf "$1" | grep -Fxq "$member" || exit 61
 done
 printf 'installed\n' >"$TEST_PLUGIN_STATE"
