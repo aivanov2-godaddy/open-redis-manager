@@ -630,7 +630,7 @@ final class BrokerClient
         return $this->request('metrics.history', null, null, null, $range);
     }
 
-    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string,backend:string,backups_available:bool,backups:list<array{id:string,created_at:int,size_bytes:int}>}>}|null */
+    /** @return array{success:bool,version:int,offset:int,total:int,entries:list<array{username:string,state:string,backend:string,backups_available:bool,backups:list<array{id:string,created_at:int,size_bytes:int}>,usage:array{connected_clients:?int,client_limit:?int,memory_limit_bytes:?int,memory_used_bytes:?int,sampled_at:?int,state:string}}>}|null */
     public function requestFleetPage(int $offset): ?array
     {
         if ($offset < 0 || $offset > 10000) {
@@ -674,11 +674,47 @@ final class BrokerClient
             }
             $entryKeys = array_keys($entry);
             sort($entryKeys);
-            if ($entryKeys !== ['backend', 'backups', 'backups_available', 'state', 'username']
+            if ($entryKeys !== ['backend', 'backups', 'backups_available', 'state', 'usage', 'username']
                 || !in_array($entry['backend'] ?? null, ['redis', 'valkey', 'unknown'], true)
                 || !is_bool($entry['backups_available']) || !is_array($entry['backups'])
                 || count($entry['backups']) > 3
                 || (!$entry['backups_available'] && $entry['backups'] !== [])) {
+                return null;
+            }
+            $usage = $entry['usage'] ?? null;
+            if (!is_array($usage)) {
+                return null;
+            }
+            $usageKeys = array_keys($usage);
+            sort($usageKeys);
+            if ($usageKeys !== ['client_limit', 'connected_clients', 'memory_limit_bytes', 'memory_used_bytes', 'sampled_at', 'state']
+                || !is_string($usage['state'] ?? null)
+                || !in_array($usage['state'], ['fresh', 'stale', 'unknown'], true)) {
+                return null;
+            }
+            foreach (['connected_clients', 'client_limit', 'memory_limit_bytes', 'memory_used_bytes', 'sampled_at'] as $usageField) {
+                if ($usage[$usageField] !== null && !is_int($usage[$usageField])) {
+                    return null;
+                }
+                if ($usage[$usageField] !== null && $usage[$usageField] < 0) {
+                    return null;
+                }
+            }
+            if (($usage['connected_clients'] !== null && $usage['connected_clients'] > 9000000000000000)
+                || ($usage['memory_used_bytes'] !== null && $usage['memory_used_bytes'] > 9000000000000000)
+                || ($usage['sampled_at'] !== null && $usage['sampled_at'] > 9999999999)
+                || ($usage['client_limit'] !== null && ($usage['client_limit'] < 10 || $usage['client_limit'] > 100))
+                || ($usage['memory_limit_bytes'] !== null && ($usage['memory_limit_bytes'] < 8388608
+                    || $usage['memory_limit_bytes'] > 67108864 || $usage['memory_limit_bytes'] % 1048576 !== 0))) {
+                return null;
+            }
+            if ($usage['state'] === 'unknown') {
+                if ($usage['connected_clients'] !== null || $usage['memory_used_bytes'] !== null || $usage['sampled_at'] !== null) {
+                    return null;
+                }
+            } elseif ($usage['connected_clients'] === null || $usage['memory_used_bytes'] === null
+                || $usage['sampled_at'] === null || $usage['client_limit'] === null
+                || $usage['memory_limit_bytes'] === null) {
                 return null;
             }
             foreach ($entry['backups'] as $backup) {

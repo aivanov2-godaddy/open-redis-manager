@@ -366,6 +366,55 @@ sub fleet_summary {
     };
 }
 
+sub fleet_usage {
+    my ($self, $account) = @_;
+    return _unknown_fleet_usage() if !_valid_account($account);
+
+    # This endpoint reads only the root-owned metrics snapshot. In particular,
+    # it must never call metrics(), which would probe Redis/Valkey per row.
+    my $manifest = $self->_read_manifest($account);
+    return _unknown_fleet_usage() if ref($manifest) ne 'HASH'
+        || ref($manifest->{settings}) ne 'HASH'
+        || !_is_integer($manifest->{settings}->{memory_mib})
+        || $manifest->{settings}->{memory_mib} < 1
+        || !_is_integer($manifest->{settings}->{maxclients})
+        || $manifest->{settings}->{maxclients} < 1;
+
+    my $usage = {
+        connected_clients => undef,
+        client_limit => 0 + $manifest->{settings}->{maxclients},
+        memory_limit_bytes => 0 + $manifest->{settings}->{memory_mib} * 1024 * 1024,
+        memory_used_bytes => undef,
+        sampled_at => undef,
+        state => 'unknown',
+    };
+    my $sample = $self->_read_metrics_snapshot($account);
+    return $usage if ref($sample) ne 'HASH';
+
+    my $now = time;
+    # _read_metrics_snapshot permits a small clock skew for other consumers;
+    # fleet rows stay unknown for future-dated samples.
+    return $usage if $sample->{sampled_at} > $now;
+
+    $usage->{connected_clients} = 0 + $sample->{connected_clients};
+    $usage->{memory_used_bytes} = 0 + $sample->{memory_used_bytes};
+    $usage->{sampled_at} = 0 + $sample->{sampled_at};
+    $usage->{state} = $sample->{sampled_at} >= $now - $FLEET_METRICS_FRESH_SECONDS
+        ? 'fresh' : 'stale';
+    return $usage;
+}
+
+sub _unknown_fleet_usage {
+    return {
+        connected_clients => undef,
+        client_limit => undef,
+        memory_limit_bytes => undef,
+        memory_used_bytes => undef,
+        sampled_at => undef,
+        state => 'unknown',
+    };
+}
+
 sub _fleet_systemctl_states {
     my ($self, $names) = @_;
     return {} if ref($names) ne 'ARRAY' || @{$names} > $MAX_FLEET_SUMMARY_ACCOUNTS;

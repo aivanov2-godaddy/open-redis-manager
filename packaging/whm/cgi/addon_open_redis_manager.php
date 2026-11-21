@@ -949,6 +949,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <option value="unhealthy">Unverifiable</option>
         </select>
         <p>Each row shows snapshots retained for that account. Migration is available for running Redis instances only. Stop all application writers before using it; service connections will be interrupted while the snapshot is validated and the backend is switched.</p>
+        <p>Per-account usage comes from the last root-owned metrics snapshot. Fresh means sampled within 15 minutes; older retained samples are stale. Missing or invalid samples are unknown and are never treated as zero.</p>
         <?php if ($fleetBatchMessage !== null): ?><p role="<?= $fleetBatchMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetBatchMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
         <div class="orm-fleet-batch-controls">
           <form method="post" id="orm-fleet-batch-create">
@@ -964,13 +965,30 @@ WHM::header('Open Redis Manager', 0, 0);
           <p>Batch operations apply only to this visible page and at most two running accounts per request. Each outcome is reported independently and recorded in the system authentication log.</p>
         </div>
         <table>
-           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery scan</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
+           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Usage from snapshot</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery scan</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                 <th scope="row"><label><input type="checkbox" name="accounts[]" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" form="orm-fleet-batch-create"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>> <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> <span class="orm-visually-hidden">for batch snapshot</span></label><br><label><input type="checkbox" name="accounts[]" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" form="orm-fleet-batch-restore"<?= $entry['state'] === 'running' && $entry['backups_available'] && $entry['backups'] !== [] ? '' : ' disabled' ?>> Select for batch restore</label></th>
                 <td><?= htmlspecialchars(ucfirst($entry['backend']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
                 <td><?= htmlspecialchars($entry['state'] === 'unhealthy' ? 'Unverifiable' : ucfirst($entry['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                <td>
+                  <strong><?= htmlspecialchars(ucfirst($entry['usage']['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>
+                  <?php if ($entry['usage']['state'] === 'unknown'): ?><p>No valid metrics snapshot is available.</p><?php endif; ?>
+                  <p>Memory:
+                    <?php if ($entry['usage']['memory_used_bytes'] !== null): ?>
+                      <?= number_format($entry['usage']['memory_used_bytes'] / 1048576, 1) ?> MiB
+                    <?php else: ?>Unknown<?php endif; ?>
+                    / <?= $entry['usage']['memory_limit_bytes'] !== null ? number_format($entry['usage']['memory_limit_bytes'] / 1048576, 0) . ' MiB' : 'unknown limit' ?>
+                  </p>
+                  <p>Clients:
+                    <?= $entry['usage']['connected_clients'] !== null ? number_format($entry['usage']['connected_clients']) : 'Unknown' ?>
+                    / <?= $entry['usage']['client_limit'] !== null ? number_format($entry['usage']['client_limit']) : 'unknown limit' ?>
+                  </p>
+                  <?php if ($entry['usage']['sampled_at'] !== null): ?>
+                    <p>Sampled <time datetime="<?= gmdate('c', $entry['usage']['sampled_at']) ?>"><?= gmdate('Y-m-d H:i:s', $entry['usage']['sampled_at']) ?> UTC</time></p>
+                  <?php endif; ?>
+                </td>
                 <td>
                   <form method="post" class="orm-fleet-actions">
                     <input type="hidden" name="orm_action" value="fleet.control">

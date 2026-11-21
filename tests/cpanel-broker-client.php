@@ -429,15 +429,17 @@ $multiFrame = new BrokerClient(static fn (string $request): string =>
 $assert($multiFrame->request('instance.status') === null, 'Reject multiple response frames.');
 
 $fleetRequests = [];
-$fleet = new BrokerClient(static function (string $request) use (&$fleetRequests): string {
+$fleetUsage = '"usage":{"connected_clients":3,"client_limit":100,"memory_limit_bytes":67108864,"memory_used_bytes":1048576,"sampled_at":1794760000,"state":"fresh"}';
+$fleet = new BrokerClient(static function (string $request) use (&$fleetRequests, $fleetUsage): string {
     $fleetRequests[] = $request;
-    return "{\"entries\":[{\"backend\":\"redis\",\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
+    return "{\"entries\":[{\"backend\":\"redis\",\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"," . $fleetUsage . "}],\"offset\":30,\"success\":true,\"total\":31,\"version\":1}\n";
 });
 $fleetPage = $fleet->requestFleetPage(30);
 $assert($fleetRequests[0] === "{\"offset\":30,\"operation\":\"fleet.list\",\"version\":1}\n",
     'Send only the fixed fleet operation and bounded offset.');
-$assert($fleetPage['total'] === 31 && $fleetPage['entries'][0]['username'] === 'demo',
-    'Parse an account-scoped fleet page.');
+$assert($fleetPage['total'] === 31 && $fleetPage['entries'][0]['username'] === 'demo'
+    && $fleetPage['entries'][0]['usage']['memory_used_bytes'] === 1048576,
+    'Parse an account-scoped fleet page and validated usage snapshot.');
 $assert($fleet->requestFleetPage(-1) === null, 'Reject negative fleet offsets before sending.');
 
 $badFleet = new BrokerClient(static fn (string $request): string =>
@@ -445,9 +447,13 @@ $badFleet = new BrokerClient(static fn (string $request): string =>
 );
 $assert($badFleet->requestFleetPage(0) === null, 'Reject unsafe account names in fleet responses.');
 $malformedFleetBackups = new BrokerClient(static fn (string $request): string =>
-    "{\"entries\":[{\"backend\":\"redis\",\"backups\":[{\"created_at\":1794760000,\"id\":\"../x.rdb\",\"size_bytes\":4096}],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+    "{\"entries\":[{\"backend\":\"redis\",\"backups\":[{\"created_at\":1794760000,\"id\":\"../x.rdb\",\"size_bytes\":4096}],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\"," . $fleetUsage . "}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
 );
 $assert($malformedFleetBackups->requestFleetPage(0) === null, 'Reject unsafe snapshot metadata in fleet responses.');
+$malformedFleetUsage = new BrokerClient(static fn (string $request): string =>
+    "{\"entries\":[{\"backend\":\"redis\",\"backups\":[],\"backups_available\":true,\"state\":\"running\",\"username\":\"demo\",\"usage\":{\"connected_clients\":0,\"client_limit\":100,\"memory_limit_bytes\":67108864,\"memory_used_bytes\":0,\"sampled_at\":null,\"state\":\"unknown\"}}],\"offset\":0,\"success\":true,\"total\":1,\"version\":1}\n"
+);
+$assert($malformedFleetUsage->requestFleetPage(0) === null, 'Reject unknown usage responses that turn missing measurements into zero.');
 
 $controlRequests = [];
 $controlClient = new BrokerClient(static function (string $request) use (&$controlRequests): string {

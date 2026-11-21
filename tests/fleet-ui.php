@@ -56,6 +56,10 @@ $assert(str_contains($whm, 'Authentication-failure counters')
     && str_contains($whm, 'do not identify clients')
     && str_contains($whm, 'Older backends may not expose this optional INFO field'),
     'explain anonymous backend authentication counters and unknown older-backend coverage');
+$assert(str_contains($whm, 'Usage from snapshot') && str_contains($whm, "\$entry['usage']['state']")
+    && str_contains($whm, 'memory_used_bytes') && str_contains($whm, 'connected_clients')
+    && str_contains($whm, 'No valid metrics snapshot is available.'),
+    'show per-account memory and client usage with explicit snapshot freshness and unknown values');
 $assert(str_contains($cpanel, 'PodmanCacheDiscovery::forCurrentAccount')
     && str_contains($cpanel, 'PodmanLifecycleManager::manage')
     && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches')

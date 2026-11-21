@@ -27,6 +27,8 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
 
     package Local::FleetManager;
     our @STATUS_CALLS;
+    our @USAGE_CALLS;
+    our @METRICS_CALLS;
     our @CONTROL_CALLS;
     our %CONTROL_STATES;
     our @BACKUP_CALLS;
@@ -65,6 +67,19 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         my ($self, $account) = @_;
         return { success => 1, backups => $BACKUPS{$account->{name}} // [] };
     }
+    sub fleet_usage {
+        my ($self, $account) = @_;
+        push @USAGE_CALLS, $account->{name};
+        return {
+            connected_clients => $account->{name} eq 'acct01' ? 3 : undef,
+            client_limit => 100,
+            memory_limit_bytes => 64 * 1024 * 1024,
+            memory_used_bytes => $account->{name} eq 'acct01' ? 1048576 : undef,
+            sampled_at => $account->{name} eq 'acct01' ? time : undef,
+            state => $account->{name} eq 'acct01' ? 'fresh' : 'unknown',
+        };
+    }
+    sub metrics { push @METRICS_CALLS, $_[1]->{name}; die 'live metrics probe must not run from fleet inventory'; }
     sub backend { return $_[1]->{name} eq 'acct01' ? 'redis' : 'valkey'; }
     sub migrate_to_valkey {
         my ($self, $account) = @_;
@@ -172,6 +187,12 @@ is($first->{entries}[0]->{state}, 'running', 'report normalized running state');
 is($first->{entries}[0]->{backend}, 'redis', 'include the validated backend on a root fleet row');
 ok($first->{entries}[0]->{backups_available} && @{$first->{entries}[0]->{backups}} == 0,
     'report an available empty per-account snapshot list');
+is($first->{entries}[0]->{usage}->{state}, 'fresh', 'include fixed per-account usage state in each fleet row');
+is($first->{entries}[0]->{usage}->{memory_limit_bytes}, 64 * 1024 * 1024,
+    'include validated configured memory limits in fleet rows');
+is($first->{entries}[1]->{usage}->{state}, 'unknown', 'leave absent account metrics explicitly unknown');
+is(scalar @Local::FleetManager::USAGE_CALLS, 4, 'read usage snapshots only for the bounded inventory page');
+is(scalar @Local::FleetManager::METRICS_CALLS, 0, 'never issue live metrics probes while listing fleet rows');
 is($first->{entries}[3]->{username}, 'acct04', 'first page ends at the fixed page size');
 is($first->{entries}[4], undef, 'do not include entries beyond the response page');
 
