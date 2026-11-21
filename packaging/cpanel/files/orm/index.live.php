@@ -478,6 +478,7 @@ try {
                 <p>These are existing Redis or Valkey containers owned by this cPanel account. cPanel’s EA Podman tools remain responsible for them. ORM can start, stop, or restart an existing container; it cannot install, remove, upgrade, or reconfigure containers.</p>
                 <?php if ($podmanActionMessage !== null): ?><p role="status"><?= htmlspecialchars($podmanActionMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
                 <?php foreach ($podmanCaches as $podmanIndex => $podmanCache): ?>
+                  <?php $podmanMetrics = is_array($podmanCache['metrics'] ?? null) ? $podmanCache['metrics'] : null; ?>
                   <?php $podmanDetails = \Orm\Cpanel\ConnectionDetails::forSocket($account->username(), $podmanCache['socket_path']); ?>
                   <?php if ($podmanDetails !== null): ?>
                     <article class="orm-preset-card">
@@ -492,6 +493,20 @@ try {
                         <p class="orm-note">The account-owned socket exists, but the read-only health probe could not connect. Check the container in cPanel before using it.</p>
                       <?php else: ?>
                         <p class="orm-note">The account-owned socket exists, but the read-only PING did not confirm a response. Check the container in cPanel before using it.</p>
+                      <?php endif; ?>
+                      <?php if ($podmanMetrics !== null): ?>
+                        <h5>Live usage</h5>
+                        <div class="orm-metrics">
+                          <?php if (isset($podmanMetrics['memory_used_bytes'])): ?><div class="orm-metric"><span class="orm-metric-label">Memory used</span><strong class="orm-metric-value"><?= htmlspecialchars($formatBytes($podmanMetrics['memory_used_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div><?php endif; ?>
+                          <?php if (isset($podmanMetrics['memory_peak_bytes'])): ?><div class="orm-metric"><span class="orm-metric-label">Memory peak</span><strong class="orm-metric-value"><?= htmlspecialchars($formatBytes($podmanMetrics['memory_peak_bytes']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong></div><?php endif; ?>
+                          <?php if (isset($podmanMetrics['connected_clients'])): ?><div class="orm-metric"><span class="orm-metric-label">Connected clients</span><strong class="orm-metric-value"><?= number_format($podmanMetrics['connected_clients']) ?></strong></div><?php endif; ?>
+                          <?php if (isset($podmanMetrics['uptime_seconds'])): ?><?php $podmanUptime = $podmanMetrics['uptime_seconds']; ?><div class="orm-metric"><span class="orm-metric-label">Uptime</span><strong class="orm-metric-value"><?= number_format(intdiv($podmanUptime, 86400)) ?>d <?= str_pad((string) intdiv($podmanUptime % 86400, 3600), 2, '0', STR_PAD_LEFT) ?>h</strong></div><?php endif; ?>
+                          <?php if (isset($podmanMetrics['commands_per_second'])): ?><div class="orm-metric"><span class="orm-metric-label">Operations per second</span><strong class="orm-metric-value"><?= number_format($podmanMetrics['commands_per_second']) ?>/s</strong></div><?php endif; ?>
+                          <?php if (isset($podmanMetrics['keyspace_hits'], $podmanMetrics['keyspace_misses']) && ($podmanMetrics['keyspace_hits'] + $podmanMetrics['keyspace_misses']) > 0): ?><?php $podmanLookups = $podmanMetrics['keyspace_hits'] + $podmanMetrics['keyspace_misses']; ?><div class="orm-metric"><span class="orm-metric-label">Cache hit ratio</span><strong class="orm-metric-value"><?= number_format($podmanMetrics['keyspace_hits'] * 100 / $podmanLookups, 1) ?>%</strong></div><?php endif; ?>
+                        </div>
+                        <p class="orm-metrics-note" role="status">Read-only sample captured <?= htmlspecialchars(gmdate('Y-m-d H:i:s', (int)($podmanCache['metrics_sampled_at'] ?? time())), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> UTC. Metrics are collected only when this page is opened and are not retained.</p>
+                      <?php else: ?>
+                        <p class="orm-metrics-note" role="status">Live usage metrics are unavailable for this socket or PHP runtime. ORM does not retain metrics for cPanel-owned containers.</p>
                       <?php endif; ?>
                       <form method="post" class="orm-inline-form">
                         <input type="hidden" name="orm_podman_container" value="<?= htmlspecialchars($podmanCache['container'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">

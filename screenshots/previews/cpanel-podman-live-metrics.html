@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — cPanel Podman live metrics</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f6f9; color: #172235; font: 16px Arial, sans-serif; }
+    header { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 0 40px; color: #fff; background: #20294e; }
+    header img { width: 34px; height: 34px; } header strong { font-size: 18px; } header span { margin-left: auto; color: #d9dfec; font-size: 14px; }
+    main { width: min(100% - 48px, 980px); margin: 36px auto; } h1 { margin: 0 0 8px; font-size: 28px; }
+    .intro { margin: 0 0 22px; color: #59677c; line-height: 1.55; }
+    article { padding: 25px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 5px 20px #17223512; }
+    h2 { margin: 0 0 10px; font-size: 21px; } h3 { margin: 22px 0 10px; font-size: 17px; }
+    p { line-height: 1.5; } .muted { color: #59677c; font-size: 14px; }
+    .badge { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #e8f6ed; color: #176b3a; font-size: 13px; font-weight: 700; }
+    code { overflow-wrap: anywhere; } .socket { padding: 10px 12px; border-radius: 6px; background: #f2f5f9; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; margin: 14px 0; }
+    .metric { padding: 14px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fff; }
+    .metric span { display: block; color: #59677c; font-size: 13px; }
+    .metric strong { display: block; margin-top: 8px; color: #172235; font-size: 20px; }
+    .notice { padding: 12px 14px; border-left: 3px solid #317a9d; background: #f2f8fb; color: #42566a; font-size: 13px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+    button { padding: 10px 15px; border: 0; border-radius: 7px; background: #2855d9; color: white; font-weight: 700; }
+    button.secondary { border: 1px solid #cbd5e1; background: #fff; color: #263b57; }
+    details { margin-top: 12px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; }
+    summary { cursor: pointer; font-weight: 700; } details p { color: #59677c; font-size: 14px; }
+    footer { margin: 18px 0; text-align: center; color: #7a8798; font-size: 12px; }
+    @media(max-width:650px) { header { padding: 0 18px; } main { width: calc(100% - 28px); margin: 20px auto; } article { padding: 18px; } }
+  </style>
+</head>
+<body>
+  <header><img src="../../assets/orm-mark.svg" alt=""><strong>Open Redis Manager</strong><span>cPanel</span></header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="intro">Account-owned cPanel EA Podman service</p>
+    <article aria-label="Synthetic Podman metrics preview">
+      <span class="badge">● Reachable · Redis 6.2.24</span>
+      <h2>Redis · cPanel container</h2>
+      <p class="socket"><strong>Private socket:</strong> <code>~/ea-podman.d/ea-redis62.account.01/redis.sock</code></p>
+      <h3>Live usage</h3>
+      <div class="metrics">
+        <div class="metric"><span>Memory used</span><strong>18.42 MiB</strong></div>
+        <div class="metric"><span>Memory peak</span><strong>21.06 MiB</strong></div>
+        <div class="metric"><span>Connected clients</span><strong>4</strong></div>
+        <div class="metric"><span>Uptime</span><strong>3d 08h</strong></div>
+        <div class="metric"><span>Operations per second</span><strong>12/s</strong></div>
+        <div class="metric"><span>Cache hit ratio</span><strong>96.8%</strong></div>
+      </div>
+      <p class="notice">Read-only sample captured 2026-11-21 17:00:00 UTC. Metrics are collected when this page is opened and are not retained. ORM does not request keys or values.</p>
+      <div class="actions"><button>Restart container</button><button class="secondary">Stop container</button></div>
+      <details><summary>PHP with PhpRedis</summary><p>Use the account-owned Unix socket from the application’s PHP environment.</p></details>
+      <details><summary>Laravel</summary><p>Copy the generated Unix socket settings into the application environment.</p></details>
+      <details><summary>WordPress / WooCommerce</summary><p>Use the generated endpoint in the supported object-cache integration.</p></details>
+    </article>
+    <footer>Preview with synthetic metrics · not a live server capture</footer>
+  </main>
+</body>
+</html>

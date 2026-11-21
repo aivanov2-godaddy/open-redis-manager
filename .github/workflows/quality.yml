@@ -88,6 +88,8 @@ jobs:
         run: php tests/cpanel-connection-details.php
       - name: Check cPanel Podman cache discovery
         run: php tests/cpanel-podman-cache-discovery.php
+      - name: Check cPanel Podman metrics normalization
+        run: php tests/cpanel-podman-metrics.php
       - name: Check cPanel Podman lifecycle controls
         run: php tests/cpanel-podman-lifecycle.php
       - name: Check WHM fleet summary and batch UI guards

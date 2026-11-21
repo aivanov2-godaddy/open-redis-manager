@@ -7,10 +7,12 @@ namespace Orm\Cpanel;
 final class PodmanCacheDiscovery
 {
     private const MAX_CONTAINERS = 32;
+    private const MAX_INFO_BYTES = 65536;
+    private const MAX_METRIC_VALUE = 9_000_000_000_000_000;
 
     /**
      * @param null|callable(string): array{reachable:bool,version:?string} $probe
-     * @return list<array{container:string,backend:string,version:?string,socket_path:string,status:string}>
+     * @return list<array{container:string,backend:string,version:?string,socket_path:string,status:string,metrics:?array,metrics_sampled_at:?int}>
      */
     public static function forCurrentAccount(string $username, ?callable $probe = null): array
     {
@@ -23,7 +25,7 @@ final class PodmanCacheDiscovery
      * cannot be trusted or read. The existing list API remains backward compatible.
      *
      * @param null|callable(string): array{reachable:bool,version:?string} $probe
-     * @return array{status:string,caches:list<array{container:string,backend:string,version:?string,socket_path:string,status:string}>}
+     * @return array{status:string,caches:list<array{container:string,backend:string,version:?string,socket_path:string,status:string,metrics:?array,metrics_sampled_at:?int}>}
      */
     public static function currentAccountInventory(
         string $username,
@@ -190,8 +192,6 @@ final class PodmanCacheDiscovery
                 } catch (\Throwable) {
                     $probeResult = null;
                 }
-            } elseif (class_exists('Redis')) {
-                $probeResult = self::probeRedis($socket);
             } else {
                 $probeResult = self::probePing($socket);
             }
@@ -202,63 +202,139 @@ final class PodmanCacheDiscovery
                 $status = !is_array($probeResult) ? 'not-checked'
                     : (($probeResult['reachable'] ?? false) === true ? 'reachable' : 'unavailable');
             }
+            $metrics = is_array($probeResult) && is_array($probeResult['metrics'] ?? null)
+                ? self::normalizeMetrics($probeResult['metrics']) : null;
             $results[] = [
                 'container' => $name,
                 'backend' => $containerInfo['backend'],
                 'version' => $version,
                 'socket_path' => $socket,
                 'status' => $status,
+                'metrics' => $metrics,
+                'metrics_sampled_at' => $metrics !== null ? time() : null,
             ];
         }
         usort($results, static fn (array $left, array $right): int => strcmp($left['container'], $right['container']));
         return $results;
     }
 
-    /** @return array{reachable:bool,version:?string} */
-    private static function probeRedis(string $socket): array
-    {
-        try {
-            $redis = new \Redis();
-            if (!$redis->connect($socket, 0, 0.5)) {
-                return ['reachable' => false, 'version' => null];
-            }
-            $pong = $redis->ping();
-            $info = $redis->info('server');
-            $redis->close();
-            $version = is_array($info) ? ($info['redis_version'] ?? $info['valkey_version'] ?? null) : null;
-            return [
-                'reachable' => $pong === true || $pong === 'PONG' || $pong === '+PONG',
-                'version' => is_string($version) ? $version : null,
-            ];
-        } catch (\Throwable) {
-            return ['reachable' => false, 'version' => null];
-        }
-    }
-
-    /** @return array{reachable:bool,version:?string} */
+    /** @return array{reachable:bool,version:?string,metrics:?array} */
     private static function probePing(string $socket): array
     {
         $connection = @stream_socket_client('unix://' . $socket, $errorCode, $errorMessage, 0.5, STREAM_CLIENT_CONNECT);
         if (!is_resource($connection)) {
-            return ['reachable' => false, 'version' => null];
+            return ['reachable' => false, 'version' => null, 'metrics' => null];
         }
         stream_set_timeout($connection, 0, 500000);
-        $request = "*1\r\n\$4\r\nPING\r\n";
+        $sent = self::sendRespCommands($connection, [['PING'], ['INFO']]);
+        $pong = $sent && self::readResp($connection, 64) === '+PONG';
+        $pingTimedOut = (stream_get_meta_data($connection)['timed_out'] ?? false) === true;
+        $infoText = $pong ? self::readResp($connection, self::MAX_INFO_BYTES) : null;
+        fclose($connection);
+        $info = is_string($infoText) ? self::parseInfoText($infoText) : [];
+        $version = $info['redis_version'] ?? $info['valkey_version'] ?? null;
+        return [
+            'reachable' => !$pingTimedOut && $pong,
+            'version' => is_string($version) ? $version : null,
+            'metrics' => self::normalizeMetrics($info),
+        ];
+    }
+
+    /** @param resource $connection @param list<list<string>> $commands */
+    private static function sendRespCommands($connection, array $commands): bool
+    {
+        $request = '';
+        foreach ($commands as $arguments) {
+            $request .= '*' . count($arguments) . "\r\n";
+            foreach ($arguments as $argument) {
+                $request .= '$' . strlen($argument) . "\r\n" . $argument . "\r\n";
+            }
+        }
         $written = 0;
         while ($written < strlen($request)) {
             $count = @fwrite($connection, substr($request, $written));
             if (!is_int($count) || $count < 1) {
-                fclose($connection);
-                return ['reachable' => false, 'version' => null];
+                return false;
             }
             $written += $count;
         }
-        $reply = @fgets($connection, 64);
-        $timedOut = (stream_get_meta_data($connection)['timed_out'] ?? false) === true;
-        fclose($connection);
-        return [
-            'reachable' => !$timedOut && is_string($reply) && trim($reply) === '+PONG',
-            'version' => null,
+        return true;
+    }
+
+    /** @param resource $connection */
+    private static function readResp($connection, int $maximumBytes): ?string
+    {
+        $header = @fgets($connection, 64);
+        if (!is_string($header)) {
+            return null;
+        }
+        if (preg_match('/\A\$([0-9]{1,6})\r?\n\z/', $header, $matches) !== 1) {
+            return str_ends_with($header, "\r\n") ? trim($header) : null;
+        }
+        $length = (int)$matches[1];
+        if ($length > $maximumBytes) {
+            return null;
+        }
+        $body = '';
+        while (strlen($body) < $length + 2) {
+            $chunk = @fread($connection, $length + 2 - strlen($body));
+            if (!is_string($chunk) || $chunk === '') {
+                return null;
+            }
+            $body .= $chunk;
+        }
+        return str_ends_with($body, "\r\n") ? substr($body, 0, $length) : null;
+    }
+
+    /** @return array<string,string> */
+    private static function parseInfoText(string $text): array
+    {
+        if (strlen($text) > self::MAX_INFO_BYTES) {
+            return [];
+        }
+        $allowed = [
+            'redis_version', 'valkey_version', 'used_memory', 'used_memory_peak', 'connected_clients',
+            'uptime_in_seconds', 'instantaneous_ops_per_sec', 'keyspace_hits', 'keyspace_misses',
         ];
+        $values = [];
+        foreach (preg_split('/\r?\n/', $text) ?: [] as $line) {
+            if ($line === '' || $line[0] === '#' || !str_contains($line, ':')) {
+                continue;
+            }
+            [$key, $value] = explode(':', $line, 2);
+            if (in_array($key, $allowed, true) && strlen($value) <= 32) {
+                $values[$key] = $value;
+            }
+        }
+        return $values;
+    }
+
+    /** @return ?array<string,int> */
+    private static function normalizeMetrics(array $info): ?array
+    {
+        $fields = [
+            'used_memory' => 'memory_used_bytes',
+            'used_memory_peak' => 'memory_peak_bytes',
+            'connected_clients' => 'connected_clients',
+            'uptime_in_seconds' => 'uptime_seconds',
+            'instantaneous_ops_per_sec' => 'commands_per_second',
+            'keyspace_hits' => 'keyspace_hits',
+            'keyspace_misses' => 'keyspace_misses',
+        ];
+        $metrics = [];
+        foreach ($fields as $source => $target) {
+            $value = $info[$source] ?? $info[$target] ?? null;
+            if (is_int($value)) {
+                $number = $value;
+            } elseif (is_string($value) && preg_match('/\A[0-9]{1,16}\z/', $value) === 1) {
+                $number = (int)$value;
+            } else {
+                continue;
+            }
+            if ($number >= 0 && $number <= self::MAX_METRIC_VALUE) {
+                $metrics[$target] = $number;
+            }
+        }
+        return $metrics === [] ? null : $metrics;
     }
 }
