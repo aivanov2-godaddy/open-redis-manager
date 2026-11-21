@@ -1,7 +1,7 @@
 # Unreleased development notes
 
 **Updated:** 2026-11-21
-**Release:** `0.1.0-rc.5` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
+**Release:** `0.1.0-rc.6` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
 
 These notes distinguish repository implementation from deployment readiness. A feature can exist in the code while remaining experimental for cPanel deployments.
 
@@ -18,7 +18,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Standalone sample-data PHP prototype for reviewing layout and workflows; it does not connect to Redis.
 - Application guides and copyable connection examples; ORM does not edit application files or establish client compatibility for a specific host.
 - Broker-backed Redis/Valkey per-account provisioning, status, bounded configuration, lifecycle controls, metrics, and hourly history.
-- Account backups, restore with safety snapshot and rollback attempt, Redis-to-Valkey migration, root-only WHM diagnostics, provider policy controls, and guarded recovery scan/start.
+- Account backups, restore with safety snapshot and rollback attempt, Redis-to-Valkey migration, selectable root-only WHM read-only diagnostics for PING, INFO server/memory/clients/stats, and DBSIZE, provider policy controls, and guarded recovery scan/start.
 - Advisory cPanel health guidance for service state, configured memory/client limits, and cumulative hit ratio; metric findings pause for missing or stale samples.
 - Root-only WHM audit search and normalized JSON export for retained ORM broker and WHM policy events, with bounded journal reads and visible source coverage gaps.
 - Account-scoped discovery of existing cPanel EA Podman Redis/Valkey containers, optional PhpRedis PING, safe version reporting, application connection examples, and fixed start/stop/restart controls that call cPanel's EA Podman tool as the owning account. cPanel retains package configuration and container data ownership.
