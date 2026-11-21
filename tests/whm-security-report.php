@@ -93,6 +93,38 @@ $assert(($byCategory['podman_counter_rates_unknown']['severity'] ?? null) === 'u
     && $byCategory['podman_counter_rates_unknown']['window_end_utc'] === null
     && isset($report['unmeasured']['ea_podman_counter_rates']),
     'keep Podman rate and threshold evidence explicitly unknown when the aggregate snapshot has no process continuity');
+$measuredPodmanFleet = $fleet;
+$measuredPodmanFleet['podman_metrics']['version'] = 2;
+$measuredPodmanFleet['podman_metrics']['counter_window'] = [
+    'auth_available' => true,
+    'max_auth_failures_delta' => 6,
+    'max_evictions_delta' => 9,
+    'max_operations_per_second' => 500,
+    'process_count' => 3,
+    'reason' => 'matched_process_set',
+    'sampled_at' => $now - 60,
+    'status' => 'measured',
+    'window_seconds' => 3600,
+    'window_start_at' => $now - 3660,
+];
+$podmanThresholdPolicy = WhmSecurityReportPolicyStore::defaults();
+$podmanThresholdPolicy['thresholds'] = [
+    'evictions_per_window' => 7,
+    'operations_per_second' => 120,
+    'auth_failures_per_window' => 4,
+];
+$measuredPodmanReport = WhmSecurityReport::build($measuredPodmanFleet, $audit, $now, $podmanThresholdPolicy);
+$measuredPodmanFindings = array_column($measuredPodmanReport['findings'], null, 'category');
+$assert(($measuredPodmanFindings['podman_eviction_rate']['severity'] ?? null) === 'warning'
+    && ($measuredPodmanFindings['podman_operation_rate']['severity'] ?? null) === 'warning'
+    && ($measuredPodmanFindings['podman_authentication_failures']['severity'] ?? null) === 'warning'
+    && $measuredPodmanFindings['podman_eviction_rate']['count'] === 3
+    && $measuredPodmanFindings['podman_operation_rate']['count'] === 3
+    && !isset($measuredPodmanFindings['podman_counter_rates_unknown'])
+    && $measuredPodmanFindings['podman_operation_rate']['window_start_utc'] === gmdate('Y-m-d\\TH:i:s\\Z', $now - 3660)
+    && !str_contains(json_encode($measuredPodmanReport, JSON_THROW_ON_ERROR), 'counter-baseline')
+    && !isset($measuredPodmanReport['unmeasured']['ea_podman_counter_rates']),
+    'report continuity-verified Podman counter deltas against advisory thresholds without exposing baseline identifiers');
 $assert(($byCategory['memory_pressure']['count'] ?? null) === 1
     && ($byCategory['client_pressure']['count'] ?? null) === 2
     && ($byCategory['low_hit_ratio']['count'] ?? null) === 1

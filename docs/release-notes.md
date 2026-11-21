@@ -1,6 +1,6 @@
 # Unreleased development notes
 
-- WHM security reports now show an explicit unknown finding for EA Podman counter rates and thresholds. Aggregate snapshots remain coverage evidence only because they do not prove process continuity across samples; the report does not interpret cumulative totals as rates.
+- EA Podman WHM reporting now computes report-only maximum per-process eviction, operation, and optional authentication-failure deltas after complete scans confirm the exact same Redis/Valkey server-ID set and monotonic counters. A separate root-only baseline stores SHA-256 server-ID digests and allowlisted counters; digests are linkable pseudonymous state and never leave that file. Process changes, resets, partial scans, invalid state, and gaps beyond 26 hours remain explicitly unknown.
 
 **Updated:** 2026-11-21
 **Release:** `0.1.0-rc.8` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.

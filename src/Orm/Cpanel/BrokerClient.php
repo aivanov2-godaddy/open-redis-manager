@@ -927,10 +927,14 @@ final class BrokerClient
         $expectedKeys = ['backend_counts', 'discovered_count', 'metrics', 'partial', 'reachable_count',
             'sampled_at', 'sampled_backend_counts', 'sampled_count', 'scan_complete', 'skipped_count',
             'success', 'unmeasured_count', 'unverified_account_count', 'version'];
+        $version = $metrics['version'] ?? null;
+        if ($version === 2) {
+            $expectedKeys[] = 'counter_window';
+        }
         $keys = array_keys($metrics);
         sort($keys);
         sort($expectedKeys);
-        if ($keys !== $expectedKeys || ($metrics['success'] ?? null) !== true || ($metrics['version'] ?? null) !== 1
+        if ($keys !== $expectedKeys || ($metrics['success'] ?? null) !== true || !in_array($version, [1, 2], true)
             || !is_bool($metrics['partial'] ?? null) || !is_bool($metrics['scan_complete'] ?? null)
             || !is_int($metrics['sampled_at'] ?? null) || $metrics['sampled_at'] < time() - 1800
             || $metrics['sampled_at'] > time() + 30) {
@@ -997,7 +1001,50 @@ final class BrokerClient
                 return false;
             }
         }
+        if ($version === 2 && !self::validPodmanCounterWindow($metrics['counter_window'] ?? null, $metrics['sampled_at'])) {
+            return false;
+        }
         return true;
+    }
+
+    /** @param mixed $window */
+    private static function validPodmanCounterWindow(mixed $window, int $sampledAt): bool
+    {
+        if (!is_array($window)) {
+            return false;
+        }
+        $expected = ['auth_available', 'max_auth_failures_delta', 'max_evictions_delta',
+            'max_operations_per_second', 'process_count', 'reason', 'sampled_at', 'status',
+            'window_seconds', 'window_start_at'];
+        $keys = array_keys($window);
+        sort($keys);
+        sort($expected);
+        $reasons = ['first_sample', 'incomplete_scan', 'identity_missing', 'invalid_identity', 'duplicate_identity',
+            'state_unavailable', 'invalid_baseline', 'non_monotonic_time', 'stale_baseline',
+            'process_set_changed', 'counter_reset', 'no_processes', 'matched_process_set'];
+        if ($keys !== $expected || !in_array($window['status'] ?? null, ['unknown', 'measured'], true)
+            || !in_array($window['reason'] ?? null, $reasons, true)
+            || !is_bool($window['auth_available'] ?? null)
+            || !is_int($window['sampled_at'] ?? null) || $window['sampled_at'] !== $sampledAt) {
+            return false;
+        }
+        foreach (['window_start_at', 'window_seconds', 'process_count', 'max_evictions_delta',
+            'max_operations_per_second', 'max_auth_failures_delta'] as $field) {
+            if (!is_int($window[$field] ?? null) || $window[$field] < 0 || $window[$field] > 1_000_000_000_000_000) {
+                return false;
+            }
+        }
+        if ($window['status'] === 'measured') {
+            return $window['reason'] === 'matched_process_set' && $window['process_count'] >= 1
+                && $window['process_count'] <= 256 && $window['window_seconds'] >= 1
+                && $window['window_seconds'] <= 93600
+                && $window['window_start_at'] + $window['window_seconds'] === $sampledAt
+                && ($window['auth_available'] || $window['max_auth_failures_delta'] === 0);
+        }
+        return $window['reason'] !== 'matched_process_set' && $window['window_start_at'] === 0
+            && $window['window_seconds'] === 0 && $window['process_count'] === 0
+            && $window['max_evictions_delta'] === 0 && $window['max_operations_per_second'] === 0
+            && $window['auth_available'] === false && $window['max_auth_failures_delta'] === 0;
     }
 
     /** @param list<array{username:string,backup_id?:string}> $targets @return array{success:true,version:1,action:string,partial:bool,requested_count:int,succeeded_count:int,results:list<array<string,mixed>>}|null */

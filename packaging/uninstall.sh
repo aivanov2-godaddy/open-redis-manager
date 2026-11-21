@@ -210,9 +210,12 @@ if [[ -f "$ORM_PODMAN_METRICS_TIMER" ]]; then
     case "$podman_timer_active" in active|inactive|failed) ;; *) orm_die 'could not determine EA Podman metrics timer activity; refusing uninstall.' ;; esac
     if [[ "$podman_timer_enabled" == enabled || "$podman_timer_enabled" == enabled-runtime || "$podman_timer_active" == active ]]; then
         "$ORM_SYSTEMCTL" disable --now orm-podman-metrics.timer || orm_die 'could not stop the EA Podman metrics timer; no files were removed.'
-        "$ORM_SYSTEMCTL" stop orm-podman-metrics.service >/dev/null 2>&1 || true
+        "$ORM_SYSTEMCTL" stop orm-podman-metrics.service >/dev/null 2>&1 || orm_die 'could not stop the EA Podman metrics collector; no files were removed.'
         podman_metrics_timer_stopped=1
     fi
+    podman_service_active="$($ORM_SYSTEMCTL is-active orm-podman-metrics.service 2>/dev/null || true)"
+    [[ "$podman_service_active" == inactive || "$podman_service_active" == failed ]] \
+        || orm_die 'could not verify that the EA Podman metrics collector stopped; no files were removed.'
 fi
 
 if orm_instances_exist; then
@@ -250,4 +253,22 @@ orm_remove_empty_instance_directories \
     || orm_die 'could not remove the empty, root-owned ORM instance directories.'
 uninstall_succeeded=1
 transaction_started=0
+podman_state_dir=/var/lib/orm-podman
+if [[ -d "$podman_state_dir" && ! -L "$podman_state_dir" \
+    && "$("$ORM_SYSTEMCTL" is-active orm-podman-metrics.service 2>/dev/null || true)" != active \
+    && "$(stat -c '%u:%g:%a' -- "$podman_state_dir" 2>/dev/null || true)" == '0:0:700' ]]; then
+    podman_state_safe=1
+    for state_file in "$podman_state_dir/counter-baseline.json" "$podman_state_dir/counter-baseline.json.lock"; do
+        if [[ -e "$state_file" || -L "$state_file" ]]; then
+            [[ -f "$state_file" && ! -L "$state_file" \
+                && "$(stat -c '%u:%g:%a:%h' -- "$state_file" 2>/dev/null || true)" == '0:0:600:1' ]] \
+                || { podman_state_safe=0; break; }
+        fi
+    done
+    if [[ "$podman_state_safe" -eq 1 ]]; then
+        rm -f -- "$podman_state_dir/counter-baseline.json" "$podman_state_dir/counter-baseline.json.lock"
+    else
+        printf 'ORM uninstaller: preserved an unsafe EA Podman continuity-state path for manual review.\n' >&2
+    fi
+fi
 printf 'Open Redis Manager panel files and registrations removed. Redis/Valkey services, data, configuration, and the private anonymous Podman metrics snapshot were left untouched.\n'

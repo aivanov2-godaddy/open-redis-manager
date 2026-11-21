@@ -192,16 +192,62 @@ final class WhmSecurityReport
                 $podmanSampledAt, $podmanSampledAt, $podmanSampledAt);
         }
 
-        $podmanCounterEvidence = $podmanMetricsValid
-            ? 'The root sampler retains one anonymous aggregate snapshot. It cannot prove the same Redis/Valkey server processes were present in a prior sample, so Podman eviction, operation, and authentication-failure counter windows and thresholds were not evaluated.'
-            : 'No continuity-verified Podman counter window is available. Podman eviction, operation, and authentication-failure thresholds were not evaluated.';
-        $podmanCounterRecommendation = 'Treat Podman counter rates as unknown. Aggregate totals cannot distinguish process restarts or container replacement from counter changes; review current coverage and runtime state without interpreting totals as rates.';
-        $podmanCounterSample = $podmanMetricsValid
-            ? gmdate('Y-m-d\\TH:i:s\\Z', $podmanMetrics['sampled_at'])
-            : null;
-        $findings[] = self::finding('podman_counter_rates_unknown', 'unknown', null,
-            $podmanCounterEvidence, $podmanCounterRecommendation,
-            $podmanCounterSample);
+        $podmanWindow = $podmanMetricsValid && ($podmanMetrics['counter_window']['status'] ?? null) === 'measured'
+            ? $podmanMetrics['counter_window'] : null;
+        if ($podmanWindow !== null) {
+            $windowStart = gmdate('Y-m-d\\TH:i:s\\Z', $podmanWindow['window_start_at']);
+            $windowEnd = gmdate('Y-m-d\\TH:i:s\\Z', $podmanWindow['sampled_at']);
+            $windowText = ' Continuity-matched process window: ' . $podmanWindow['window_seconds']
+                . ' seconds from ' . $windowStart . ' through ' . $windowEnd . '; '
+                . $podmanWindow['process_count'] . ' Redis/Valkey processes matched. Values are maximum per-process observations and do not identify accounts or containers.';
+            $evictionThreshold = $thresholds['evictions_per_window'];
+            $evictionExceeded = $policyValid && $evictionThreshold > 0
+                && $podmanWindow['max_evictions_delta'] >= $evictionThreshold;
+            $findings[] = self::finding('podman_eviction_rate', $evictionExceeded ? 'warning' : 'info',
+                $podmanWindow['process_count'], 'Maximum per-process eviction delta was '
+                . $podmanWindow['max_evictions_delta'] . '.' . $windowText
+                . ($evictionThreshold > 0 ? ' Report-only threshold: ' . $evictionThreshold . ' evictions.' : ''),
+                'Review eviction policy and cache capacity. This aggregate threshold is advisory and takes no automatic action.',
+                $windowEnd, $windowStart, $windowEnd);
+            $operationThreshold = $thresholds['operations_per_second'];
+            $operationExceeded = $policyValid && $operationThreshold > 0
+                && $podmanWindow['max_operations_per_second'] >= $operationThreshold;
+            $findings[] = self::finding('podman_operation_rate', $operationExceeded ? 'warning' : 'info',
+                $podmanWindow['process_count'], 'Maximum observed per-process average was '
+                . $podmanWindow['max_operations_per_second'] . ' operations per second.' . $windowText
+                . ' This is descriptive load evidence, not an abuse verdict.'
+                . ($operationThreshold > 0 ? ' Report-only threshold: ' . $operationThreshold . ' operations per second.' : ''),
+                'Compare measured rates and timing with the expected workload. This advisory threshold takes no automatic action.',
+                $windowEnd, $windowStart, $windowEnd);
+            if ($podmanWindow['auth_available']) {
+                $authThreshold = $thresholds['auth_failures_per_window'];
+                $authExceeded = $policyValid && $authThreshold > 0
+                    && $podmanWindow['max_auth_failures_delta'] >= $authThreshold;
+                $findings[] = self::finding('podman_authentication_failures', $authExceeded ? 'warning' : 'info',
+                    $podmanWindow['process_count'], 'Maximum per-process authentication-failure counter delta was '
+                    . $podmanWindow['max_auth_failures_delta'] . '.' . $windowText
+                    . ($authThreshold > 0 ? ' Report-only threshold: ' . $authThreshold . ' failures.' : ''),
+                    'Review authentication configuration and application behavior. This aggregate signal does not identify clients or take automatic action.',
+                    $windowEnd, $windowStart, $windowEnd);
+            } else {
+                $findings[] = self::finding('podman_authentication_failures', 'unknown', null,
+                    'At least one continuity-matched process did not provide the optional authentication-failure counter.' . $windowText,
+                    'Treat Podman authentication-failure evidence as unknown for this window.');
+            }
+        } else {
+            $podmanCounterEvidence = $podmanMetricsValid
+                ? (($podmanMetrics['version'] ?? 1) === 1
+                    ? 'The root sampler retains one anonymous aggregate snapshot. It cannot prove the same Redis/Valkey server processes were present in a prior sample, so Podman eviction, operation, and authentication-failure counter windows and thresholds were not evaluated.'
+                    : 'A continuity-verified Podman counter window is not available (' . ($podmanMetrics['counter_window']['reason'] ?? 'unknown') . '). Podman counter thresholds were not evaluated.')
+                : 'No continuity-verified Podman counter window is available. Podman counter thresholds were not evaluated.';
+            $podmanCounterSample = $podmanMetricsValid
+                ? gmdate('Y-m-d\\TH:i:s\\Z', $podmanMetrics['sampled_at'])
+                : null;
+            $findings[] = self::finding('podman_counter_rates_unknown', 'unknown', null,
+                $podmanCounterEvidence,
+                'Treat Podman counter rates as unknown until two complete samples confirm the same server processes and monotonic counters.',
+                $podmanCounterSample);
+        }
 
         if ($fleetValid) {
             $sampledAt = $metrics['latest_sampled_at'];
@@ -319,10 +365,12 @@ final class WhmSecurityReport
                 gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt)));
         }
 
-        $unmeasured = [
-            'credential_strength' => 'Weak or reused passwords are not inspected.',
-            'ea_podman_counter_rates' => 'Anonymous aggregate snapshots do not establish process continuity; Podman counter deltas and thresholds are not evaluated.',
-        ];
+        $unmeasured = ['credential_strength' => 'Weak or reused passwords are not inspected.'];
+        if ($podmanWindow === null) {
+            $unmeasured['ea_podman_counter_rates'] = 'A complete, fresh sample with a matching process set and monotonic counters is not available; Podman counter deltas and thresholds were not evaluated.';
+        } elseif (!$podmanWindow['auth_available']) {
+            $unmeasured['ea_podman_authentication_failures'] = 'At least one matched process lacks the optional authentication-failure counter.';
+        }
         if (!$podmanMetricsValid) {
             $unmeasured['ea_podman_metrics'] = 'No fresh, verified root-owned EA Podman snapshot was available.';
         }
@@ -354,7 +402,7 @@ final class WhmSecurityReport
     /** @param array<string,mixed>|null $metrics */
     private static function validPodmanMetrics(?array $metrics, int $generatedAt): bool
     {
-        if ($metrics === null || ($metrics['success'] ?? null) !== true || ($metrics['version'] ?? null) !== 1
+        if ($metrics === null || ($metrics['success'] ?? null) !== true || !in_array($metrics['version'] ?? null, [1, 2], true)
             || !is_bool($metrics['partial'] ?? null) || !is_bool($metrics['scan_complete'] ?? null)
             || !is_int($metrics['sampled_at'] ?? null) || $metrics['sampled_at'] < $generatedAt - 1800
             || $metrics['sampled_at'] > $generatedAt) {
@@ -403,7 +451,50 @@ final class WhmSecurityReport
                 return false;
             }
         }
+        if ($metrics['version'] === 2 && !self::validPodmanCounterWindow($metrics['counter_window'] ?? null, $metrics['sampled_at'], $generatedAt)) {
+            return false;
+        }
         return true;
+    }
+
+    /** @param mixed $window */
+    private static function validPodmanCounterWindow(mixed $window, int $sampledAt, int $generatedAt): bool
+    {
+        if (!is_array($window)) {
+            return false;
+        }
+        $keys = array_keys($window);
+        sort($keys);
+        $expected = ['auth_available', 'max_auth_failures_delta', 'max_evictions_delta',
+            'max_operations_per_second', 'process_count', 'reason', 'sampled_at', 'status',
+            'window_seconds', 'window_start_at'];
+        sort($expected);
+        $reasons = ['first_sample', 'incomplete_scan', 'identity_missing', 'invalid_identity', 'duplicate_identity',
+            'state_unavailable', 'invalid_baseline', 'non_monotonic_time', 'stale_baseline',
+            'process_set_changed', 'counter_reset', 'no_processes', 'matched_process_set'];
+        if ($keys !== $expected || !in_array($window['status'] ?? null, ['unknown', 'measured'], true)
+            || !in_array($window['reason'] ?? null, $reasons, true) || !is_bool($window['auth_available'] ?? null)
+            || !is_int($window['sampled_at'] ?? null) || $window['sampled_at'] !== $sampledAt
+            || $window['sampled_at'] > $generatedAt) {
+            return false;
+        }
+        foreach (['window_start_at', 'window_seconds', 'process_count', 'max_evictions_delta',
+            'max_operations_per_second', 'max_auth_failures_delta'] as $field) {
+            if (!is_int($window[$field] ?? null) || $window[$field] < 0 || $window[$field] > 1_000_000_000_000_000) {
+                return false;
+            }
+        }
+        if ($window['status'] === 'measured') {
+            return $window['reason'] === 'matched_process_set' && $window['process_count'] >= 1
+                && $window['process_count'] <= 256 && $window['window_seconds'] >= 1
+                && $window['window_seconds'] <= self::MAX_RATE_WINDOW_SECONDS
+                && $window['window_start_at'] + $window['window_seconds'] === $sampledAt
+                && ($window['auth_available'] || $window['max_auth_failures_delta'] === 0);
+        }
+        return $window['reason'] !== 'matched_process_set' && $window['window_start_at'] === 0
+            && $window['window_seconds'] === 0 && $window['process_count'] === 0
+            && $window['max_evictions_delta'] === 0 && $window['max_operations_per_second'] === 0
+            && $window['auth_available'] === false && $window['max_auth_failures_delta'] === 0;
     }
 
     /** @param list<array<string,mixed>> $findings */
