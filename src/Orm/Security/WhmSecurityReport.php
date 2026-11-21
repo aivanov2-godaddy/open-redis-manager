@@ -202,7 +202,7 @@ final class WhmSecurityReport
                 $evictionExceeded
                     ? 'Review eviction policy and cache capacity. This aggregate threshold is not an abuse verdict and takes no automatic action.'
                     : 'Review eviction policy and cache capacity when evictions are unexpected.',
-                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
+                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']), $windowStart, $windowEnd);
             $operationThreshold = $thresholds['operations_per_second'];
             $operationExceeded = $policyValid && $operationThreshold > 0
                 && $metrics['max_operations_per_second'] >= $operationThreshold;
@@ -213,7 +213,7 @@ final class WhmSecurityReport
                 $operationExceeded
                     ? 'Compare measured rates and timing with the expected application workload. This threshold is advisory and takes no automatic action.'
                     : 'Compare measured rates and timing with the expected application workload; no operation-rate threshold is configured.',
-                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']));
+                gmdate('Y-m-d\TH:i:s\Z', $metrics['rate_window_latest_end_at']), $windowStart, $windowEnd);
         } else {
             $findings[] = self::finding('eviction_rate', 'unknown', null,
                 'Eviction counter deltas are unavailable for a bounded sample window.',
@@ -243,7 +243,7 @@ final class WhmSecurityReport
                 $authExceeded
                     ? 'Review application credentials and expected connection behavior. This anonymous aggregate threshold does not identify a client or take automatic action.'
                     : 'Review application credentials and expected connection behavior; no authentication-failure threshold is configured.',
-                gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_latest_end_at']));
+                gmdate('Y-m-d\\TH:i:s\\Z', $metrics['auth_rate_window_latest_end_at']), $authWindowStart, $authWindowEnd);
         } else {
             $findings[] = self::finding('client_authentication_failures', 'unknown', null,
                 'Backend authentication-failure counter deltas are unavailable for a bounded sample window.',
@@ -268,15 +268,21 @@ final class WhmSecurityReport
                     ++$authFailures;
                 }
             }
+            $eventWindowStart = gmdate('Y-m-d\TH:i:s\Z', $windowStart);
+            $eventWindowEnd = gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt));
             if ($authEvents > 0) {
                 $findings[] = self::finding('auth_management_events', 'info', $authEvents,
-                    $authFailures . ' unsuccessful ORM AUTH management operations in the last 24 hours. These are not Redis client login attempts.',
-                    'Review the normalized ORM audit log for the fixed operation outcome. Password values and client authentication attempts are not inspected.');
+                    $authFailures . ' unsuccessful ORM AUTH management operations between ' . $eventWindowStart
+                    . ' and ' . $eventWindowEnd . '. These are not Redis client login attempts.',
+                    'Review the normalized ORM audit log for the fixed operation outcome. Password values and client authentication attempts are not inspected.',
+                    $eventWindowEnd, $eventWindowStart, $eventWindowEnd);
             }
         } else {
             $findings[] = self::finding('auth_audit_unavailable', 'unknown', null,
                 'Authentication management events are unavailable or audit coverage is partial.',
-                'Check host journal retention and the WHM audit source status before interpreting this report.');
+                'Check host journal retention and the WHM audit source status before interpreting this report.',
+                null, gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt - self::AUTH_EVENT_WINDOW_SECONDS)),
+                gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt)));
         }
 
         $unmeasured = [
@@ -312,14 +318,16 @@ final class WhmSecurityReport
         string $evidence, int $sampledAt, string $recommendation): void
     {
         if ($count > 0) {
+            $sampleTime = gmdate('Y-m-d\TH:i:s\Z', $sampledAt);
             $findings[] = self::finding($category, $severity, $count, $evidence,
-                $recommendation, gmdate('Y-m-d\TH:i:s\Z', $sampledAt));
+                $recommendation, $sampleTime, $sampleTime, $sampleTime);
         }
     }
 
     /** @return array<string,mixed> */
     private static function finding(string $category, string $severity, ?int $count, string $evidence,
-        string $recommendation, ?string $sampledAt = null): array
+        string $recommendation, ?string $sampledAt = null, ?string $windowStart = null,
+        ?string $windowEnd = null): array
     {
         return [
             'category' => $category,
@@ -328,6 +336,8 @@ final class WhmSecurityReport
             'recommendation' => $recommendation,
             'sampled_at_utc' => $sampledAt,
             'severity' => $severity,
+            'window_start_utc' => $windowStart,
+            'window_end_utc' => $windowEnd,
         ];
     }
 }
