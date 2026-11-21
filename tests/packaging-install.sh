@@ -50,6 +50,8 @@ configure_case() {
     ORM_PROVIDER_EVENTS_OUTBOX="$ORM_PROVIDER_EVENTS_ROOT/outbox"
     ORM_PROVIDER_EVENTS_SERVICE="$test_root/etc/systemd/system/orm-provider-events.service"
     ORM_PROVIDER_EVENTS_TIMER="$test_root/etc/systemd/system/orm-provider-events.timer"
+    ORM_PODMAN_METRICS_SERVICE="$test_root/etc/systemd/system/orm-podman-metrics.service"
+    ORM_PODMAN_METRICS_TIMER="$test_root/etc/systemd/system/orm-podman-metrics.timer"
     ORM_BROKER_SOCKET="$test_root/run/orm/broker.sock"
     TMPDIR="$TEST_TMPDIR"
     PATH="$test_root/bin:$base_path"
@@ -61,6 +63,7 @@ configure_case() {
     export ORM_METRICS_COLLECTOR ORM_METRICS_SERVICE ORM_METRICS_TIMER ORM_BROKER_SOCKET
     export ORM_PROVIDER_EVENTS_CONFIG ORM_PROVIDER_EVENTS_ROOT ORM_PROVIDER_EVENTS_OUTBOX
     export ORM_PROVIDER_EVENTS_SERVICE ORM_PROVIDER_EVENTS_TIMER
+    export ORM_PODMAN_METRICS_SERVICE ORM_PODMAN_METRICS_TIMER
 
     mkdir -p "$test_root/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
         "$test_root/etc/systemd/system" "$test_root/var/lib" "$test_root/run" "$TEST_TMPDIR"
@@ -71,6 +74,8 @@ configure_case() {
     printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
     printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
     printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+    printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.podman-enabled"
+    printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.podman-active"
 
     cat >"$ORM_INSTALL_PLUGIN" <<'MOCK'
 #!/usr/bin/env bash
@@ -126,6 +131,10 @@ case "$1" in
                 printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
                 printf 'active\n' >"$TEST_SYSTEMCTL_STATE.events-active"
                 ;;
+            orm-podman-metrics.timer)
+                printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.podman-enabled"
+                printf 'active\n' >"$TEST_SYSTEMCTL_STATE.podman-active"
+                ;;
             *) exit 65 ;;
         esac
         ;;
@@ -140,11 +149,15 @@ case "$1" in
                 printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
                 printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
                 ;;
+            orm-podman-metrics.timer)
+                printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.podman-enabled"
+                printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.podman-active"
+                ;;
             *) exit 66 ;;
         esac
         ;;
     stop)
-        [[ "$2" == orm-provider-events.service ]] || exit 66
+        [[ "$2" == orm-provider-events.service || "$2" == orm-podman-metrics.service ]] || exit 66
         ;;
     *) exit 67 ;;
 esac
@@ -179,6 +192,8 @@ write_installer_runner() {
             "$ORM_PROVIDER_EVENTS_CONFIG" "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX"
         printf 'export ORM_PROVIDER_EVENTS_SERVICE=%q\nexport ORM_PROVIDER_EVENTS_TIMER=%q\n' \
             "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER"
+        printf 'export ORM_PODMAN_METRICS_SERVICE=%q\nexport ORM_PODMAN_METRICS_TIMER=%q\n' \
+            "$ORM_PODMAN_METRICS_SERVICE" "$ORM_PODMAN_METRICS_TIMER"
         printf 'export TEST_FAIL_REGISTER=%q\n' "$TEST_FAIL_REGISTER"
         cat <<'MOCK'
 orm_require_root_and_platform() {
@@ -189,7 +204,8 @@ orm_require_root_and_platform() {
         "$ORM_LIFECYCLE_LOCK" "$ORM_SYSTEMCTL" "$ORM_BROKER_SOCKET" \
         "$ORM_BROKER_UNIT" "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" "$ORM_INSTANCE_UNIT" \
         "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER" "$ORM_PROVIDER_EVENTS_CONFIG" \
-        "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX" "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER"; do
+        "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX" "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER" \
+        "$ORM_PODMAN_METRICS_SERVICE" "$ORM_PODMAN_METRICS_TIMER"; do
         [[ "$path" == "$TEST_ROOT/"* ]] || orm_die "test target escaped its isolated root: $path"
     done
     while IFS='|' read -r key source target mode; do
@@ -253,6 +269,8 @@ ORM_PACKAGE_ROOT="$source_package_root"
     || { printf 'fresh install did not enable and start the broker.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == active ]] \
     || { printf 'fresh install did not enable provider event delivery timer.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.podman-enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.podman-active")" == active ]] \
+    || { printf 'fresh install did not enable the EA Podman metrics timer.\n' >&2; exit 1; }
 [[ -f "$ORM_PROVIDER_EVENTS_CONFIG" && ! -L "$ORM_PROVIDER_EVENTS_CONFIG" \
     && "$(stat -c '%u:%a' "$ORM_PROVIDER_EVENTS_CONFIG")" == 0:600 \
     && "$(cat "$ORM_PROVIDER_EVENTS_CONFIG")" == '{"destination":"","enabled":false,"signing_key":"","version":1}' ]] \
@@ -273,6 +291,8 @@ printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
 printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
 printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
 printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.podman-enabled"
+printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.podman-active"
 bash "$TEST_ROOT/run-installer.sh"
 orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
     || { printf 'repeated install changed or invalidated the install manifest.\n' >&2; exit 1; }
@@ -283,7 +303,9 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled \
     && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive \
     && "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == disabled \
-    && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == inactive ]] \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == inactive \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.podman-enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.podman-active")" == inactive ]] \
     || { printf 'repeated install changed operator-managed service state.\n' >&2; exit 1; }
 printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
 printf 'active\n' >"$TEST_SYSTEMCTL_STATE.active"
@@ -304,6 +326,8 @@ fi
     || { printf 'installer rollback did not stop and disable the broker.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == disabled && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == inactive ]] \
     || { printf 'installer rollback did not stop and disable provider event delivery.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.podman-enabled")" == disabled && "$(cat "$TEST_SYSTEMCTL_STATE.podman-active")" == inactive ]] \
+    || { printf 'installer rollback did not stop and disable the EA Podman metrics timer.\n' >&2; exit 1; }
 [[ ! -e "$ORM_INSTALL_MANIFEST" && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" ]] \
     || { printf 'installer rollback left a manifest or runtime root behind.\n' >&2; exit 1; }
 [[ ! -e "$ORM_PROVIDER_EVENTS_CONFIG" && ! -e "$ORM_PROVIDER_EVENTS_ROOT" ]] \

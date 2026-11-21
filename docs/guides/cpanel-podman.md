@@ -17,6 +17,12 @@ When no current-account cache is present, ORM offers a first-run choice between 
 
 Lifecycle actions are available only to the authenticated owner of an existing container with a normal, non-jailed shell. ORM calls the fixed `/usr/local/cpanel/scripts/ea-podman` program as that cPanel account with only `start`, `stop`, or `restart`, and reports bounded, sanitized outcomes. The setup wizard does not execute the package install in a web request: image downloads can exceed web request timeouts, so the user runs one of the two fixed cPanel package commands in their account shell. ORM does not accept arbitrary commands or paths, and does not uninstall, upgrade, or reconfigure containers. If ORM cannot verify the account identity, shell, directory ownership, or container name, it hides the candidate or rejects the action. If PhpRedis is unavailable, ORM labels health **not checked**. A failed PING does not trigger a lifecycle action.
 
+### WHM fleet coverage
+
+The package schedules a separate root-owned systemd sampler every 15 minutes. It discovers only exact cPanel EA Redis/Valkey container names under verified account homes and reads the account-owned `redis.sock` or `valkey.sock` using a bounded, read-only `INFO ALL` request. A missing `ea-podman.d` directory means that account has no discovered EA containers; an unsafe or unreadable account path is counted as unverified coverage. Each run is capped at 10,000 accounts, 1,024 directory entries per account, 32 containers sampled per account, and 256 socket probes overall.
+
+The sampler stores only aggregate Redis/Valkey counts and six allowlisted counters in a root-owned `0600` snapshot. It does not persist account names, container names, socket paths, raw INFO output, keys, or values. WHM reads a snapshot no older than 30 minutes and presents this coverage separately from ORM-managed accounts. Unmeasured, skipped, partial, invalid, or stale coverage remains unknown; those services are excluded from ORM-managed totals. The current Podman report is coverage and aggregate-state reporting only: Podman counter deltas and report thresholds are not implemented yet. The collector requires validation against supported cPanel/EA Podman versions before a production release.
+
 Use cPanel's own `ea-podman` tools to install, upgrade, back up, or remove these containers. ORM's create/restore snapshots apply only to ORM-managed direct instances and do not operate on cPanel Podman data.
 
 ## Verified test-host evidence

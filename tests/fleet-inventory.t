@@ -249,6 +249,8 @@ my $summaryInventory = Orm::Broker::FleetInventory->new(
 );
 my $fleetSummary = $summaryInventory->summary();
 ok($fleetSummary->{success} && $fleetSummary->{partial}, 'return a successful but explicitly partial fleet summary');
+ok(exists($fleetSummary->{podman_metrics}) && !defined($fleetSummary->{podman_metrics}),
+    'report a missing root Podman snapshot as unknown without probing from WHM');
 is($fleetSummary->{account_count}, 37, 'count verified and unverified inventory entries');
 is($fleetSummary->{unverified_count}, 2, 'count malformed and symlinked metadata as unverified');
 my $summaryRequest = '{"operation":"fleet.summary","version":1}' . "\n";

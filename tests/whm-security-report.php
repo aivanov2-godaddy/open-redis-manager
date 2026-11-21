@@ -45,6 +45,25 @@ $fleet = [
         'auth_rate_window_latest_end_at' => $now - 60,
     ],
 ];
+$fleet['podman_metrics'] = [
+    'backend_counts' => ['redis' => 2, 'valkey' => 1],
+    'discovered_count' => 3,
+    'metrics' => [
+        'connected_clients' => 6, 'evicted_keys' => 2, 'keyspace_hits' => 40,
+        'keyspace_misses' => 10, 'memory_used_bytes' => 12288, 'total_commands_processed' => 300,
+    ],
+    'partial' => false,
+    'reachable_count' => 3,
+    'sampled_at' => $now - 60,
+    'sampled_backend_counts' => ['redis' => 2, 'valkey' => 1],
+    'sampled_count' => 3,
+    'scan_complete' => true,
+    'skipped_count' => 0,
+    'success' => true,
+    'unmeasured_count' => 0,
+    'unverified_account_count' => 0,
+    'version' => 1,
+];
 $audit = [
     'success' => true,
     'partial' => false,
@@ -60,6 +79,10 @@ $audit = [
 $report = WhmSecurityReport::build($fleet, $audit, $now);
 $byCategory = array_column($report['findings'], null, 'category');
 $assert($report['mode'] === 'report-only' && !$report['partial'], 'produce a complete advisory-only report when inputs are complete');
+$assert(($byCategory['podman_metrics_coverage']['severity'] ?? null) === 'info'
+    && str_contains($byCategory['podman_metrics_coverage']['evidence'], '2 Redis, 1 Valkey')
+    && str_contains($byCategory['podman_metrics_coverage']['evidence'], 'separate from ORM-managed accounts'),
+    'report separate, anonymous Redis and Valkey Podman coverage');
 $assert(($byCategory['memory_pressure']['count'] ?? null) === 1
     && ($byCategory['client_pressure']['count'] ?? null) === 2
     && ($byCategory['low_hit_ratio']['count'] ?? null) === 1
@@ -201,6 +224,13 @@ $assert($unavailable['partial'] && array_key_exists('metrics_unavailable', $unav
     && array_key_exists('auth_audit_unavailable', $unavailableCategories)
     && $unavailableCategories['auth_audit_unavailable']['count'] === null,
     'represent unavailable inputs as unknown findings');
+$missingPodmanFleet = $fleet;
+$missingPodmanFleet['podman_metrics'] = null;
+$missingPodman = WhmSecurityReport::build($missingPodmanFleet, $audit, $now);
+$missingPodmanCategories = array_column($missingPodman['findings'], null, 'category');
+$assert($missingPodman['partial'] && ($missingPodmanCategories['podman_metrics_unknown']['severity'] ?? null) === 'unknown'
+    && isset($missingPodman['unmeasured']['ea_podman_metrics']),
+    'keep missing Podman snapshots explicitly unknown and mark the report partial');
 
 if (function_exists('posix_geteuid')) {
     $directory = sys_get_temp_dir() . '/orm-security-report-' . bin2hex(random_bytes(5));

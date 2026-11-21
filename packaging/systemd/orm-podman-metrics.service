@@ -1,0 +1,36 @@
+[Unit]
+Description=Collect bounded Redis and Valkey metrics from cPanel EA Podman sockets
+After=local-fs.target
+ConditionPathIsDirectory=/var/cpanel/users
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/perl /usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl
+TimeoutStartSec=10min
+RuntimeMaxSec=10min
+StateDirectory=orm-podman
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/orm-podman
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=64M
+CPUQuota=10%
+TasksMax=16
+LimitNOFILE=64

@@ -4,6 +4,7 @@ use warnings;
 use Fcntl qw(:mode);
 use JSON::PP ();
 use Sys::Syslog qw(:standard :macros);
+use Orm::Broker::PodmanMetricsCollector;
 
 # Status checks use systemctl with a five-second timeout; four checks stay below the 35-second WHM client timeout.
 my $PAGE_SIZE = 4;
@@ -21,6 +22,7 @@ sub new {
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
         resolver => $args{resolver},
         instance_manager => $args{instance_manager},
+        podman_snapshot_path => $args{podman_snapshot_path} // '/var/lib/orm-podman/summary.json',
         lookup_name => $args{lookup_name} // sub {
             my @entry = getpwnam($_[0]);
             return undef if !@entry || !defined($entry[2]);
@@ -515,6 +517,11 @@ sub summary {
     my @resolved = map { $_->{account} } @{$accounts};
     my $summary = eval { $self->{instance_manager}->fleet_summary(\@resolved) };
     return _failure('operation_failed') if ref($summary) ne 'HASH' || !$summary->{success};
+    my $podman = eval {
+        Orm::Broker::PodmanMetricsCollector->read_snapshot($self->{podman_snapshot_path}, now => $self->{clock}->());
+    };
+    $summary->{podman_metrics} = ref($podman) eq 'HASH' ? $podman : undef;
+    $summary->{partial} = JSON::PP::true if ref($podman) ne 'HASH' || $podman->{partial};
     $summary->{unverified_count} += $unverified;
     $summary->{account_count} += $unverified;
     $summary->{partial} = JSON::PP::true if $unverified > 0;

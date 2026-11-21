@@ -675,6 +675,35 @@ $assert($summaryRequests[0] === "{\"operation\":\"fleet.summary\",\"version\":1}
 $unsafeSummary = new BrokerClient(static fn (string $request): string =>
     str_replace('"partial":true', '"partial":true,"secret":"x"', $summaryResponse));
 $assert($unsafeSummary->requestFleetSummary() === null, 'Reject extra fields in the fleet summary response.');
+$podmanSummaryPayload = json_decode($summaryResponse, true, 8, JSON_THROW_ON_ERROR);
+$podmanSummaryPayload['podman_metrics'] = [
+    'backend_counts' => ['redis' => 1, 'valkey' => 1],
+    'discovered_count' => 2,
+    'metrics' => ['connected_clients' => 3, 'evicted_keys' => 0, 'keyspace_hits' => 8,
+        'keyspace_misses' => 2, 'memory_used_bytes' => 8192, 'total_commands_processed' => 100],
+    'partial' => false,
+    'reachable_count' => 2,
+    'sampled_at' => time() - 60,
+    'sampled_backend_counts' => ['redis' => 1, 'valkey' => 1],
+    'sampled_count' => 2,
+    'scan_complete' => true,
+    'skipped_count' => 0,
+    'success' => true,
+    'unmeasured_count' => 0,
+    'unverified_account_count' => 0,
+    'version' => 1,
+];
+$podmanSummaryClient = new BrokerClient(static fn (string $request): string =>
+    json_encode($podmanSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
+$podmanSummaryResult = $podmanSummaryClient->requestFleetSummary();
+$assert(is_array($podmanSummaryResult['podman_metrics'] ?? null)
+    && $podmanSummaryResult['podman_metrics']['discovered_count'] === 2,
+    'Accept an exact, bounded, fresh anonymous EA Podman snapshot in the root fleet summary.');
+$podmanSummaryPayload['podman_metrics']['socket_path'] = '/home/user/redis.sock';
+$unsafePodmanSummaryClient = new BrokerClient(static fn (string $request): string =>
+    json_encode($podmanSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($unsafePodmanSummaryClient->requestFleetSummary() === null,
+    'Reject Podman snapshots containing account-specific endpoint identifiers.');
 $extendedSummaryPayload = json_decode($summaryResponse, true, 8, JSON_THROW_ON_ERROR);
 $extendedSummaryPayload['metrics'] = array_replace($extendedSummaryPayload['metrics'], [
     'eviction_activity_accounts' => 1, 'max_evictions_per_window' => 2,

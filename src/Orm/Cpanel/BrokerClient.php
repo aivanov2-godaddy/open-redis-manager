@@ -758,6 +758,11 @@ final class BrokerClient
             $expectedKeys[] = 'backend_counts';
             sort($expectedKeys);
         }
+        $hasPodmanMetrics = array_key_exists('podman_metrics', $decoded);
+        if ($hasPodmanMetrics) {
+            $expectedKeys[] = 'podman_metrics';
+            sort($expectedKeys);
+        }
         if ($keys !== $expectedKeys) {
             return null;
         }
@@ -855,6 +860,10 @@ final class BrokerClient
         if ($hasAuthRateMetrics) {
             $expectedPartial = $expectedPartial || $decoded['metrics']['auth_rate_missing_accounts'] > 0;
         }
+        if ($hasPodmanMetrics) {
+            $expectedPartial = $expectedPartial || $decoded['podman_metrics'] === null
+                || (is_array($decoded['podman_metrics']) && $decoded['podman_metrics']['partial']);
+        }
         if ($decoded['metrics']['fresh_accounts'] + $decoded['metrics']['stale_accounts']
             + $decoded['metrics']['missing_accounts'] !== $decoded['managed_count']
             || $decoded['metrics']['alert_accounts'] > $decoded['metrics']['fresh_accounts']
@@ -901,8 +910,94 @@ final class BrokerClient
                 return null;
             }
         }
+        if ($hasPodmanMetrics && $decoded['podman_metrics'] !== null
+            && !self::validPodmanMetrics($decoded['podman_metrics'])) {
+            return null;
+        }
         $decoded['backend_counts'] ??= null;
         return $decoded;
+    }
+
+    /** @param mixed $metrics */
+    private static function validPodmanMetrics(mixed $metrics): bool
+    {
+        if (!is_array($metrics)) {
+            return false;
+        }
+        $expectedKeys = ['backend_counts', 'discovered_count', 'metrics', 'partial', 'reachable_count',
+            'sampled_at', 'sampled_backend_counts', 'sampled_count', 'scan_complete', 'skipped_count',
+            'success', 'unmeasured_count', 'unverified_account_count', 'version'];
+        $keys = array_keys($metrics);
+        sort($keys);
+        sort($expectedKeys);
+        if ($keys !== $expectedKeys || ($metrics['success'] ?? null) !== true || ($metrics['version'] ?? null) !== 1
+            || !is_bool($metrics['partial'] ?? null) || !is_bool($metrics['scan_complete'] ?? null)
+            || !is_int($metrics['sampled_at'] ?? null) || $metrics['sampled_at'] < time() - 1800
+            || $metrics['sampled_at'] > time() + 30) {
+            return false;
+        }
+        $maximumCount = 10000 * 1024;
+        foreach (['discovered_count', 'sampled_count', 'reachable_count', 'unmeasured_count', 'skipped_count', 'unverified_account_count'] as $field) {
+            if (!is_int($metrics[$field] ?? null) || $metrics[$field] < 0 || $metrics[$field] > $maximumCount) {
+                return false;
+            }
+        }
+        if ($metrics['sampled_count'] !== $metrics['reachable_count'] + $metrics['unmeasured_count']
+            || $metrics['sampled_count'] + $metrics['skipped_count'] !== $metrics['discovered_count']) {
+            return false;
+        }
+        if ($metrics['scan_complete'] === true && ($metrics['unmeasured_count'] > 0
+            || $metrics['skipped_count'] > 0 || $metrics['unverified_account_count'] > 0)) {
+            return false;
+        }
+        $expectedPartial = $metrics['scan_complete'] !== true || $metrics['unmeasured_count'] > 0
+            || $metrics['skipped_count'] > 0 || $metrics['unverified_account_count'] > 0;
+        if ($metrics['partial'] !== $expectedPartial) {
+            return false;
+        }
+        foreach (['backend_counts', 'sampled_backend_counts'] as $field) {
+            if (!is_array($metrics[$field])) {
+                return false;
+            }
+            $backendKeys = array_keys($metrics[$field]);
+            sort($backendKeys);
+            if ($backendKeys !== ['redis', 'valkey']) {
+                return false;
+            }
+            foreach (['redis', 'valkey'] as $backend) {
+                if (!is_int($metrics[$field][$backend]) || $metrics[$field][$backend] < 0
+                    || $metrics[$field][$backend] > $maximumCount) {
+                    return false;
+                }
+            }
+        }
+        if (array_sum($metrics['backend_counts']) !== $metrics['discovered_count']
+            || array_sum($metrics['sampled_backend_counts']) !== $metrics['sampled_count']) {
+            return false;
+        }
+        foreach (['redis', 'valkey'] as $backend) {
+            if ($metrics['sampled_backend_counts'][$backend] > $metrics['backend_counts'][$backend]) {
+                return false;
+            }
+        }
+        $metricKeys = ['connected_clients', 'evicted_keys', 'keyspace_hits', 'keyspace_misses',
+            'memory_used_bytes', 'total_commands_processed'];
+        if (!is_array($metrics['metrics'])) {
+            return false;
+        }
+        $actualMetricKeys = array_keys($metrics['metrics']);
+        sort($actualMetricKeys);
+        sort($metricKeys);
+        if ($actualMetricKeys !== $metricKeys) {
+            return false;
+        }
+        foreach ($metricKeys as $field) {
+            if (!is_int($metrics['metrics'][$field]) || $metrics['metrics'][$field] < 0
+                || $metrics['metrics'][$field] > PHP_INT_MAX) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** @param list<array{username:string,backup_id?:string}> $targets @return array{success:true,version:1,action:string,partial:bool,requested_count:int,succeeded_count:int,results:list<array<string,mixed>>}|null */
