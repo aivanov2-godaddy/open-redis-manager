@@ -19,6 +19,8 @@ These notes distinguish repository implementation from deployment readiness. A f
 
 - cPanel setup preflight now reports whether PhpRedis is loaded in the PHP runtime serving the ORM page, with a version when available. It warns that domain PHP handlers may differ, suggests enabling the extension only for PHP applications that need it, and does not claim application connectivity. See [issue #203](https://github.com/aivanov2-godaddy/open-redis-manager/issues/203) and the refreshed [application preflight screenshot](../screenshots/cpanel-application-discovery.png).
 
+- WHM audit history now includes metadata-only ORM-managed cPanel provisioning, configuration, start, and stop requests. The event records the broker peer UID, resolved account, fixed action, success/failure, and normalized state; it excludes submitted settings, secrets, and raw errors. EA Podman commands remain outside this audit stream. See [issue #205](https://github.com/aivanov2-godaddy/open-redis-manager/issues/205) and the refreshed [audit log screenshot](../screenshots/whm-audit-log.png).
+
 - Standalone sample-data PHP prototype for reviewing layout and workflows; it does not connect to Redis.
 - Application guides and copyable connection examples; ORM does not edit application files or establish client compatibility for a specific host.
 - Broker-backed Redis/Valkey per-account provisioning, status, bounded configuration, lifecycle controls, metrics, and hourly history.

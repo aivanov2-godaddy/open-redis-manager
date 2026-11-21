@@ -54,3 +54,4 @@ Open a feature branch and pull request for each coherent implementation incremen
 - [#197 — Add a cPanel first-run native vs EA Podman setup wizard](https://github.com/aivanov2-godaddy/open-redis-manager/issues/197) ([draft](issues/18-cpanel-backend-onboarding.md))
 - [#201 — Add live account-scoped usage metrics for cPanel EA Podman caches](https://github.com/aivanov2-godaddy/open-redis-manager/issues/201) ([draft](issues/19-cpanel-podman-live-metrics.md))
 - [#203 — Show PhpRedis readiness for the cPanel runtime](https://github.com/aivanov2-godaddy/open-redis-manager/issues/203) ([draft](issues/20-cpanel-phpredis-runtime-readiness.md))
+- [#205 — Audit cPanel account lifecycle operations](https://github.com/aivanov2-godaddy/open-redis-manager/issues/205) ([draft](issues/21-cpanel-lifecycle-audit.md))

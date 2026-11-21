@@ -63,6 +63,10 @@ $assert(str_contains($whm, 'Usage from snapshot') && str_contains($whm, "\$entry
     && str_contains($whm, 'memory_used_bytes') && str_contains($whm, 'connected_clients')
     && str_contains($whm, 'No valid metrics snapshot is available.'),
     'show per-account memory and client usage with explicit snapshot freshness and unknown values');
+$assert(str_contains($whm, "'instance.provision','instance.configure','instance.start','instance.stop'")
+    && str_contains($whm, 'ORM-managed cPanel provisioning, configuration, start, and stop requests are included')
+    && str_contains($whm, 'cPanel EA Podman commands'),
+    'filter normalized cPanel operation events and explain the audit coverage boundary');
 $assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_rebuild'")
     && str_contains($whm, 'Rebuild config') && str_contains($whm, 'ORM will not start the service')
     && str_contains($whm, 'recovery.config_rebuild'),

@@ -32,6 +32,10 @@ $brokerLines = [
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=client_limit_exceeded', $now - 17),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=database_limit_exceeded', $now - 16),
     $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct07 action=recovery.config_rebuild result=success state=stopped', $now - 3),
+    $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.provision result=success state=running', $now - 53),
+    $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.configure result=failure state=running', $now - 52),
+    $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.start result=success state=starting', $now - 51),
+    $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.stop result=success state=stopped', $now - 50),
     $journal('orm-broker', 'ORM raw message password=do-not-export', $now - 10),
     json_encode(['SYSLOG_IDENTIFIER' => 'other-service', 'MESSAGE' => 'fleet_operation actor_uid=0 account=acct01 action=start result=success state=running', '__REALTIME_TIMESTAMP' => (string) ($now * 1_000_000)], JSON_THROW_ON_ERROR),
 ];
@@ -46,7 +50,7 @@ $reader = new WhmAuditLog(static fn (string $identifier): array => [
     'status' => 'ok', 'lines' => $identifier === 'orm-broker' ? $brokerLines : $whmLines,
 ]);
 $result = $reader->read($now - 3600, $now, []);
-$assert($result['success'] && $result['record_count'] === 12, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
+$assert($result['success'] && $result['record_count'] === 16, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
 $assert($result['records'][0]['action'] === 'provider.events.configure' && $result['records'][0]['account'] === 'global'
     && $result['records'][0]['state'] === 'enabled,key_rotated', 'Recognize fixed metadata-only provider event configuration audits.');
 $assert($result['records'][11]['action'] === 'security.thresholds.update' && $result['records'][11]['result'] === 'success',
@@ -58,9 +62,18 @@ $assert($result['records'][5]['action'] === 'policy.violation' && $result['recor
 $assert($result['records'][8]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
 $assert($result['records'][9]['action'] === 'diagnostics.info_memory' && $result['records'][9]['actor'] === '0'
     && $result['records'][9]['account'] === 'acct01', 'Expose the exact selected diagnostics command class in audit history.');
+$assert($result['records'][12]['action'] === 'instance.stop' && $result['records'][12]['actor'] === '1000'
+    && $result['records'][12]['account'] === 'acct01' && $result['records'][12]['state'] === 'stopped'
+    && $result['records'][13]['action'] === 'instance.start'
+    && $result['records'][14]['action'] === 'instance.configure' && $result['records'][14]['result'] === 'failure'
+    && $result['records'][15]['action'] === 'instance.provision',
+    'Normalize metadata-only cPanel lifecycle and configuration events from the authenticated account UID.');
 $assert($result['sources'][0]['status'] === 'partial' && $result['sources'][0]['unrecognized_rows'] === 3, 'Mark sources partial when rows cannot be safely recognized.');
 $filtered = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'auth.rotate', 'result' => 'success']);
 $assert($filtered['record_count'] === 1 && $filtered['records'][0]['actor'] === '1000', 'Filter normalized records by account, action, and result.');
+$accountOperations = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'instance.configure', 'result' => 'failure']);
+$assert($accountOperations['record_count'] === 1 && $accountOperations['records'][0]['state'] === 'running',
+    'Filter account lifecycle audit events by fixed action and normalized result.');
 $assert(WhmAuditLog::normalizeFilters(['account' => '../root']) === null
     && WhmAuditLog::normalizeFilters(['action' => 'redis-cli']) === null
     && WhmAuditLog::normalizeFilters(['arbitrary' => 'value']) === null, 'Reject unsafe and unknown filters.');

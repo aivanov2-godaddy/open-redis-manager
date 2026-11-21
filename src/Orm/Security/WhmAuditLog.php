@@ -15,12 +15,13 @@ final class WhmAuditLog
     private const LIMITATIONS = [
         'Only retained records from the two named ORM journald identifiers are read.',
         'Only recognized fixed-format events are returned; unrecognized rows are counted and omitted.',
-        'The viewer does not include cPanel provisioning, configuration, start, or stop operations.',
+        'The viewer does not include cPanel EA Podman commands or all host activity.',
         'Journal retention, forwarding, and persistence are controlled by the host.',
         'Redis keys, values, passwords, raw log messages, command output, and host paths are not exported.',
     ];
     private const ACTIONS = [
         'start', 'stop', 'restart', 'backup.create', 'backup.restore', 'migration.to-valkey',
+        'instance.provision', 'instance.configure', 'instance.start', 'instance.stop',
         'diagnostics.read', 'diagnostics.ping', 'diagnostics.info_server', 'diagnostics.info_memory',
         'diagnostics.info_clients', 'diagnostics.info_stats', 'diagnostics.dbsize',
         'recovery.scan', 'recovery.start', 'recovery.config_rebuild', 'auth.enable', 'auth.rotate', 'auth.disable',
@@ -359,6 +360,8 @@ final class WhmAuditLog
             $patterns = [
                 '/\Afleet_operation actor_uid=' . $actor . ' account=' . $account . ' action=' . $action . ' result=' . $result . ' state=' . $state . '\z/',
                 '/\Aaccount_auth actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>auth\.(?:enable|rotate|disable)) result=' . $result . ' state=' . $state . '\z/',
+                '/\Aaccount_operation actor_uid=' . $actor . ' account=' . $account
+                    . ' action=(?<action>instance\.(?:provision|configure|start|stop)) result=(?<result>success|failure) state=(?<state>running|stopped|starting|stopping|failed|unavailable|not_configured)\z/',
                 '/\Abackup_restore actor_uid=' . $actor . ' account=' . $account
                     . ' backup=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|invalid) safety=(?:snapshot-[0-9]{10}-[a-f0-9]{8}\.rdb|none) result=' . $result . ' state=' . $state . '\z/',
                 '/\Aprovider_policy actor_uid=' . $actor . ' account=' . $account . ' action=(?<action>policy\.violation) result=(?<result>report-only|warn|enforce) state=(?<state>(?:package_disabled|memory_limit_exceeded|client_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded)(?:,(?:package_disabled|memory_limit_exceeded|client_limit_exceeded|reseller_usage_unavailable|reseller_instance_quota_exceeded|reseller_memory_quota_exceeded))*)\z/',
