@@ -40,6 +40,18 @@ python3 tests/cpanel-live-podman-lifecycle-smoke.py --user example --confirm-lif
 
 The check reads the container ID and initial state from that account's authenticated page, runs only the fixed start/stop/restart actions, verifies the resulting page state after each request, and returns the container to its initial running/stopped state. It refuses unknown or unhealthy initial states. `--confirm-lifecycle` is required because the test stops the cache briefly. Output omits the account name, container ID, socket path, session URL, cookies, and page content. This check validates the cPanel HTTP/session path, not ORM-managed direct-service lifecycle or cross-account authorization.
 
+## Live two-account Podman web authorization
+
+`tests/cpanel-live-podman-web-isolation-smoke.py` checks that one account cannot stop another account's actual EA Podman Redis/Valkey container through the cPanel form. Each disposable account must own exactly one reachable container. The root-run harness reads each account's EA Podman inventory as that account, validates the socket owner and path, and confirms owner-context Redis PINGs. It then creates one authenticated SSO session at a time and submits the foreign-container `stop` as the first ORM-page request in that session. A pass requires HTTP 200, the source account identity and its own cache form in the response, the Podman section's explicit generic denial, no success message or foreign-container echo, and repeated owner-context PINGs for both containers. Redirects and ambiguous responses fail closed.
+
+```sh
+python3 tests/cpanel-live-podman-web-isolation-smoke.py \
+  --account-a example-one --account-b example-two \
+  --confirm-cross-account-probe
+```
+
+The probe does not provision accounts or containers. Use disposable accounts because an authorization regression could briefly stop the foreign container. If a submitted probe leaves either owner-context PING unreachable, recovery invokes only that account owner's fixed `ea-podman start` command for its previously verified container, then checks PING again. A failure before either POST sends no lifecycle request. Output suppresses account names, container IDs, socket paths, session URLs, cookies, command output, and page content. The two-direction Redis probe passed on one source-matched host; see the [sanitized live record](records/2026-11-21-cpanel-podman-web-isolation.md). Repeated same-session GET behavior remains anomalous and is not covered by this first-request authorization check. Offline assertions do not substitute for broader host and Valkey coverage.
+
 ## Live two-account broker isolation
 
 `tests/cpanel-live-isolation-smoke.py` probes the installed broker directly as two distinct cPanel Unix users using `runuser`. Supply two accounts and identify which one already owns the disposable ORM-managed instance:

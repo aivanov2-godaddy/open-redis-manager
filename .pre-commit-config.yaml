@@ -89,3 +89,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: cpanel-live-podman-web-isolation-smoke-checks
+        name: cPanel live Podman web isolation smoke assertions
+        entry: python tests/cpanel-live-podman-web-isolation-smoke-checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
