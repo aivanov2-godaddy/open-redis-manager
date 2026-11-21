@@ -652,6 +652,11 @@ orm_require_root_and_platform() {
     [[ -f "$ORM_CPANEL_ROOT/php/WHM.php" && -f "$ORM_CPANEL_ROOT/php/cpanel.php" ]] || orm_die 'expected cPanel PHP interface files were not found.'
 }
 
+orm_require_provider_event_tls() {
+    "$ORM_PERL" -MIO::Socket::SSL -e 1 >/dev/null 2>&1 \
+        || orm_die 'the provider event worker requires the IO::Socket::SSL Perl module.'
+}
+
 orm_make_cpanel_archive() {
     local destination="$1"
     local stage

@@ -2,6 +2,8 @@
 
 ORM can send an optional signed event stream to a provider-owned HTTPS receiver. Delivery is disabled by default. Root WHM controls the destination and key lifecycle; account users cannot configure it. Events are queued locally and sent by a separate root worker, so remote outages do not block Redis or Valkey operations.
 
+The cPanel host must provide Perl's `IO::Socket::SSL` module for HTTPS delivery. The installer and upgrader check for it before changing package state.
+
 ## Event types and data
 
 Schema version 1 supports:

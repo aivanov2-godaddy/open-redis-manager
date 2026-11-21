@@ -8,6 +8,7 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
+orm_require_provider_event_tls
 orm_acquire_lifecycle_lock "$0" "$@"
 
 legacy_install_kind=identity
