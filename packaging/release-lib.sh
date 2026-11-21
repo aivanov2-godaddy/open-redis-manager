@@ -93,7 +93,7 @@ PERL
 orm_release_metadata_verify() {
     [[ $# -eq 5 ]] || return 2
     local metadata="$1" signature="$2" artifact="$3" trusted_key_dir="$4" installed_version="$5"
-    local metadata_size signature_size artifact_size actual_digest line key value extra index input_owner input_mode parent parent_owner parent_mode
+    local metadata_size signature_size artifact_size actual_digest archive_basename line key value extra index input_owner input_mode parent parent_owner parent_mode
     local expected_key product key_id version channel source_commit state_migrations artifact_name expected_size expected_digest
     local minimum_version maximum_version created_at expires_at key_path key_owner key_mode key_bits
     local created_epoch expires_epoch current_epoch compare_result
@@ -165,7 +165,9 @@ orm_release_metadata_verify() {
     [[ "$channel" == stable || "$channel" == preview ]] || return 1
     [[ "$source_commit" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || return 1
     [[ "$state_migrations" == none ]] || return 1
-    [[ "$artifact_name" == "orm-${version}.tar.gz" && "$(basename -- "$artifact")" == "$artifact_name" ]] || return 1
+    archive_basename="$(basename -- "$artifact")"
+    [[ "$artifact_name" == "orm-${version}.tar.gz" ]] || return 1
+    [[ "$archive_basename" == "$artifact_name" || "$archive_basename" == release.tar.gz ]] || return 1
     [[ "$expected_size" =~ ^[1-9][0-9]{0,8}$ && "$expected_size" == "$artifact_size" ]] || return 1
     [[ "$expected_digest" =~ ^[a-f0-9]{64}$ ]] || return 1
     [[ "$created_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ \
