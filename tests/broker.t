@@ -153,7 +153,10 @@ my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
     restore_state_timeout => 1,
-    lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $test_gid }; },
+    lookup => sub {
+        return { name => 'ormauto', uid => $_[0], gid => $test_gid } if $_[0] == $test_uid;
+        return { name => 'ormtest', uid => $_[0], gid => $test_gid };
+    },
     lookup_name => sub {
         return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest';
         return { name => $_[0], uid => $test_uid, gid => $test_gid } if $_[0] eq 'ormauto';
