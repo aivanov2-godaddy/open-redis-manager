@@ -43,11 +43,24 @@ foreach ([[$redisName, 'redis.sock'], [$valkeyName, 'valkey.sock']] as [$contain
 $probed = [];
 $results = PodmanCacheDiscovery::discover('ormtest', $home, $uid, static function (string $socket) use (&$probed): array {
     $probed[] = $socket;
-    return ['reachable' => true, 'version' => str_contains($socket, 'valkey') ? '7.2.6' : '6.2.24'];
+    return [
+        'reachable' => true,
+        'version' => str_contains($socket, 'valkey') ? '7.2.6' : '6.2.24',
+        'metrics' => [
+            'used_memory' => '2048', 'used_memory_peak' => '4096', 'connected_clients' => '3',
+            'uptime_in_seconds' => '600', 'instantaneous_ops_per_sec' => '12',
+            'keyspace_hits' => '90', 'keyspace_misses' => '10', 'private_field' => 'must-not-escape',
+        ],
+    ];
 });
 $assert(count($results) === 3, 'discover current-account Redis and Valkey containers, including stopped ones');
 $assert($results[0]['backend'] === 'redis' && $results[0]['status'] === 'reachable'
     && $results[0]['version'] === '6.2.24', 'verify Redis pod metadata and bounded health data');
+$assert(($results[0]['metrics'] ?? null) === [
+    'memory_used_bytes' => 2048, 'memory_peak_bytes' => 4096, 'connected_clients' => 3,
+    'uptime_seconds' => 600, 'commands_per_second' => 12, 'keyspace_hits' => 90, 'keyspace_misses' => 10,
+] && is_int($results[0]['metrics_sampled_at'] ?? null),
+    'return only normalized allowlisted metrics with a current sample time');
 $valkeyResult = array_values(array_filter($results, static fn (array $entry): bool => $entry['container'] === $valkeyName))[0] ?? null;
 $stoppedResult = array_values(array_filter($results, static fn (array $entry): bool => $entry['container'] === $stoppedName))[0] ?? null;
 $assert(is_array($valkeyResult) && $valkeyResult['backend'] === 'valkey'
@@ -79,17 +92,25 @@ if (function_exists('pcntl_fork')) {
             exit(2);
         }
         stream_set_timeout($client, 1);
-        $request = '';
-        while (strlen($request) < 14) {
-            $chunk = @fread($client, 14 - strlen($request));
-            if (!is_string($chunk) || $chunk === '') {
-                break;
+        $readCommand = static function ($client): string {
+            $request = '';
+            while (strlen($request) < 14) {
+                $chunk = @fread($client, 14 - strlen($request));
+                if (!is_string($chunk) || $chunk === '') {
+                    break;
+                }
+                $request .= $chunk;
             }
-            $request .= $chunk;
-        }
-        $valid = $request === "*1\r\n\$4\r\nPING\r\n";
+            return $request;
+        };
+        $valid = $readCommand($client) === "*1\r\n\$4\r\nPING\r\n";
         if ($valid) {
             fwrite($client, "+PONG\r\n");
+            $valid = $readCommand($client) === "*1\r\n\$4\r\nINFO\r\n";
+        }
+        $info = "# Server\r\nredis_version:7.2.4\r\n# Clients\r\nconnected_clients:2\r\n# Memory\r\nused_memory:12345\r\nused_memory_peak:23456\r\n# Stats\r\ninstantaneous_ops_per_sec:7\r\nkeyspace_hits:8\r\nkeyspace_misses:2\r\n";
+        if ($valid) {
+            fwrite($client, '$' . strlen($info) . "\r\n" . $info . "\r\n");
         }
         fclose($client);
         fclose($probeServer);
@@ -99,20 +120,25 @@ if (function_exists('pcntl_fork')) {
     $probeResult = $method->invoke(null, $probeSocket);
     pcntl_waitpid($child, $childStatus);
     $fixturePassed = ($probeResult['reachable'] ?? false) === true
-        && array_key_exists('version', $probeResult) && $probeResult['version'] === null
+        && ($probeResult['version'] ?? null) === '7.2.4'
+        && ($probeResult['metrics']['memory_used_bytes'] ?? null) === 12345
+        && ($probeResult['metrics']['keyspace_hits'] ?? null) === 8
         && pcntl_wifexited($childStatus) && pcntl_wexitstatus($childStatus) === 0;
     if (!$fixturePassed) {
         fwrite(STDERR, 'PING fixture diagnostics: ' . json_encode([
             'reachable' => $probeResult['reachable'] ?? null,
-            'version_is_null' => array_key_exists('version', $probeResult) && $probeResult['version'] === null,
+            'version' => $probeResult['version'] ?? null,
+            'metrics' => $probeResult['metrics'] ?? null,
             'child_exited' => pcntl_wifexited($childStatus),
             'child_exit_code' => pcntl_wifexited($childStatus) ? pcntl_wexitstatus($childStatus) : null,
         ]) . "\n");
     }
     $assert(($probeResult['reachable'] ?? false) === true
-        && array_key_exists('version', $probeResult) && $probeResult['version'] === null
+        && ($probeResult['version'] ?? null) === '7.2.4'
+        && ($probeResult['metrics']['memory_used_bytes'] ?? null) === 12345
+        && ($probeResult['metrics']['keyspace_hits'] ?? null) === 8
         && pcntl_wifexited($childStatus) && pcntl_wexitstatus($childStatus) === 0,
-        'perform a bounded read-only RESP PING when the cPanel PHP runtime lacks PhpRedis');
+        'perform bounded read-only RESP PING and INFO metrics collection without PhpRedis');
     fclose($probeServer);
     @unlink($probeSocket);
     @rmdir($root . '/' . $probeName);

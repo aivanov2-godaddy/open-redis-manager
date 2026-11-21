@@ -81,6 +81,10 @@ $assert(str_contains($cpanel, 'First-time setup') && str_contains($cpanel, 'orm_
     && str_contains($cpanel, 'orm_setup=podman') && str_contains($cpanel, 'BackendDiscovery')
     && str_contains($cpanel, 'PodmanLifecycleManager::inspectSetup'),
     'offer native and Podman onboarding choices backed by bounded read-only discovery');
+$assert(str_contains($cpanel, 'Live usage') && str_contains($cpanel, 'memory_used_bytes')
+    && str_contains($cpanel, 'metrics_sampled_at') && str_contains($cpanel, 'not retained')
+    && str_contains($cpanel, 'PodmanCacheDiscovery::currentAccountInventory'),
+    'show ephemeral allowlisted live metrics separately for verified current-account Podman sockets');
 $assert(str_contains($cpanel, 'ea-podman install <?= htmlspecialchars($packageInfo[\'package\']')
     && str_contains($cpanel, 'will not run a host package manager')
     && str_contains($cpanel, 'could not safely verify this account’s cPanel container inventory'),

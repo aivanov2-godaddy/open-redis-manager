@@ -41,6 +41,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-podman-metrics
+        name: cPanel EA Podman metrics checks
+        entry: php tests/cpanel-podman-metrics.php
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: php-whm-audit-log
         name: WHM audit log checks
         entry: php tests/whm-audit-log.php
