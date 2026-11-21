@@ -232,9 +232,16 @@ try {
     $report = $request($host, $reportPath, $cookieFile, ['orm_action' => 'security.report'],
         'https://' . $host . ':2087' . $reportPath);
     $reportBody = $report['body'];
+    $requireValkeyEvidence = getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1';
+    $valkeyFindingsRendered = !$requireValkeyEvidence || (
+        str_contains($reportBody, '<strong>Eviction Rate</strong>')
+        && str_contains($reportBody, '<strong>Operation Rate</strong>')
+        && str_contains($reportBody, '<strong>Client Authentication Failures</strong>')
+    );
     $result['rendered'] = $report['code'] === 200
         && str_contains($reportBody, 'Security and abuse review')
-        && preg_match('/Generated [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/', $reportBody) === 1;
+        && preg_match('/Generated [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/', $reportBody) === 1
+        && $valkeyFindingsRendered;
     $audit = (new \Orm\Security\WhmAuditLog())->read(max(0, $reportStartedAt - 2), time() + 1, [
         'action' => 'security.report', 'result' => 'success',
     ]);
@@ -301,6 +308,8 @@ if (isset($exitCode) && $exitCode !== 0) {
 if ($fleetSummaryOnly) {
     $mode = $fleetSummaryFast ? 'fast ' : '';
     fwrite(STDOUT, "Live WHM {$mode}fleet-summary form passed: authenticated SSO; form rendered; read-only summary POST rendered.\n");
+} elseif (getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1') {
+    fwrite(STDOUT, "Live WHM Valkey report form passed: authenticated SSO; eviction, operation, and optional authentication findings rendered; audit event verified.\n");
 } else {
     fwrite(STDOUT, "Live WHM report form passed: authenticated SSO; form rendered; report POST rendered; audit event verified.\n");
 }
