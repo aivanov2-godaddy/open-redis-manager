@@ -102,6 +102,16 @@ expect_invalid() {
 write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release "$retired_target"
 [[ "$(orm_release_verify_bundle "$metadata" "$signature" "$artifact" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
     || { printf 'valid signed release was rejected.\n' >&2; exit 1; }
+staged_alias="$test_root/release.tar.gz"
+cp -- "$artifact" "$staged_alias"
+[[ "$(orm_release_verify_bundle "$metadata" "$signature" "$staged_alias" "$key_dir" '0.1.0-dev')" == 0.2.0 ]] \
+    || { printf 'signed release was rejected under the fixed WHM staging filename.\n' >&2; exit 1; }
+unapproved_alias="$test_root/upload.tar.gz"
+cp -- "$artifact" "$unapproved_alias"
+if orm_release_metadata_verify "$metadata" "$signature" "$unapproved_alias" "$key_dir" '0.1.0-dev' >/dev/null 2>&1; then
+    printf 'signed release was accepted under an unapproved archive filename.\n' >&2
+    exit 1
+fi
 write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release '' 'provider-v4-to-v5'
 expect_invalid 'a signed release declaring an unsupported state migration'
 write_metadata 0.2.0 0.1.0-dev 0.1.0-dev '' '' test-release '' none 'abc'
