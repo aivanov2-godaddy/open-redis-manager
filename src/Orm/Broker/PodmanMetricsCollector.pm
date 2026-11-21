@@ -264,8 +264,8 @@ sub _probe_socket {
             or die "connect failed\n";
         my $credentials = eval { $socket->getsockopt(SOL_SOCKET, SO_PEERCRED) };
         die "peer credentials unavailable\n" if !defined($credentials) || length($credentials) < 12;
-        my (undef, undef, $peer_uid) = unpack('iii', $credentials);
-        die "peer identity mismatch\n" if $peer_uid != $uid;
+        my $peer_uid = _peer_uid_from_credentials($credentials);
+        die "peer identity mismatch\n" if !defined($peer_uid) || $peer_uid != $uid;
         my @after = lstat($socket_info->{path});
         die "socket changed\n" if !@after || $after[0] != $socket_info->{device}
             || $after[1] != $socket_info->{inode} || $after[4] != $uid || !S_ISSOCK($after[2]);
@@ -310,6 +310,13 @@ sub _probe_socket {
     } or $result = undef;
     alarm(0);
     return $result;
+}
+
+sub _peer_uid_from_credentials {
+    my ($credentials) = @_;
+    return undef if !defined($credentials) || length($credentials) < 12;
+    my (undef, $peer_uid, undef) = unpack('iii', $credentials);
+    return $peer_uid;
 }
 
 sub _valid_metrics {

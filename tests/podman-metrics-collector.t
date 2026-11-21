@@ -15,6 +15,10 @@ plan skip_all => 'root-socket fixtures require Linux and a non-root test account
 my $uid = $<;
 my $gid = $(;
 $gid =~ s/ .*//;
+is(Orm::Broker::PodmanMetricsCollector::_peer_uid_from_credentials(pack('iii', 4321, 1234, 5678)), 1234,
+    'read the peer user ID from the middle SO_PEERCRED field');
+ok(!defined(Orm::Broker::PodmanMetricsCollector::_peer_uid_from_credentials("short")),
+    'reject incomplete SO_PEERCRED data');
 my $base = tempdir('orm-podman-metrics-XXXXXX', TMPDIR => 1, CLEANUP => 1);
 my $account_root = "$base/cpanel-users";
 my $home = "$base/home/ormtest";
