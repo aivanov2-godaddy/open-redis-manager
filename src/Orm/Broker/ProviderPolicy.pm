@@ -13,7 +13,7 @@ my %MAXMEMORY_POLICIES = map { $_ => 1 } qw(
     allkeys-lru allkeys-lfu allkeys-random volatile-lru volatile-lfu volatile-random volatile-ttl noeviction
 );
 my $DEFAULT_POLICY = {
-    version => 5,
+    version => 6,
     mode => 'report-only',
     exposure => 'simple',
     default => {
@@ -83,6 +83,19 @@ sub exposure_mode {
     my $policy = $self->_read_policy();
     return undef if ref($policy) ne 'HASH';
     return $policy->{exposure};
+}
+
+sub auto_provision_enabled {
+    my ($self, $account) = @_;
+    return 0 if ref($account) ne 'HASH';
+    my $package = $account->{plan};
+    return 0 if !defined($package) || ref($package)
+        || $package !~ /\A[a-zA-Z0-9_.-]{1,64}\z/ || $package eq 'default';
+    my $policy = $self->_read_policy();
+    return undef if ref($policy) ne 'HASH' || ref($policy->{packages}) ne 'HASH';
+    my $rule = $policy->{packages}->{$package};
+    return ref($rule) eq 'HASH' && JSON::PP::is_bool($rule->{auto_provision})
+        && $rule->{auto_provision} ? 1 : 0;
 }
 
 sub reseller_rules {
@@ -229,18 +242,23 @@ sub _read_policy {
 
 sub _upgrade_policy {
     my ($policy) = @_;
-    return $policy if $policy->{version} == 5;
+    return $policy if $policy->{version} == 6;
     my $upgrade_limits = sub {
         my ($limits) = @_;
         return {
             %{$limits},
-            max_clients => 100,
-            max_databases => 16,
+            max_clients => $limits->{max_clients} // 100,
+            max_databases => $limits->{max_databases} // 16,
         };
     };
-    my %packages = map { $_ => $upgrade_limits->($policy->{packages}->{$_}) } keys %{$policy->{packages}};
+    my %packages = map {
+        $_ => {
+            %{$upgrade_limits->($policy->{packages}->{$_})},
+            auto_provision => JSON::PP::false,
+        }
+    } keys %{$policy->{packages}};
     return {
-        version => 5,
+        version => 6,
         mode => $policy->{version} == 1 && $policy->{mode} eq 'report-only' ? 'warn' : $policy->{mode},
         exposure => $policy->{version} >= 2 ? $policy->{exposure} : 'simple',
         default => $upgrade_limits->($policy->{default}),
@@ -275,7 +293,7 @@ sub _valid_policy {
             || $policy->{exposure} !~ /\A(?:simple|developer|advanced)\z/
             || ref($policy->{resellers}) ne 'HASH' || scalar(keys %{$policy->{resellers}}) > 1000
             || !_valid_branding($policy->{branding});
-    } elsif ($policy->{version} == 4 || $policy->{version} == 5) {
+    } elsif ($policy->{version} == 4 || $policy->{version} == 5 || $policy->{version} == 6) {
         return 0 if join(',', sort keys %{$policy}) ne 'branding,default,exposure,instance_defaults,mode,packages,resellers,version'
             || !defined($policy->{mode}) || ref($policy->{mode})
             || $policy->{mode} !~ /\A(?:report-only|warn|enforce)\z/
@@ -286,11 +304,11 @@ sub _valid_policy {
     } else {
         return 0;
     }
-    return 0 if !_valid_limits($policy->{default}, $policy->{version} == 5) || ref($policy->{packages}) ne 'HASH'
+    return 0 if !_valid_limits($policy->{default}, $policy->{version} >= 5, 0) || ref($policy->{packages}) ne 'HASH'
         || scalar(keys %{$policy->{packages}}) > 1000;
     for my $name (keys %{$policy->{packages}}) {
         return 0 if !defined($name) || $name !~ /\A[a-zA-Z0-9_.-]{1,64}\z/
-            || $name eq 'default' || !_valid_limits($policy->{packages}->{$name}, $policy->{version} == 5);
+            || $name eq 'default' || !_valid_limits($policy->{packages}->{$name}, $policy->{version} >= 5, $policy->{version} >= 6);
     }
     if ($policy->{version} >= 2) {
         for my $owner (keys %{$policy->{resellers}}) {
@@ -427,16 +445,19 @@ sub _has_brand_contrast {
 }
 
 sub _valid_limits {
-    my ($limits, $with_resource_limits) = @_;
+    my ($limits, $with_resource_limits, $with_auto_provision) = @_;
     my $expected_keys = $with_resource_limits
-        ? 'backup_retention,enabled,max_clients,max_databases,max_memory_mib'
+        ? ($with_auto_provision
+            ? 'auto_provision,backup_retention,enabled,max_clients,max_databases,max_memory_mib'
+            : 'backup_retention,enabled,max_clients,max_databases,max_memory_mib')
         : 'backup_retention,enabled,max_memory_mib';
     return 0 if ref($limits) ne 'HASH'
         || join(',', sort keys %{$limits}) ne $expected_keys
         || !JSON::PP::is_bool($limits->{enabled})
         || !_is_integer($limits->{max_memory_mib}) || $limits->{max_memory_mib} < 8 || $limits->{max_memory_mib} > 64
         || !_is_integer($limits->{backup_retention}) || $limits->{backup_retention} < 2 || $limits->{backup_retention} > 3
-        || ($with_resource_limits && (!_is_integer($limits->{max_clients}) || $limits->{max_clients} < 10 || $limits->{max_clients} > 100
+            || ($with_auto_provision && !JSON::PP::is_bool($limits->{auto_provision}))
+            || ($with_resource_limits && (!_is_integer($limits->{max_clients}) || $limits->{max_clients} < 10 || $limits->{max_clients} > 100
             || !_is_integer($limits->{max_databases}) || $limits->{max_databases} < 1 || $limits->{max_databases} > 16));
     return 1;
 }

@@ -21,7 +21,7 @@ if (!mkdir($root, 0700)) {
 $path = $root . '/provider-policy.json';
 $owner = function_exists('posix_geteuid') ? posix_geteuid() : null;
 $assert(ProviderPolicyStore::normalize(ProviderPolicyStore::defaults()) === ProviderPolicyStore::defaults(),
-    'Accept the version-five report-only policy and validated global instance defaults.');
+    'Accept the version-six report-only policy and validated global instance defaults.');
 $legacyPolicy = [
     'version' => 1,
     'mode' => 'report-only',
@@ -44,11 +44,35 @@ $legacyV4['instance_defaults']['databases'] = 7;
 $legacyV4['default'] = ['enabled' => true, 'max_memory_mib' => 32, 'backup_retention' => 2];
 $legacyV4['packages']['starter'] = ['enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2];
 $legacyExpected = $legacyV4;
-$legacyExpected['version'] = 5;
+$legacyExpected['version'] = 6;
 $legacyExpected['default'] += ['max_clients' => 100, 'max_databases' => 16];
-$legacyExpected['packages']['starter'] += ['max_clients' => 100, 'max_databases' => 16];
+$legacyExpected['packages']['starter'] += ['max_clients' => 100, 'max_databases' => 16, 'auto_provision' => false];
 $assert(ProviderPolicyStore::normalize($legacyV4) === $legacyExpected,
-    'Migrate a version-four policy to v5 with non-restrictive package ceilings and preserve its database default.');
+    'Migrate a version-four policy to v6 with opt-in provisioning disabled and preserve its database default.');
+$legacyV5 = ProviderPolicyStore::defaults();
+$legacyV5['version'] = 5;
+unset($legacyV5['packages']['starter']);
+$legacyV5['packages']['starter'] = [
+    'enabled' => true,
+    'max_memory_mib' => 24,
+    'backup_retention' => 2,
+    'max_clients' => 40,
+    'max_databases' => 6,
+];
+$legacyV5Expected = ProviderPolicyStore::defaults();
+$legacyV5Expected['packages']['starter'] = $legacyV5['packages']['starter'] + ['auto_provision' => false];
+$assert(ProviderPolicyStore::normalize($legacyV5) === $legacyV5Expected,
+    'Migrate a version-five package rule to v6 with automatic provisioning disabled.');
+$invalidV6 = ProviderPolicyStore::defaults();
+$invalidV6['packages']['starter'] = [
+    'enabled' => true,
+    'max_memory_mib' => 24,
+    'backup_retention' => 2,
+    'max_clients' => 40,
+    'max_databases' => 6,
+];
+$assert(ProviderPolicyStore::normalize($invalidV6) === null,
+    'Require the auto-provision flag in current version-six package rules.');
 $invalidLegacyV4 = $legacyV4;
 $invalidLegacyV4['default']['max_clients'] = 80;
 $assert(ProviderPolicyStore::normalize($invalidLegacyV4) === null,
@@ -168,7 +192,7 @@ $badDatabases['packages']['starter']['max_databases'] = 17;
 $assert(ProviderPolicyStore::normalize($badDatabases) === null, 'Reject package database ceilings above the supported maximum.');
 $missingCeiling = $policy;
 unset($missingCeiling['packages']['starter']['max_clients']);
-$assert(ProviderPolicyStore::normalize($missingCeiling) === null, 'Require both resource ceilings in strict version-five policy objects.');
+$assert(ProviderPolicyStore::normalize($missingCeiling) === null, 'Require both resource ceilings in strict version-six policy objects.');
 
 $symlinkPath = $root . '/linked-policy.json';
 symlink($path, $symlinkPath);

@@ -20,6 +20,9 @@ $authenticatedUser = is_string($authenticatedUser) ? $authenticatedUser : null;
 $authorized = \Orm\Security\WhmAcl::allowsAdministrativeAccess($authenticatedUser);
 $rootAuthorized = $authorized && $authenticatedUser === 'root';
 $report = $authorized ? (new \Orm\Backend\BackendDiscovery())->discover() : null;
+$selectableBackends = is_array($report)
+    ? array_values(array_filter($report['backends'] ?? [], static fn (array $backend): bool => ($backend['status'] ?? null) === 'detected'))
+    : [];
 $policyStore = new \Orm\Backend\BackendPolicyStore();
 $policy = $rootAuthorized ? $policyStore->selectedBackend() : null;
 $providerPolicyStore = new \Orm\Backend\ProviderPolicyStore();
@@ -601,6 +604,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
                     'backup_retention' => $packageRetention,
                     'max_clients' => $packageClients,
                     'max_databases' => $packageDatabases,
+                    'auto_provision' => ($_POST['package_auto_provision'] ?? null) === '1',
                 ];
             }
         } elseif ($providerPolicyMessage === null && $providerAction === 'remove-package') {
@@ -1134,7 +1138,9 @@ WHM::header('Open Redis Manager', 0, 0);
           <?php foreach ($report['backends'] as $backend): ?>
             <tr>
               <th scope="row"><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
-              <td><?= htmlspecialchars($backend['status'] === 'detected' ? (string)$backend['server_binary'] : 'Not detected in known paths', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+              <td><?= htmlspecialchars($backend['server_binary'] !== null
+                ? (string)$backend['server_binary'] . ($backend['client_binary'] === null ? ' · matching CLI missing' : '')
+                : ($backend['client_binary'] !== null ? 'CLI found · server missing' : 'Not detected in known paths'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
               <td><?= htmlspecialchars($backend['version'] ?? 'Unknown', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
               <td><?= htmlspecialchars($backend['service']['status'] . ($backend['service']['unit'] ? ' · ' . $backend['service']['unit'] : ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
               <td><?php if (!$rootAuthorized): ?>Root-only aggregate<?php elseif ($fleetSummary === null): ?>Load root fleet summary<?php elseif (!is_array($fleetSummary['backend_counts'] ?? null)): ?>Not reported by this broker<?php else: ?><?= number_format($fleetSummary['backend_counts'][$backend['id']] ?? 0) ?><?php endif; ?></td>
@@ -1206,18 +1212,20 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php else: ?>
         <p>New ORM instances will use <strong><?= htmlspecialchars(ucfirst($policy), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>. Existing services are unchanged.</p>
       <?php endif; ?>
+      <?php if ($selectableBackends === []): ?>
+        <p role="status">No complete native Redis/Valkey server and matching CLI pair was detected. Install both from a trusted operating-system repository, then reload discovery. Missing matches do not prove the host has no compatible package.</p>
+      <?php else: ?>
       <form method="post">
         <input type="hidden" name="orm_action" value="backend.select">
         <label for="orm-backend">Backend</label>
         <select id="orm-backend" name="backend" required>
-          <?php foreach ($report['backends'] as $backend): ?>
-            <?php if ($backend['status'] === 'detected'): ?>
-              <option value="<?= htmlspecialchars($backend['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $policy === $backend['id'] ? ' selected' : '' ?>><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
-            <?php endif; ?>
+          <?php foreach ($selectableBackends as $backend): ?>
+            <option value="<?= htmlspecialchars($backend['id'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $policy === $backend['id'] ? ' selected' : '' ?>><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
         <button type="submit">Save backend choice</button>
       </form>
+      <?php endif; ?>
       <p>This setting selects the backend for future instances only. It does not install packages or migrate existing data.</p>
       <?php endif; ?>
     </section>
@@ -1403,6 +1411,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <label for="orm-provider-package">cPanel package</label>
           <input id="orm-provider-package" name="package_name" type="text" maxlength="64" pattern="[A-Za-z0-9_.-]+" required>
           <label><input type="checkbox" name="package_enabled" value="1" checked> Allow new instances for this package</label>
+          <label><input type="checkbox" name="package_auto_provision" value="1"> Automatically provision a Generic Redis/Valkey instance for newly created accounts in this package</label>
           <label for="orm-provider-package-memory">Memory ceiling (MiB)</label>
           <input id="orm-provider-package-memory" name="package_memory_mib" type="number" min="8" max="64" step="1" required value="64">
           <label for="orm-provider-package-retention">Snapshot retention</label>
@@ -1416,12 +1425,13 @@ WHM::header('Open Redis Manager', 0, 0);
         <?php if ($providerPolicy['packages'] !== []): ?>
           <h3>Configured package rules</h3>
           <table>
-            <thead><tr><th scope="col">Package</th><th scope="col">New instances</th><th scope="col">Memory ceiling</th><th scope="col">Snapshot retention</th><th scope="col">Client ceiling</th><th scope="col">Database ceiling</th><th scope="col">Action</th></tr></thead>
+            <thead><tr><th scope="col">Package</th><th scope="col">New instances</th><th scope="col">Auto-provision</th><th scope="col">Memory ceiling</th><th scope="col">Snapshot retention</th><th scope="col">Client ceiling</th><th scope="col">Database ceiling</th><th scope="col">Action</th></tr></thead>
             <tbody>
               <?php foreach ($providerPolicy['packages'] as $packageName => $limits): ?>
                 <tr>
                   <th scope="row"><?= htmlspecialchars($packageName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
                   <td><?= $limits['enabled'] ? 'Allowed' : 'Disabled' ?></td>
+                  <td><?= $limits['auto_provision'] ? 'Enabled' : 'Off' ?></td>
                   <td><?= (int) $limits['max_memory_mib'] ?> MiB</td>
                   <td><?= (int) $limits['backup_retention'] ?></td>
                   <td><?= (int) $limits['max_clients'] ?></td>

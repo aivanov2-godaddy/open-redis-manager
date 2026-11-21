@@ -16,7 +16,7 @@ final class ProviderPolicyStore
     ) {
     }
 
-    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int,max_clients:int,max_databases:int},instance_defaults:array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int,max_clients:int,max_databases:int}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>,branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}}|null */
+    /** @return array{version:int,mode:string,exposure:string,default:array{enabled:bool,max_memory_mib:int,backup_retention:int,max_clients:int,max_databases:int},instance_defaults:array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int},packages:array<string,array{enabled:bool,max_memory_mib:int,backup_retention:int,max_clients:int,max_databases:int,auto_provision:bool}>,resellers:array<string,array{max_instances:int,max_memory_mib:int}>,branding:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool}}|null */
     public function load(): ?array
     {
         if (!$this->authorized()) {
@@ -110,7 +110,7 @@ final class ProviderPolicyStore
     public static function defaults(): array
     {
         return [
-            'version' => 5,
+            'version' => 6,
             'mode' => 'report-only',
             'exposure' => 'simple',
             'default' => [
@@ -140,18 +140,18 @@ final class ProviderPolicyStore
         }
         $keys = array_keys($policy);
         sort($keys);
-        if (!in_array($policy['version'] ?? null, [1, 2, 3, 4, 5], true)
+        if (!in_array($policy['version'] ?? null, [1, 2, 3, 4, 5, 6], true)
             || ($policy['version'] === 1 && $keys !== ['default', 'mode', 'packages', 'version'])
             || ($policy['version'] === 2 && $keys !== ['default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
             || ($policy['version'] === 3 && $keys !== ['branding', 'default', 'exposure', 'mode', 'packages', 'resellers', 'version'])
-            || (in_array($policy['version'], [4, 5], true) && $keys !== ['branding', 'default', 'exposure', 'instance_defaults', 'mode', 'packages', 'resellers', 'version'])
+            || (in_array($policy['version'], [4, 5, 6], true) && $keys !== ['branding', 'default', 'exposure', 'instance_defaults', 'mode', 'packages', 'resellers', 'version'])
             || ($policy['version'] === 1 && !in_array($policy['mode'] ?? null, ['report-only', 'enforce'], true))
             || ($policy['version'] === 2 && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                 || !is_array($policy['resellers'] ?? null)
                 || array_is_list($policy['resellers']) && $policy['resellers'] !== []
                 || count($policy['resellers']) > 1000))
-            || (in_array($policy['version'], [3, 4, 5], true) && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
+            || (in_array($policy['version'], [3, 4, 5, 6], true) && (!in_array($policy['mode'] ?? null, ['report-only', 'warn', 'enforce'], true)
                 || !in_array($policy['exposure'] ?? null, ['simple', 'developer', 'advanced'], true)
                 || !is_array($policy['resellers'] ?? null)
                 || array_is_list($policy['resellers']) && $policy['resellers'] !== []
@@ -176,7 +176,7 @@ final class ProviderPolicyStore
                 || preg_match('/\A[a-zA-Z0-9_.-]{1,64}\z/', $name) !== 1) {
                 return null;
             }
-            $normalizedLimits = self::normalizeLimits($limits, $policy['version'] < 5);
+            $normalizedLimits = self::normalizeLimits($limits, $policy['version'] < 5, true, $policy['version'] >= 6);
             if ($normalizedLimits === null) {
                 return null;
             }
@@ -209,7 +209,7 @@ final class ProviderPolicyStore
             return null;
         }
         return [
-            'version' => 5,
+            'version' => 6,
             'mode' => $policy['version'] === 1 && $policy['mode'] === 'report-only' ? 'warn' : $policy['mode'],
             'exposure' => $policy['version'] >= 2 ? $policy['exposure'] : 'simple',
             'default' => $default,
@@ -327,7 +327,7 @@ final class ProviderPolicyStore
     }
 
     /** @param mixed $limits */
-    private static function normalizeLimits(mixed $limits, bool $legacy = false): ?array
+    private static function normalizeLimits(mixed $limits, bool $legacy = false, bool $packageRule = false, bool $hasAutoProvision = false): ?array
     {
         if (!is_array($limits) || array_is_list($limits)) {
             return null;
@@ -342,20 +342,35 @@ final class ProviderPolicyStore
             $limits['max_databases'] = 16;
             $keys = ['backup_retention', 'enabled', 'max_clients', 'max_databases', 'max_memory_mib'];
         }
-        if ($keys !== ['backup_retention', 'enabled', 'max_clients', 'max_databases', 'max_memory_mib'] || !is_bool($limits['enabled'])
+        $expectedKeys = ['backup_retention', 'enabled', 'max_clients', 'max_databases', 'max_memory_mib'];
+        if ($packageRule && $hasAutoProvision) {
+            $expectedKeys[] = 'auto_provision';
+            sort($expectedKeys);
+        } elseif ($packageRule && !$legacy) {
+            $limits['auto_provision'] = false;
+        }
+        if ($keys !== $expectedKeys && !($packageRule && !$legacy && !$hasAutoProvision
+            && $keys === ['backup_retention', 'enabled', 'max_clients', 'max_databases', 'max_memory_mib'])) {
+            return null;
+        }
+        if (!is_bool($limits['enabled']) || ($packageRule && !is_bool($limits['auto_provision'] ?? false))
             || !is_int($limits['max_memory_mib']) || $limits['max_memory_mib'] < 8 || $limits['max_memory_mib'] > 64
             || !is_int($limits['backup_retention']) || $limits['backup_retention'] < 2 || $limits['backup_retention'] > 3
             || !is_int($limits['max_clients']) || $limits['max_clients'] < 10 || $limits['max_clients'] > 100
             || !is_int($limits['max_databases']) || $limits['max_databases'] < 1 || $limits['max_databases'] > 16) {
             return null;
         }
-        return [
+        $normalized = [
             'enabled' => $limits['enabled'],
             'max_memory_mib' => $limits['max_memory_mib'],
             'backup_retention' => $limits['backup_retention'],
             'max_clients' => $limits['max_clients'],
             'max_databases' => $limits['max_databases'],
         ];
+        if ($packageRule) {
+            $normalized['auto_provision'] = $limits['auto_provision'] ?? false;
+        }
+        return $normalized;
     }
 
     /** @param mixed $defaults @return array{memory_mib:int,maxmemory_policy:string,databases:int,metrics_history_retention_days:int}|null */

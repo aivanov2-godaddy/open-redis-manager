@@ -74,6 +74,13 @@ $assert($filtered['record_count'] === 1 && $filtered['records'][0]['actor'] === 
 $accountOperations = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'instance.configure', 'result' => 'failure']);
 $assert($accountOperations['record_count'] === 1 && $accountOperations['records'][0]['state'] === 'running',
     'Filter account lifecycle audit events by fixed action and normalized result.');
+$autoProvisionReader = new WhmAuditLog(static fn (): array => [
+    'status' => 'ok',
+    'lines' => [$journal('orm-broker', 'fleet_operation actor_uid=0 account=acct02 action=auto_provision result=success state=running', $now - 1)],
+]);
+$autoProvisionAudit = $autoProvisionReader->read($now - 60, $now, ['account' => 'acct02', 'action' => 'auto_provision']);
+$assert($autoProvisionAudit['record_count'] === 1 && $autoProvisionAudit['records'][0]['action'] === 'auto_provision',
+    'Recognize and filter metadata-only automatic provisioning audit events.');
 $assert(WhmAuditLog::normalizeFilters(['account' => '../root']) === null
     && WhmAuditLog::normalizeFilters(['action' => 'redis-cli']) === null
     && WhmAuditLog::normalizeFilters(['arbitrary' => 'value']) === null, 'Reject unsafe and unknown filters.');

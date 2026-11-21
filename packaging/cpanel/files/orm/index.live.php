@@ -691,8 +691,27 @@ try {
                       <p class="orm-setup-status" role="status">Host discovery is unavailable or this platform is unsupported. Ask your hosting administrator to verify a supported Linux Redis/Valkey package and the WHM backend selection.</p>
                     <?php else: ?>
                       <?php $detectedNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => ($backend['status'] ?? null) === 'detected')); ?>
+                      <?php $partialNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => in_array(($backend['status'] ?? null), ['server-only', 'client-only'], true))); ?>
                       <?php if ($detectedNativeBackends === []): ?>
-                        <p class="orm-setup-status" role="status">No Redis/Valkey server binary was found in ORM’s standard locations. That does not prove the host has no Redis-compatible service; ask your administrator to verify the package and WHM backend selection.</p>
+                        <?php if ($partialNativeBackends !== []): ?>
+                          <p class="orm-setup-status" role="status">ORM found an incomplete native installation in its standard locations. A supported server and matching command-line client are both required:</p>
+                          <ul>
+                            <?php foreach ($partialNativeBackends as $backend): ?>
+                              <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>: <?= $backend['status'] === 'server-only' ? 'server binary found; matching CLI is missing' : 'CLI found; server binary is missing' ?></li>
+                            <?php endforeach; ?>
+                          </ul>
+                        <?php else: ?>
+                          <p class="orm-setup-status" role="status">No Redis/Valkey server or CLI binary pair was found in ORM’s standard locations. That does not prove the host has no Redis-compatible service; ask your administrator to verify the package and WHM backend selection.</p>
+                        <?php endif; ?>
+                        <div class="orm-setup-step">
+                          <h4>Native package setup steps for your hosting administrator</h4>
+                          <ol>
+                            <li>Install a supported Redis or Valkey server package and its matching CLI from the host operating system’s trusted package repository.</li>
+                            <li>In WHM → Open Redis Manager → Redis-compatible backends, confirm both binaries are detected and select the approved default.</li>
+                            <li>Allow this cPanel package in provider policy, then return here and choose <a href="?orm_setup=native">Check again</a>.</li>
+                          </ol>
+                          <p>ORM launches isolated account-owned processes; do not expose a shared host service or open Redis TCP ports for this setup.</p>
+                        </div>
                       <?php else: ?>
                         <p class="orm-setup-status" role="status">Host binary discovery found:</p>
                         <ul>

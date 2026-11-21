@@ -155,19 +155,23 @@ sub run {
                         || $request->{operation} eq 'fleet.backup.create'
                         || $request->{operation} eq 'fleet.backup.restore'
                         || $request->{operation} =~ /\Afleet\.backup\.batch\./
+                        || $request->{operation} eq 'fleet.auto_provision'
                         || $request->{operation} eq 'fleet.migrate'
                         || $request->{operation} eq 'fleet.recovery.repair') ? 1
                     : $MUTATION_RATE_LIMIT_PER_SECOND;
-                my $rate_window = ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable') ? 60
+                my $rate_window = ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable'
+                    || $request->{operation} eq 'fleet.auto_provision') ? 60
                     : $request->{operation} eq 'fleet.diagnostics' ? 5
                     : $request->{operation} eq 'fleet.recovery.scan' ? 15
                     : $request->{operation} =~ /\Afleet\.backup\.batch\./ ? 5
                     : ($request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                     || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore'
                     || $request->{operation} eq 'fleet.migrate' || $request->{operation} eq 'fleet.recovery.repair') ? 60 : 1;
-                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.summary|fleet\.diagnostics|fleet\.recovery\.(?:scan|repair)|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.backup\.batch\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
+                my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.summary|fleet\.auto_provision|fleet\.diagnostics|fleet\.recovery\.(?:scan|repair)|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.backup\.batch\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
                 my $rate_bucket = $request->{operation} eq 'fleet.control'
                     ? 'fleet.control'
+                    : $request->{operation} eq 'fleet.auto_provision'
+                        ? 'fleet.auto_provision:' . $request->{username}
                     : $request->{operation} eq 'fleet.list' ? 'fleet.list'
                     : $request->{operation} eq 'fleet.summary' ? 'fleet.summary'
                     : $request->{operation} =~ /\Afleet\.backup\.batch\./ ? 'fleet.backup.batch'

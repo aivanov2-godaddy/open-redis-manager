@@ -10,7 +10,8 @@ fi
 orm_require_root_and_platform
 orm_acquire_lifecycle_lock "$0" "$@"
 if orm_installation_matches_current_package; then
-    printf 'Open Redis Manager already matches this package; no changes were made.\n'
+    orm_ensure_account_create_hook || orm_die 'could not verify or register the non-blocking account-create hook.'
+    printf 'Open Redis Manager already matches this package; account-create hook registration is verified.\n'
     exit 0
 fi
 orm_require_provider_event_tls
@@ -26,6 +27,9 @@ podman_metrics_timer_started=0
 cleanup_on_error() {
     local status=$?
     if [[ "$status" -ne 0 ]]; then
+        if [[ "$ORM_ACCOUNT_HOOK_ADDED" -eq 1 ]]; then
+            orm_remove_account_create_hook >/dev/null 2>&1 || true
+        fi
         if [[ "$broker_started" -eq 1 ]]; then
             "$ORM_SYSTEMCTL" disable --now orm-broker.service >/dev/null 2>&1 || true
         fi
@@ -92,5 +96,6 @@ podman_metrics_timer_started=1
 "$ORM_SYSTEMCTL" enable --now orm-podman-metrics.timer
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
+orm_ensure_account_create_hook || orm_die 'could not register the non-blocking account-create hook.'
 orm_write_install_manifest "$ORM_INSTALL_MANIFEST"
 printf 'Open Redis Manager installed. Account-scoped lifecycle, hourly usage history, and backup/restore controls are available; disposable-host validation is still required.\n'

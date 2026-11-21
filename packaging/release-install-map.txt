@@ -9,6 +9,8 @@ whm_audit_event_writer|src/Orm/Security/WhmAuditEventWriter.php|/usr/local/cpane
 whm_security_report|src/Orm/Security/WhmSecurityReport.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php|644
 whm_security_report_policy|src/Orm/Security/WhmSecurityReportPolicyStore.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReportPolicyStore.php|644
 account_context|src/Orm/Cpanel/AuthenticatedAccountContext.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php|644
+account_create_hook|src/Orm/Cpanel/AccountCreateHook.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AccountCreateHook.php|644
+account_create_hook_bin|bin/orm-account-create-hook.php|/usr/local/cpanel/3rdparty/bin/orm-account-create-hook.php|755
 broker_identity|src/Orm/Cpanel/BrokerIdentityVerifier.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php|644
 broker_client|src/Orm/Cpanel/BrokerClient.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php|644
 connection_details|src/Orm/Cpanel/ConnectionDetails.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php|644

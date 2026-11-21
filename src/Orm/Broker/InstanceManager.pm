@@ -866,6 +866,55 @@ sub provision {
     return ref($response) eq 'HASH' ? $response : _failure('operation_failed');
 }
 
+sub auto_provision {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $enabled = eval { $self->{provider_policy}->auto_provision_enabled($account) };
+    return _failure('provider_policy_unavailable') if !defined($enabled);
+    if (!$enabled) {
+        return {
+            outcome => 'disabled',
+            state => 'not_configured',
+            success => JSON::PP::true,
+            version => 1,
+        };
+    }
+
+    my $current = eval { $self->status($account) };
+    return _failure('instance_unavailable') if ref($current) ne 'HASH'
+        || !$current->{success} || !defined($current->{state});
+    if ($current->{state} ne 'not_configured') {
+        return _failure('instance_unavailable')
+            if $current->{state} !~ /\A(?:stopped|starting|running|stopping|failed)\z/;
+        return {
+            outcome => 'already_present',
+            state => $current->{state},
+            success => JSON::PP::true,
+            version => 1,
+        };
+    }
+
+    my $created = eval { $self->provision($account, 'generic') };
+    return _failure('operation_failed') if ref($created) ne 'HASH';
+    if (!$created->{success}) {
+        return {
+            error => defined($created->{error}) && !ref($created->{error})
+                && $created->{error} =~ /\A(?:provider_policy_denied|provider_policy_unavailable|backend_policy_required|backend_unavailable|storage_unavailable|service_failed)\z/
+                ? $created->{error} : 'operation_failed',
+            outcome => 'failed',
+            success => JSON::PP::false,
+            version => 1,
+        };
+    }
+    return {
+        outcome => 'provisioned',
+        state => defined($created->{state}) && $created->{state} =~ /\A(?:starting|running)\z/
+            ? $created->{state} : 'unavailable',
+        success => JSON::PP::true,
+        version => 1,
+    };
+}
+
 sub _provision_locked {
     my ($self, $account, $preset) = @_;
     return _failure('instance_exists') if -e $self->_manifest_path($account->{name})

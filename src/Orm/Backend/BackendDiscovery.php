@@ -78,7 +78,7 @@ final class BackendDiscovery
             $report['backends'][] = [
                 'id' => $id,
                 'label' => $definition['label'],
-                'status' => $server === null ? 'not-detected' : 'detected',
+                'status' => self::availabilityStatus($server, $client),
                 'server_binary' => $server,
                 'client_binary' => $client,
                 'version' => $version['value'],
@@ -89,6 +89,25 @@ final class BackendDiscovery
         }
 
         return $report;
+    }
+
+    /**
+     * A server alone is insufficient for ORM lifecycle and health checks; the
+     * matching fixed CLI is required as well. Preserve partial detection for
+     * the setup wizard instead of presenting it as either ready or absent.
+     */
+    public static function availabilityStatus(?string $server, ?string $client): string
+    {
+        if ($server !== null && $client !== null) {
+            return 'detected';
+        }
+        if ($server !== null) {
+            return 'server-only';
+        }
+        if ($client !== null) {
+            return 'client-only';
+        }
+        return 'not-detected';
     }
 
     /** @param list<string> $paths */

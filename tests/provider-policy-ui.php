@@ -107,6 +107,16 @@ $assertions = [
     is_string($packageMap) && str_contains($packageMap, 'release_preview "$ORM_PACKAGE_ROOT/preview-release.sh"')
         && str_contains($packageMap, 'release_version "$ORM_REPO_ROOT/VERSION"')
         && str_contains($packageMap, 'release_preview_ui "$ORM_REPO_ROOT/src/Orm/Update/ReleasePreview.php"'),
+    is_string($whmPage) && str_contains($whmPage, 'name="package_auto_provision" value="1"')
+        && str_contains($whmPage, 'Automatically provision a Generic Redis/Valkey instance for newly created accounts')
+        && str_contains($whmPage, "'auto_provision' => (\$_POST['package_auto_provision'] ?? null) === '1'")
+        && str_contains($whmPage, "\$limits['auto_provision'] ? 'Enabled' : 'Off'"),
+    is_string($cpanelPage) && str_contains($cpanelPage, 'Choose where this account’s Redis-compatible cache should run')
+        && str_contains($cpanelPage, 'Choose a native Redis or Valkey service')
+        && str_contains($cpanelPage, 'Choose a cPanel EA Podman container')
+        && str_contains($cpanelPage, 'server-only') && str_contains($cpanelPage, 'client-only')
+        && str_contains($cpanelPage, 'Install a supported Redis or Valkey server package and its matching CLI')
+        && str_contains($cpanelPage, 'ea-podman install <?= htmlspecialchars($packageInfo[\'package\']'),
 ];
 foreach ($assertions as $index => $passed) {
     if (!$passed) {
