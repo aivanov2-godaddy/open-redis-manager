@@ -68,10 +68,11 @@ $assertions = [
         && str_contains($whmPage, 'name="writes_quiesced"') && str_contains($whmPage, 'SessionRequestGuard::allowsMutation($_SERVER)'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
         && str_contains($whmPage, "'fleet.diagnostics'")
-        && str_contains($whmPage, 'diagnoseFleetAccount($username)')
-        && str_contains($whmPage, 'Read-only diagnostics for')
+        && str_contains($whmPage, 'diagnoseFleetAccount($username, $commandClass)')
+        && str_contains($whmPage, 'Read-only ')
+        && str_contains($whmPage, "'info_memory' => ['label' => 'INFO memory'")
         && str_contains($whmPage, 'Keys in database 0')
-        && str_contains($whmPage, 'Only fixed, read-only Redis/Valkey probes are used')
+        && str_contains($whmPage, 'Only the selected fixed, read-only Redis/Valkey command class was run')
         && !str_contains($whmPage, "\$_POST['command']"),
     is_string($whmPage) && str_contains($whmPage, "'fleet.recovery.scan'")
         && str_contains($whmPage, "'fleet.recovery.repair'")

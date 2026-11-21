@@ -187,7 +187,11 @@ sub run {
                         ? 'fleet.migrate:' . $request->{username}
                         : $rate_window;
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
-                    if ($request->{operation} eq 'fleet.recovery.scan'
+                    if ($request->{operation} eq 'fleet.diagnostics') {
+                        my $action = 'diagnostics.' . $request->{command_class};
+                        eval { $fleet_inventory->audit_rate_limited($peer_uid, $request->{username}, $action) }
+                            if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_rate_limited') };
+                    } elsif ($request->{operation} eq 'fleet.recovery.scan'
                         || $request->{operation} eq 'fleet.recovery.repair') {
                         my $action = $request->{operation} eq 'fleet.recovery.scan'
                             ? 'recovery.scan' : 'recovery.start';

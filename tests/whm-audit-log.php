@@ -28,6 +28,7 @@ $brokerLines = [
     $journal('orm-broker', 'account_auth actor_uid=1000 account=acct01 action=auth.rotate result=success state=running', $now - 20),
     $journal('orm-broker', 'account_auth actor_uid=1000 account=acct01 action=auth.enable result=success state=running', $now - 22),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=memory_limit_exceeded', $now - 18),
+    $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct01 action=diagnostics.info_memory result=success state=running', $now - 25),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=client_limit_exceeded', $now - 17),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=database_limit_exceeded', $now - 16),
     $journal('orm-broker', 'ORM raw message password=do-not-export', $now - 10),
@@ -44,14 +45,16 @@ $reader = new WhmAuditLog(static fn (string $identifier): array => [
     'status' => 'ok', 'lines' => $identifier === 'orm-broker' ? $brokerLines : $whmLines,
 ]);
 $result = $reader->read($now - 3600, $now, []);
-$assert($result['success'] && $result['record_count'] === 10, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
+$assert($result['success'] && $result['record_count'] === 11, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
 $assert($result['records'][0]['action'] === 'provider.events.configure' && $result['records'][0]['account'] === 'global'
     && $result['records'][0]['state'] === 'enabled,key_rotated', 'Recognize fixed metadata-only provider event configuration audits.');
-$assert($result['records'][9]['action'] === 'security.thresholds.update' && $result['records'][9]['result'] === 'success',
+$assert($result['records'][10]['action'] === 'security.thresholds.update' && $result['records'][10]['result'] === 'success',
     'Recognize fixed metadata-only security threshold policy updates.');
 $assert($result['records'][2]['action'] === 'provider.package.save' && $result['records'][2]['source'] === 'orm-whm', 'Sort newest first and normalize WHM policy events.');
 $assert($result['records'][4]['action'] === 'policy.violation' && $result['records'][4]['actor'] === '43210', 'Normalize broker provider policy events using their trusted account actor.');
 $assert($result['records'][7]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
+$assert($result['records'][8]['action'] === 'diagnostics.info_memory' && $result['records'][8]['actor'] === '0'
+    && $result['records'][8]['account'] === 'acct01', 'Expose the exact selected diagnostics command class in audit history.');
 $assert($result['sources'][0]['status'] === 'partial' && $result['sources'][0]['unrecognized_rows'] === 3, 'Mark sources partial when rows cannot be safely recognized.');
 $filtered = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'auth.rotate', 'result' => 'success']);
 $assert($filtered['record_count'] === 1 && $filtered['records'][0]['actor'] === '1000', 'Filter normalized records by account, action, and result.');

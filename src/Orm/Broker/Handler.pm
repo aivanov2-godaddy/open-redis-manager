@@ -119,14 +119,17 @@ sub handle_frame {
             }
         }
         if ($request->{operation} eq 'fleet.diagnostics') {
+            my $action = 'diagnostics.' . $request->{command_class};
             if ($peer_uid != 0) {
-                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, 'diagnostics.read') }
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $action) }
                     if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
                 $response = _not_authorized();
             } elsif (!defined($fleet_inventory)) {
                 $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             } else {
-                my $diagnostics_response = eval { $fleet_inventory->diagnostics($request->{username}) };
+                my $diagnostics_response = eval {
+                    $fleet_inventory->diagnostics($request->{username}, $request->{command_class})
+                };
                 $response = ref($diagnostics_response) eq 'HASH' ? $diagnostics_response
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }

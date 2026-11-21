@@ -32,6 +32,10 @@ $assert(str_contains($whm, 'Newer writes may be lost') && str_contains($whm, 'sa
     'warn about data loss and per-account restore recovery before a batch restore');
 $assert(str_contains($whm, 'Missing and stale values are excluded from totals'),
     'explain partial metric totals in the fleet summary');
+$assert(str_contains($whm, "'info_memory' => ['label' => 'INFO memory'")
+    && str_contains($whm, 'name="command_class"') && str_contains($whm, 'Run read-only probe')
+    && str_contains($whm, 'diagnoseFleetAccount($username, $commandClass)'),
+    'offer an accessible fixed diagnostic-class selector and execute only the selected class');
 $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecurityReport::consumeRateLimit'),
     'guard report generation behind the root WHM POST path and persistent throttle');
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
