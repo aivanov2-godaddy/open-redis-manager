@@ -21,6 +21,10 @@ $assert(SessionRequestGuard::allowsMutation([
     'REQUEST_METHOD' => 'POST',
     'REQUEST_URI' => '/cpsess1234567890/cgi/addon_open_redis_manager.php?view=backends',
 ]), 'Allow a POST through a tokenized WHM session route.');
+$assert(!SessionRequestGuard::rejectsMutation([
+    'REQUEST_METHOD' => 'POST',
+    'REQUEST_URI' => '/cpsess1234567890/frontend/jupiter/orm/index.live.php',
+]), 'Do not reject a POST through a tokenized cPanel session route.');
 $assert(!SessionRequestGuard::allowsMutation([
     'REQUEST_METHOD' => 'GET',
     'REQUEST_URI' => '/cpsess1234567890/cgi/addon_open_redis_manager.php',
@@ -29,6 +33,10 @@ $assert(!SessionRequestGuard::allowsMutation([
     'REQUEST_METHOD' => 'POST',
     'REQUEST_URI' => '/cgi/addon_open_redis_manager.php',
 ]), 'Reject POSTs without a cPanel session token in the route.');
+$assert(SessionRequestGuard::rejectsMutation([
+    'REQUEST_METHOD' => 'POST',
+    'REQUEST_URI' => '/frontend/jupiter/orm/index.live.php',
+]), 'Reject un-tokenized POSTs before either plugin page processes the request.');
 $assert(!SessionRequestGuard::allowsMutation([
     'REQUEST_METHOD' => 'POST',
     'REQUEST_URI' => '/cpsess-invalid/cgi/addon_open_redis_manager.php',
@@ -66,6 +74,14 @@ foreach (['cPanel' => $cpanelPage, 'WHM' => $whmPage] as $surface => $page) {
     ), "{$surface} POST forms inherit the current cpsess route instead of overriding it.");
     $assert(str_contains($page, 'SessionRequestGuard::allowsMutation($_SERVER)'),
         "{$surface} mutation routes use the shared session-request guard.");
+    $earlyDeny = strpos($page, 'SessionRequestGuard::rejectsMutation($_SERVER)');
+    $firstPostRead = strpos($page, '$_POST');
+    $firstPlatformWork = $surface === 'cPanel' ? strpos($page, "'/usr/local/cpanel/php/cpanel.php'")
+        : strpos($page, "'/usr/local/cpanel/php/WHM.php'");
+    $assert(is_int($earlyDeny) && is_int($firstPostRead) && $earlyDeny < $firstPostRead,
+        "{$surface} rejects un-tokenized POSTs before reading submitted actions.");
+    $assert(is_int($earlyDeny) && is_int($firstPlatformWork) && $earlyDeny < $firstPlatformWork,
+        "{$surface} rejects un-tokenized POSTs before initializing the platform API.");
 }
 
 $liveHarness = file_get_contents(__DIR__ . '/cpanel-live-session-token-smoke.py');

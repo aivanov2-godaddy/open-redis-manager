@@ -1,12 +1,17 @@
 <?php
 declare(strict_types=1);
 
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
+if (\Orm\Security\SessionRequestGuard::rejectsMutation($_SERVER)) {
+    http_response_code(403);
+    exit;
+}
+
 require_once '/usr/local/cpanel/php/WHM.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAcl.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendPolicyStore.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php';
-require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditLog.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmAuditEventWriter.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReportPolicyStore.php';

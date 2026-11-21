@@ -7,6 +7,13 @@ namespace Orm\Security;
 final class SessionRequestGuard
 {
     /** @param array<string, mixed> $server */
+    public static function rejectsMutation(array $server): bool
+    {
+        return ($server['REQUEST_METHOD'] ?? null) === 'POST'
+            && !self::allowsMutation($server);
+    }
+
+    /** @param array<string, mixed> $server */
     public static function allowsMutation(array $server): bool
     {
         if (($server['REQUEST_METHOD'] ?? null) !== 'POST') {

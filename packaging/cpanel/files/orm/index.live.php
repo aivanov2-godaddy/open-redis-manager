@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
+if (\Orm\Security\SessionRequestGuard::rejectsMutation($_SERVER)) {
+    http_response_code(403);
+    exit;
+}
+
 require_once '/usr/local/cpanel/php/cpanel.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php';
@@ -11,7 +17,6 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/DiagnosticReport.php
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanLifecycleManager.php';
-require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php';
 
 $cpanel = new CPANEL();
