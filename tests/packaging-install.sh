@@ -267,6 +267,29 @@ for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
 done
 [[ -z "$(find "$TEST_TMPDIR" -mindepth 1 -print -quit)" ]] || { printf 'fresh install left its temporary archive behind.\n' >&2; exit 1; }
 
+install_manifest_before_repeat="$(sha256sum -- "$ORM_INSTALL_MANIFEST" | awk '{print $1}')"
+appconfig_before_repeat="$(sha256sum -- "$ORM_APPCONFIG" | awk '{print $1}')"
+printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
+printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
+printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+bash "$TEST_ROOT/run-installer.sh"
+orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
+    || { printf 'repeated install changed or invalidated the install manifest.\n' >&2; exit 1; }
+[[ "$(sha256sum -- "$ORM_INSTALL_MANIFEST" | awk '{print $1}')" == "$install_manifest_before_repeat" \
+    && "$(sha256sum -- "$ORM_APPCONFIG" | awk '{print $1}')" == "$appconfig_before_repeat" \
+    && "$(cat "$TEST_PLUGIN_STATE")" == installed ]] \
+    || { printf 'repeated install changed installed files or registration.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == inactive ]] \
+    || { printf 'repeated install changed operator-managed service state.\n' >&2; exit 1; }
+printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
+printf 'active\n' >"$TEST_SYSTEMCTL_STATE.active"
+printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+printf 'active\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+
 configure_case register-failure
 TEST_FAIL_REGISTER=1
 export TEST_FAIL_REGISTER

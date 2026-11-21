@@ -9,6 +9,19 @@ fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
 orm_acquire_lifecycle_lock "$0" "$@"
+if orm_installation_is_absent; then
+    if ! (
+        archive="$(mktemp "${TMPDIR:-/tmp}/orm-cpanel-plugin.XXXXXXXX.tar.gz")"
+        trap 'rm -f -- "$archive"' EXIT
+        orm_make_cpanel_archive "$archive"
+        "$ORM_UNINSTALL_PLUGIN" "$archive" --theme="$ORM_CPanel_THEME"
+    ); then
+        orm_die 'could not verify the already-uninstalled cPanel plugin state.'
+    fi
+    orm_refresh_cpanel_icon_sprite_cache_key
+    printf 'Open Redis Manager is already uninstalled; no managed data or service state was changed.\n'
+    exit 0
+fi
 if orm_instances_exist; then
     orm_die 'managed instance files exist; refusing uninstall to preserve their services, configuration, and data.'
 else
