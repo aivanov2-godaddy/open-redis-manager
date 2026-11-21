@@ -10,9 +10,11 @@ const ORM_CPanel_ROOT = '/usr/local/cpanel';
 const ORM_INSTALL_ROOT = '/usr/local/cpanel/3rdparty/orm';
 
 if (in_array('--help', $argv, true)) {
-    fwrite(STDOUT, "Usage: php tests/whm-live-security-report-form.php (--fleet-summary-only | --fleet-summary-fast | --confirm-report-write | --confirm-report-fast)\n"
+    fwrite(STDOUT, "Usage: php tests/whm-live-security-report-form.php (--fleet-summary-only | --fleet-summary-fast | --confirm-report-write | --confirm-report-fast | --confirm-policy-roundtrip)\n"
         . "Requires root on a disposable cPanel & WHM host. The fleet-summary modes submit only a read-only POST.\n"
         . "The fast modes skip waits to exercise rapid submits while fleet operations may be rate-limited.\n"
+        . "The policy-roundtrip mode changes one report-only threshold temporarily, then restores its original value.\n"
+        . "It writes metadata-only threshold audit events and does not enforce policy or change Redis services.\n"
         . "The report-write mode generates one report, consumes its one-minute throttle, and writes a metadata-only\n"
         . "audit event. Output contains sanitized status and response diagnostics only.\n");
     exit(0);
@@ -22,8 +24,9 @@ $fleetSummaryOnly = in_array('--fleet-summary-only', $argv, true);
 $fleetSummaryFast = in_array('--fleet-summary-fast', $argv, true);
 $confirmReportWrite = in_array('--confirm-report-write', $argv, true);
 $confirmReportFast = in_array('--confirm-report-fast', $argv, true);
+$confirmPolicyRoundtrip = in_array('--confirm-policy-roundtrip', $argv, true);
 $selectedModes = (int) $fleetSummaryOnly + (int) $fleetSummaryFast
-    + (int) $confirmReportWrite + (int) $confirmReportFast;
+    + (int) $confirmReportWrite + (int) $confirmReportFast + (int) $confirmPolicyRoundtrip;
 if ($selectedModes !== 1) {
     fwrite(STDERR, "Choose exactly one live smoke mode. See --help.\n");
     exit(2);
@@ -132,6 +135,38 @@ $followSameSessionRedirects = static function (string $host, string $path, strin
     throw new RuntimeException('WHM SSO exceeded the redirect limit');
 };
 
+$readThresholds = static function (string $html): ?array {
+    $fields = [
+        'security_evictions_threshold',
+        'security_operations_threshold',
+        'security_auth_failures_threshold',
+    ];
+    $thresholds = [];
+    foreach ($fields as $field) {
+        $pattern = '/<input\b[^>]*\bname="' . preg_quote($field, '/') . '"[^>]*\bvalue="([0-9]+)"/';
+        if (preg_match($pattern, $html, $match) !== 1) {
+            return null;
+        }
+        $value = filter_var($match[1], FILTER_VALIDATE_INT);
+        if (!is_int($value) || $value < 0 || $value > 9_000_000_000_000_000) {
+            return null;
+        }
+        $thresholds[$field] = $value;
+    }
+    return $thresholds;
+};
+$submitThresholds = static function (string $host, string $path, string $cookieFile, array $thresholds) use ($request, $readThresholds): array {
+    $response = $request($host, $path, $cookieFile, [
+        'orm_action' => 'security.policy.update',
+        ...$thresholds,
+    ], 'https://' . $host . ':2087' . $path);
+    $successMessage = 'Report-only thresholds saved. No automatic enforcement or service changes were applied.';
+    return [
+        'ok' => $response['code'] === 200 && str_contains($response['body'], $successMessage),
+        'thresholds' => $readThresholds($response['body']),
+    ];
+};
+
 $temporaryDirectory = sys_get_temp_dir() . '/orm-whm-report-form-' . bin2hex(random_bytes(8));
 if (!mkdir($temporaryDirectory, 0700) || !chmod($temporaryDirectory, 0700)) {
     fwrite(STDERR, "Could not create a private temporary directory.\n");
@@ -145,8 +180,18 @@ if (file_put_contents($cookieFile, '') === false || !chmod($cookieFile, 0600)) {
     exit(2);
 }
 
-$result = ['sso' => false, 'root' => false, 'form' => false, 'summary' => false,
-    'rendered' => false, 'audit' => false];
+$result = [
+    'sso' => false,
+    'root' => false,
+    'form' => false,
+    'summary' => false,
+    'rendered' => false,
+    'audit' => false,
+    'policy_changed' => false,
+    'policy_restored' => false,
+];
+$policyBaseline = null;
+$policyRestoreNeeded = false;
 try {
     $process = proc_open([
         ORM_CPanel_ROOT . '/bin/whmapi1', '--output=json', 'create_user_session',
@@ -215,7 +260,7 @@ try {
         throw new RuntimeException('Rapid fleet-list throttling hid the WHM security report form');
     }
 
-    if (!$fleetSummaryOnly) {
+    if (!$fleetSummaryOnly && !$confirmPolicyRoundtrip) {
     $beforeAudit = (new \Orm\Security\WhmAuditLog())->read(max(0, time() - 10), time() + 1, [
         'action' => 'security.report', 'result' => 'success',
     ]);
@@ -287,8 +332,45 @@ try {
         throw new RuntimeException('WHM report audit event was not verified');
     }
     }
+    if ($confirmPolicyRoundtrip) {
+        $policyBaseline = $readThresholds($page['body']);
+        if (!is_array($policyBaseline)) {
+            throw new RuntimeException('The report threshold values could not be read from the authenticated page');
+        }
+        $policyTrial = $policyBaseline;
+        $currentEvictionsThreshold = $policyBaseline['security_evictions_threshold'];
+        $policyTrial['security_evictions_threshold'] = $currentEvictionsThreshold < 9_000_000_000_000_000
+            ? $currentEvictionsThreshold + 1
+            : $currentEvictionsThreshold - 1;
+        $policyRestoreNeeded = true;
+        $trial = $submitThresholds($host, $reportPath, $cookieFile, $policyTrial);
+        if (!$trial['ok'] || $trial['thresholds'] !== $policyTrial) {
+            throw new RuntimeException('The authenticated threshold update was not verified');
+        }
+        $result['policy_changed'] = true;
+        $restored = $submitThresholds($host, $reportPath, $cookieFile, $policyBaseline);
+        if (!$restored['ok'] || $restored['thresholds'] !== $policyBaseline) {
+            throw new RuntimeException('The original report thresholds were not restored');
+        }
+        $result['policy_restored'] = true;
+        $policyRestoreNeeded = false;
+    }
 } catch (Throwable $error) {
-    fwrite(STDERR, "Live WHM report-form smoke failed: " . $error->getMessage() . "\n");
+    if ($confirmPolicyRoundtrip && $policyRestoreNeeded && is_array($policyBaseline)
+        && isset($host, $reportPath, $cookieFile)) {
+        try {
+            $restored = $submitThresholds($host, $reportPath, $cookieFile, $policyBaseline);
+            $result['policy_restored'] = $restored['ok'] && $restored['thresholds'] === $policyBaseline;
+            $policyRestoreNeeded = !$result['policy_restored'];
+        } catch (Throwable) {
+            $result['policy_restored'] = false;
+        }
+    }
+    $errorMessage = $error->getMessage();
+    if ($confirmPolicyRoundtrip && !$result['policy_restored'] && $policyRestoreNeeded) {
+        $errorMessage .= ' The original threshold values could not be verified after the restore attempt; inspect the WHM policy before further use.';
+    }
+    fwrite(STDERR, "Live WHM report-form smoke failed: " . $errorMessage . "\n");
     $exitCode = 1;
 } finally {
     @unlink($cookieFile);
@@ -301,13 +383,17 @@ if (isset($exitCode) && $exitCode !== 0) {
         . ' form=' . ($result['form'] ? 'pass' : 'fail')
         . ' summary=' . ($result['summary'] ? 'pass' : 'fail')
         . ' rendered=' . ($result['rendered'] ? 'pass' : 'fail')
-        . ' audit=' . ($result['audit'] ? 'pass' : 'fail') . "\n");
+        . ' audit=' . ($result['audit'] ? 'pass' : 'fail')
+        . ' policy_changed=' . ($result['policy_changed'] ? 'pass' : 'not-run')
+        . ' policy_restored=' . ($result['policy_restored'] ? 'pass' : 'not-run') . "\n");
     exit($exitCode);
 }
 
 if ($fleetSummaryOnly) {
     $mode = $fleetSummaryFast ? 'fast ' : '';
     fwrite(STDOUT, "Live WHM {$mode}fleet-summary form passed: authenticated SSO; form rendered; read-only summary POST rendered.\n");
+} elseif ($confirmPolicyRoundtrip) {
+    fwrite(STDOUT, "Live WHM threshold roundtrip passed: authenticated SSO; temporary advisory threshold update verified; original thresholds restored.\n");
 } elseif (getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1') {
     fwrite(STDOUT, "Live WHM Valkey report form passed: authenticated SSO; eviction, operation, and optional authentication findings rendered; audit event verified.\n");
 } else {
