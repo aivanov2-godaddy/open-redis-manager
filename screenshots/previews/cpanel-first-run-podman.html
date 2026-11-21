@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Redis Manager — EA Podman setup</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f6f9; color: #172235; font: 16px Arial, sans-serif; }
+    .topbar { display: flex; align-items: center; gap: 12px; min-height: 68px; padding: 0 42px; color: #fff; background: #20294e; }
+    .topbar img { width: 34px; height: 34px; }.topbar strong { font-size: 18px; }.topbar span { margin-left: auto; color: #d9dfec; font-size: 14px; }
+    main { width: min(100% - 48px, 980px); margin: 36px auto; } h1 { margin: 0 0 8px; font-size: 28px; }
+    .intro { margin: 0 0 22px; color: #59677c; line-height: 1.55; }
+    .card { padding: 28px; border: 1px solid #dce3ec; border-radius: 12px; background: #fff; box-shadow: 0 5px 20px #17223512; }
+    .status { display: inline-flex; gap: 7px; align-items: center; padding: 6px 11px; border-radius: 999px; background: #e8f6ed; color: #176b3a; font-size: 13px; font-weight: 700; }
+    .status i { width: 8px; height: 8px; border-radius: 50%; background: #16804a; }
+    h2 { margin: 18px 0 6px; font-size: 21px; } h3 { margin: 0 0 8px; font-size: 17px; }
+    .desc { color: #59677c; line-height: 1.5; }
+    .alert { margin: 18px 0; padding: 13px 15px; border: 1px solid #c9e7d3; border-radius: 8px; background: #f3fbf6; color: #285c3c; line-height: 1.5; }
+    .packages { display: grid; gap: 14px; margin: 18px 0; }
+    .package { padding: 18px; border: 1px solid #dce3ec; border-radius: 9px; background: #fff; }
+    .package-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .available { color: #176b3a; font-size: 13px; font-weight: 700; }
+    code.cmd { display: block; margin: 11px 0; padding: 14px; border-radius: 6px; background: #172235; color: #fff; font: 14px Consolas, monospace; overflow-wrap: anywhere; }
+    .package p { margin: 8px 0; color: #59677c; font-size: 14px; line-height: 1.5; }
+    .steps { margin: 18px 0; padding: 0; list-style: none; counter-reset: steps; }
+    .steps li { position: relative; margin: 12px 0; padding: 14px 16px 14px 54px; border-left: 3px solid #c92319; background: #f7f9fc; line-height: 1.5; counter-increment: steps; }
+    .steps li::before { content: counter(steps); position: absolute; left: 15px; top: 13px; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #c92319; color: #fff; font-weight: 700; }
+    .prereq { margin: 18px 0 0; padding-top: 15px; border-top: 1px solid #e3e8ef; color: #59677c; font-size: 13px; line-height: 1.5; }
+    .links { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 18px; }.links a { color: #a91f18; font-weight: 700; }
+    .footer { margin: 16px 0; text-align: center; color: #7a8798; font-size: 12px; }
+    @media(max-width:650px){.topbar{padding:0 18px}main{width:calc(100% - 28px);margin:20px auto}.card{padding:20px}}
+  </style>
+</head>
+<body>
+  <header class="topbar"><img src="../../assets/orm-mark.svg" alt=""><strong>Open Redis Manager</strong><span>cPanel</span></header>
+  <main>
+    <h1>Your cache instance</h1>
+    <p class="intro">cPanel EA Podman setup · Account inventory check</p>
+    <section class="card" aria-label="Synthetic EA Podman setup preview">
+      <span class="status"><i></i>Setup path checked · Ubuntu</span>
+      <h2>Install a cPanel cache package</h2>
+      <p class="desc">The account inventory advertises these fixed EasyApache container packages.</p>
+      <div class="packages">
+        <article class="package"><div class="package-head"><h3>Redis 6.2</h3><span class="available">Available for account</span></div><p>Open cPanel Terminal or connect by SSH as this cPanel account, then run:</p><code class="cmd">/usr/local/cpanel/scripts/ea-podman install ea-redis62</code></article>
+        <article class="package"><div class="package-head"><h3>Valkey 7.2</h3><span class="available">Available for account</span></div><p>To use Valkey instead, run this fixed package command:</p><code class="cmd">/usr/local/cpanel/scripts/ea-podman install ea-valkey72</code></article>
+      </div>
+      <ol class="steps"><li>Run one package command in your account shell and wait for cPanel to finish setup.</li><li>Return here and select <strong>Check again</strong>. ORM will verify the account-owned container and socket.</li><li>Copy the socket connection example for your application after verification.</li></ol>
+      <p class="prereq"><strong>Administrator prerequisite:</strong> cPanel EA Podman needs AlmaLinux, Rocky Linux, or Ubuntu, EasyApache 4 container support, user namespaces, and a normal non-jailed account shell. ORM does not change host packages or kernel settings.</p>
+      <div class="links"><a href="#check">Check again</a><a href="#admin">Administrator setup guide</a><a href="#back">Back to setup choices</a></div>
+    </section>
+    <p class="footer">Preview with synthetic inventory data · installation was not run</p>
+  </main>
+</body>
+</html>

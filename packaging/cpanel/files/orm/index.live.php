@@ -12,6 +12,7 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/HealthGuidance.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanCacheDiscovery.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/PodmanLifecycleManager.php';
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuard.php';
+require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php';
 
 $cpanel = new CPANEL();
 $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
@@ -34,9 +35,10 @@ if ($brokerVerified && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         default => 'The container action could not be completed. Confirm this is an existing container owned by your cPanel account and check its status in cPanel.',
     };
 }
-$podmanCaches = $account !== null
-    ? \Orm\Cpanel\PodmanCacheDiscovery::forCurrentAccount($account->username())
-    : [];
+$podmanInventory = $account !== null
+    ? \Orm\Cpanel\PodmanCacheDiscovery::currentAccountInventory($account->username())
+    : ['status' => 'unavailable', 'caches' => []];
+$podmanCaches = $podmanInventory['caches'];
 $providerExposureResult = $brokerVerified ? $instanceClient->request('provider.exposure') : null;
 $providerBrandingResult = $brokerVerified ? $instanceClient->request('provider.branding') : null;
 $providerBranding = is_array($providerBrandingResult) && ($providerBrandingResult['success'] ?? false) === true
@@ -108,6 +110,17 @@ if (in_array($action, ['auth.rotate', 'auth.disable'], true)) {
     header('X-Content-Type-Options: nosniff');
 }
 $instanceStatus = $brokerVerified ? $instanceClient->request('instance.status') : null;
+$setupMode = $_GET['orm_setup'] ?? 'choose';
+if (!is_string($setupMode) || !in_array($setupMode, ['choose', 'native', 'podman'], true)) {
+    $setupMode = 'choose';
+}
+$showSetupWizard = $brokerVerified && is_array($instanceStatus)
+    && ($instanceStatus['success'] ?? false) === true && ($instanceStatus['state'] ?? null) === 'not_configured'
+    && ($podmanInventory['status'] ?? null) === 'not-installed';
+$podmanSetup = $showSetupWizard && $setupMode === 'podman'
+    ? \Orm\Cpanel\PodmanLifecycleManager::inspectSetup($account->username()) : null;
+$nativeDiscovery = $showSetupWizard && $setupMode === 'native'
+    ? (new \Orm\Backend\BackendDiscovery())->discover() : null;
 $canRequestMetrics = $brokerVerified && is_array($instanceStatus) && ($instanceStatus['success'] ?? false) === true
     && ($instanceStatus['state'] ?? null) !== 'not_configured';
 $authStatus = $canRequestMetrics ? $instanceClient->authStatus() : null;
@@ -355,6 +368,16 @@ try {
         .orm-config-impact { padding: 12px; border-left: 3px solid #bf7a18; background: #fff8e9; color: #57390e; }
         .orm-preset-help { color: #59677c; font-size: 14px; }
         .orm-note { margin-top: 18px; color: #59677c; }
+        .orm-setup-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; margin: 18px 0; }
+        .orm-setup-choice { display: block; padding: 18px; border: 1px solid #dce3ec; border-radius: 10px; background: #fff; color: var(--orm-text) !important; text-decoration: none; }
+        .orm-setup-choice:hover, .orm-setup-choice:focus-visible { border-color: var(--orm-primary); outline: 2px solid color-mix(in srgb, var(--orm-primary) 28%, transparent); outline-offset: 2px; }
+        .orm-setup-choice h3 { margin: 0 0 8px; }
+        .orm-setup-choice p { margin: 0; color: #59677c; }
+        .orm-setup-step { margin: 16px 0; padding: 14px 16px; border-left: 4px solid var(--orm-primary); border-radius: 6px; background: #f7f9fc; }
+        .orm-setup-command { display: block; margin: 10px 0; padding: 12px; overflow-wrap: anywhere; border-radius: 6px; background: #172235; color: #fff; }
+        .orm-setup-status { padding: 12px 14px; border: 1px solid #dce3ec; border-radius: 8px; background: #f7f9fc; }
+        .orm-setup-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+        .orm-setup-links a { font-weight: 700; }
         .orm-backup-list { display: grid; gap: 9px; max-width: 720px; margin: 16px 0 0; padding: 0; list-style: none; }
         .orm-backup-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; padding: 12px 14px; border: 1px solid #dce3ed; border-radius: 8px; background: #fff; }
         .orm-backup-list a { font-weight: 700; }
@@ -603,25 +626,109 @@ try {
               <?php endif; ?>
             <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'not_configured'): ?>
-              <p>Initialize a private Redis-compatible cache instance. Your hosting provider must first select the backend.</p>
-              <form method="post" class="orm-preset-form">
-                <input type="hidden" name="orm_action" value="provision">
-                <?php if (!$developerExposure): ?>
-                <input type="hidden" name="orm_preset" value="generic">
-                <p class="orm-preset-help">The standard profile uses a private socket, a 64 MiB memory cap, and no persistence.</p>
-                <?php else: ?>
-                <label for="orm-preset">Configuration preset</label>
-                <select id="orm-preset" name="orm_preset" required>
-                  <option value="generic" selected>Generic — 64 MiB</option>
-                  <option value="wordpress">WordPress — 48 MiB</option>
-                  <option value="laravel">Laravel — 32 MiB</option>
-                  <option value="magento">Magento — 64 MiB</option>
-                  <option value="session">Session cache — 32 MiB</option>
-                </select>
-                <p class="orm-preset-help">Each profile uses the same private socket and 100-client ceiling with persistence disabled. The hosting provider sets the database count and eviction policy, may lower the profile memory default, and can disable provisioning or enforce a package ceiling.</p>
-                <?php endif; ?>
-                <button type="submit">Initialize cache</button>
-              </form>
+              <?php if ($showSetupWizard): ?>
+                <section class="orm-card" aria-labelledby="orm-setup-title">
+                  <h3 id="orm-setup-title">First-time setup</h3>
+                  <p>Choose where this account’s Redis-compatible cache should run. ORM checks the selected path and guides you through the required setup.</p>
+                  <?php if ($setupMode === 'choose'): ?>
+                    <div class="orm-setup-options">
+                      <a class="orm-setup-choice" href="?orm_setup=native" aria-label="Choose a native Redis or Valkey service">
+                        <h3>Native service</h3>
+                        <p>Use an ORM-managed Redis/Valkey process installed on the server. WHM controls which backend is approved for new instances.</p>
+                      </a>
+                      <a class="orm-setup-choice" href="?orm_setup=podman" aria-label="Choose a cPanel EA Podman container">
+                        <h3>cPanel EA Podman</h3>
+                        <p>Install a cPanel-provided Redis 6.2 or Valkey 7.2 container under this cPanel account.</p>
+                      </a>
+                    </div>
+                    <p class="orm-note">If a cache is already installed for your account, it appears in the existing cPanel Podman section above.</p>
+                  <?php elseif ($setupMode === 'native'): ?>
+                    <h4>Native service readiness</h4>
+                    <?php if (($nativeDiscovery['status'] ?? null) !== 'supported-platform'): ?>
+                      <p class="orm-setup-status" role="status">Host discovery is unavailable or this platform is unsupported. Ask your hosting administrator to verify a supported Linux Redis/Valkey package and the WHM backend selection.</p>
+                    <?php else: ?>
+                      <?php $detectedNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => ($backend['status'] ?? null) === 'detected')); ?>
+                      <?php if ($detectedNativeBackends === []): ?>
+                        <p class="orm-setup-status" role="status">No Redis/Valkey server binary was found in ORM’s standard locations. That does not prove the host has no Redis-compatible service; ask your administrator to verify the package and WHM backend selection.</p>
+                      <?php else: ?>
+                        <p class="orm-setup-status" role="status">Host binary discovery found:</p>
+                        <ul>
+                          <?php foreach ($detectedNativeBackends as $backend): ?>
+                            <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong><?= is_string($backend['version'] ?? null) ? ' ' . htmlspecialchars($backend['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?> — <?= htmlspecialchars($backend['server_binary'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li>
+                          <?php endforeach; ?>
+                        </ul>
+                      <?php endif; ?>
+                      <p>New ORM-managed native instances use the default backend selected by your hosting provider in WHM. This page cannot install host packages or change that provider setting.</p>
+                      <?php if ($detectedNativeBackends !== []): ?>
+                      <form method="post" class="orm-preset-form">
+                        <input type="hidden" name="orm_action" value="provision">
+                        <?php if (!$developerExposure): ?>
+                        <input type="hidden" name="orm_preset" value="generic">
+                        <p class="orm-preset-help">The standard profile uses a private socket, a 64 MiB memory cap, and no persistence.</p>
+                        <?php else: ?>
+                        <label for="orm-preset">Configuration preset</label>
+                        <select id="orm-preset" name="orm_preset" required>
+                          <option value="generic" selected>Generic — 64 MiB</option>
+                          <option value="wordpress">WordPress — 48 MiB</option>
+                          <option value="laravel">Laravel — 32 MiB</option>
+                          <option value="magento">Magento — 64 MiB</option>
+                          <option value="session">Session cache — 32 MiB</option>
+                        </select>
+                        <p class="orm-preset-help">The host applies package memory/client limits and provider defaults. ORM keeps this service account-scoped.</p>
+                        <?php endif; ?>
+                        <button type="submit">Initialize native cache</button>
+                      </form>
+                      <?php else: ?>
+                        <p>Once your administrator installs a supported native Redis/Valkey server package and selects it in WHM, choose <a href="?orm_setup=native">Check again</a>.</p>
+                      <?php endif; ?>
+                    <?php endif; ?>
+                    <div class="orm-setup-links"><a href="?orm_setup=choose">Back to setup choices</a></div>
+                  <?php else: ?>
+                    <h4>cPanel EA Podman readiness</h4>
+                    <?php if (($podmanSetup['status'] ?? null) === 'ea-podman-unavailable'): ?>
+                      <p class="orm-setup-status" role="status">The cPanel EA Podman tool is not available to this account. Ask your hosting administrator to enable EasyApache 4 containers, confirm the server is supported, and enable user namespaces. CloudLinux/CageFS container setups are not supported by cPanel’s EA Podman integration.</p>
+                    <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-host'): ?>
+                      <p class="orm-setup-status" role="status">This host is identified as <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>, which cPanel does not support for EA Podman Redis/Valkey containers. Choose the native service option or ask your administrator about supported host alternatives.</p>
+                    <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-shell'): ?>
+                      <p class="orm-setup-status" role="status">This account does not have a normal, non-jailed shell. Ask your hosting administrator to enable Normal Shell before using EA Podman.</p>
+                    <?php elseif (($podmanSetup['status'] ?? null) === 'checked'): ?>
+                      <p class="orm-setup-status" role="status">The account’s EA Podman package inventory was checked. Host platform: <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. <?php if ($podmanSetup['host_platform'] === 'unknown'): ?>The operating system could not be verified; ask the administrator to confirm it is AlmaLinux, Rocky Linux, or Ubuntu.<?php endif; ?></p>
+                      <?php foreach (['redis' => ['label' => 'Redis 6.2', 'package' => 'ea-redis62'], 'valkey' => ['label' => 'Valkey 7.2', 'package' => 'ea-valkey72']] as $backendId => $packageInfo): ?>
+                        <div class="orm-setup-step">
+                          <h4><?= htmlspecialchars($packageInfo['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
+                          <?php if (($podmanSetup[$backendId] ?? null) === 'available'): ?>
+                            <?php if (in_array($podmanSetup['host_platform'], ['AlmaLinux', 'Rocky Linux', 'Ubuntu'], true)): ?>
+                            <p>This fixed cPanel package is advertised for this account. In cPanel Terminal or SSH as this account, run:</p>
+                            <code class="orm-setup-command">/usr/local/cpanel/scripts/ea-podman install <?= htmlspecialchars($packageInfo['package'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code>
+                            <p>After it completes, return here and refresh. ORM will verify the account-owned container and socket.</p>
+                            <?php else: ?>
+                              <p>This fixed package is advertised, but the host operating system could not be verified. Ask the administrator to confirm the supported host and user-namespace prerequisites before installing.</p>
+                            <?php endif; ?>
+                          <?php elseif (($podmanSetup[$backendId] ?? null) === 'not-listed'): ?>
+                            <p>This package was not listed in the account inventory. Ask the administrator to confirm that the corresponding EasyApache container package is installed and available on the host.</p>
+                          <?php else: ?>
+                            <p>Package availability could not be confirmed. Ask the administrator to verify the host prerequisites before installing.</p>
+                          <?php endif; ?>
+                        </div>
+                      <?php endforeach; ?>
+                    <?php else: ?>
+                      <p class="orm-setup-status" role="status">ORM could not verify EA Podman package availability for this account. The result is unknown; it does not mean Redis or Valkey is absent. Check account shell access and ask the administrator to verify the host setup.</p>
+                    <?php endif; ?>
+                    <p>cPanel EA Podman requires a supported AlmaLinux, Rocky Linux, or Ubuntu host with EasyApache 4 containers and user namespaces enabled. ORM does not probe the kernel namespace policy; the administrator must verify that prerequisite. ORM will not run a host package manager or accept custom images, package names, or shell commands.</p>
+                    <div class="orm-setup-links">
+                      <a href="?orm_setup=podman">Check again</a>
+                      <a href="https://docs.cpanel.net/ea4/containers/easyapache-4-containers/" target="_blank" rel="noopener noreferrer">Administrator setup guide</a>
+                      <a href="?orm_setup=choose">Back to setup choices</a>
+                    </div>
+                  <?php endif; ?>
+                </section>
+              <?php elseif ($podmanCaches !== []): ?>
+                <p>An existing cPanel EA Podman cache is shown above. ORM-managed native service setup is not initialized for this account.</p>
+              <?php elseif (($podmanInventory['status'] ?? null) === 'unavailable'): ?>
+                <p class="orm-setup-status" role="status">ORM could not safely verify this account’s cPanel container inventory. It will not assume a cache is absent. Contact your hosting administrator to check the account’s EA Podman setup.</p>
+              <?php else: ?>
+                <p>Your account has no initialized ORM cache. Return to the first-time setup page after confirming your host backend selection.</p>
+              <?php endif; ?>
             <?php else: ?>
               <?php if ($developerExposure && in_array($instanceStatus['state'], ['running', 'stopped', 'failed'], true) && is_array($instanceStatus['config'] ?? null)): ?>
                 <section aria-labelledby="orm-config-title">

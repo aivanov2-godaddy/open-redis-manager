@@ -18,6 +18,67 @@ final class PodmanCacheDiscovery
         return $identity === null ? [] : self::discover($username, $identity['home'], $identity['uid'], $probe);
     }
 
+    /**
+     * Distinguish an account with no EA Podman directory from one whose inventory
+     * cannot be trusted or read. The existing list API remains backward compatible.
+     *
+     * @param null|callable(string): array{reachable:bool,version:?string} $probe
+     * @return array{status:string,caches:list<array{container:string,backend:string,version:?string,socket_path:string,status:string}>}
+     */
+    public static function currentAccountInventory(
+        string $username,
+        ?callable $probe = null,
+        ?callable $identityResolver = null
+    ): array
+    {
+        $empty = ['status' => 'unavailable', 'caches' => []];
+        if ($identityResolver === null) {
+            $identity = self::currentAccountIdentity($username);
+        } else {
+            try {
+                $identity = $identityResolver($username);
+            } catch (\Throwable) {
+                $identity = null;
+            }
+        }
+        if ($identity === null) {
+            return $empty;
+        }
+        if (!is_array($identity) || !is_string($identity['home'] ?? null) || !is_int($identity['uid'] ?? null)
+            || $identity['uid'] < 1 || !str_starts_with($identity['home'], '/') || str_contains($identity['home'], "\0")) {
+            return $empty;
+        }
+        $homeStat = @lstat($identity['home']);
+        if (!is_array($homeStat) || (($homeStat['mode'] & 0170000) !== 0040000)
+            || $homeStat['uid'] !== $identity['uid'] || @realpath($identity['home']) !== $identity['home']) {
+            return $empty;
+        }
+        $root = $identity['home'] . '/ea-podman.d';
+        $rootStat = @lstat($root);
+        if (!is_array($rootStat)) {
+            return !file_exists($root) && !is_link($root)
+                ? ['status' => 'not-installed', 'caches' => []] : $empty;
+        }
+        if (($rootStat['mode'] & 0170000) !== 0040000 || $rootStat['uid'] !== $identity['uid']
+            || ($rootStat['mode'] & 0022) !== 0 || @realpath($root) !== $root) {
+            return $empty;
+        }
+        $names = @scandir($root);
+        if (!is_array($names) || count($names) > self::MAX_CONTAINERS + 2) {
+            return $empty;
+        }
+        $caches = self::discover($username, $identity['home'], $identity['uid'], $probe);
+        if ($caches !== []) {
+            return ['status' => 'installed', 'caches' => $caches];
+        }
+        foreach ($names as $name) {
+            if (is_string($name) && preg_match('/\Aea-(?:redis|valkey)[0-9]{2,4}\.' . preg_quote($username, '/') . '\.[0-9]{2,3}\z/', $name) === 1) {
+                return $empty;
+            }
+        }
+        return ['status' => 'not-installed', 'caches' => []];
+    }
+
     /** @return null|array{container:string,backend:string,home:string,uid:int,directory:string,socket_path:string} */
     public static function containerForCurrentAccount(string $username, string $container): ?array
     {
