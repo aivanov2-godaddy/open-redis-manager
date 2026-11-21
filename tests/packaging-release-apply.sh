@@ -117,13 +117,13 @@ grep -Fvx -f <(printf '%s\n' "${approved_additions[@]:1}") "$new_install_map" >"
 orm_release_install_map_is_compatible "$new_install_map" "$podman_old_install_map" \
     || { printf 'updater rejected the approved EA Podman collector additions to a current installed map.\n' >&2; exit 1; }
 future_install_map="$test_root/future-ea-podman-release-install-map.txt"
-cp -- "$new_install_map" "$future_install_map"
+cp -- "$podman_old_install_map" "$future_install_map"
 printf '%s\n' "${approved_additions[@]:1}" >>"$future_install_map"
-orm_release_install_map_is_compatible "$future_install_map" "$new_install_map" \
+orm_release_install_map_is_compatible "$future_install_map" "$podman_old_install_map" \
     || { printf 'updater rejected the exact future EA Podman collector paths.\n' >&2; exit 1; }
 sed 's#orm-podman-metrics.service|644$#orm-podman-metrics.service|600#' "$future_install_map" \
     >"$test_root/tampered-future-release-install-map.txt"
-if orm_release_install_map_is_compatible "$test_root/tampered-future-release-install-map.txt" "$new_install_map"; then
+if orm_release_install_map_is_compatible "$test_root/tampered-future-release-install-map.txt" "$podman_old_install_map"; then
     printf 'updater accepted a modified future install-map row.\n' >&2
     exit 1
 fi
