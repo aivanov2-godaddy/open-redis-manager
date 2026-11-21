@@ -19,6 +19,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Live cPanel smoke test](validation/cpanel-smoke.md)
 - [Host compatibility and validation matrix](validation/compatibility-matrix.md)
 - [Disposable-host validation record template](validation/record-template.md)
+- [Live WHM diagnostics validation — 2026-11-21](validation/records/2026-11-21-whm-diagnostics-live.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [WHM signed update preview operations](guides/update-preview.md)
