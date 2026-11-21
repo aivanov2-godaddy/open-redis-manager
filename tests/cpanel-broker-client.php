@@ -699,6 +699,23 @@ $podmanSummaryResult = $podmanSummaryClient->requestFleetSummary();
 $assert(is_array($podmanSummaryResult['podman_metrics'] ?? null)
     && $podmanSummaryResult['podman_metrics']['discovered_count'] === 2,
     'Accept an exact, bounded, fresh anonymous EA Podman snapshot in the root fleet summary.');
+$podmanV2Payload = $podmanSummaryPayload;
+$podmanV2Payload['podman_metrics']['version'] = 2;
+$podmanV2Payload['podman_metrics']['counter_window'] = [
+    'auth_available' => false, 'max_auth_failures_delta' => 0, 'max_evictions_delta' => 0,
+    'max_operations_per_second' => 0, 'process_count' => 0, 'reason' => 'first_sample',
+    'sampled_at' => $podmanV2Payload['podman_metrics']['sampled_at'], 'status' => 'unknown',
+    'window_seconds' => 0, 'window_start_at' => 0,
+];
+$podmanV2Client = new BrokerClient(static fn (string $request): string =>
+    json_encode($podmanV2Payload, JSON_THROW_ON_ERROR) . "\n");
+$assert(($podmanV2Client->requestFleetSummary()['podman_metrics']['counter_window']['reason'] ?? null) === 'first_sample',
+    'Accept version-two aggregate counter windows without process or account identifiers.');
+$podmanV2Payload['podman_metrics']['counter_window']['process_token'] = str_repeat('a', 64);
+$unsafePodmanV2Client = new BrokerClient(static fn (string $request): string =>
+    json_encode($podmanV2Payload, JSON_THROW_ON_ERROR) . "\n");
+$assert($unsafePodmanV2Client->requestFleetSummary() === null,
+    'Reject continuity tokens or unexpected fields in the WHM-facing Podman window.');
 $podmanSummaryPayload['podman_metrics']['socket_path'] = '/home/user/redis.sock';
 $unsafePodmanSummaryClient = new BrokerClient(static fn (string $request): string =>
     json_encode($podmanSummaryPayload, JSON_THROW_ON_ERROR) . "\n");
