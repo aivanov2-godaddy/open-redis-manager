@@ -27,12 +27,18 @@
     .finding p { margin: 7px 0 0; color: #4d5c71; font-size: 14px; line-height: 1.5; }
     .finding p:last-child { color: #24334a; }
     .note { margin: 16px 0 0; color: #65748a; font-size: 12px; line-height: 1.5; }
+    .score { display: grid; grid-template-columns: minmax(88px, auto) 1fr; align-items: center; gap: 4px 16px; margin: 12px 0 16px; padding: 16px; border: 1px solid #dce3ed; border-radius: 10px; background: #fff; }
+    .score-value { grid-row: span 2; color: #172235; white-space: nowrap; }
+    .score-value strong { font-size: 34px; line-height: 1; }
+    .score-value span { color: #59677c; font-size: 14px; }
+    .score-label { margin: 0; font-weight: 700; }
+    .score-note { margin: 0; color: #59677c; font-size: 13px; }
     .metrics-title { margin: 24px 0 12px; font-size: 18px; }
     .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
     .metric { padding: 13px; border: 1px solid #e2e8f0; border-radius: 9px; background: #fbfcfe; }
     .metric span { display: block; color: #59677c; font-size: 12px; }
     .metric strong { display: block; margin-top: 7px; font-size: 19px; }
-    @media (max-width: 620px) { main { margin: 18px auto; padding: 0 12px; } .card { padding: 16px; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 620px) { main { margin: 18px auto; padding: 0 12px; } .card { padding: 16px; } .heading { align-items: flex-start; flex-wrap: wrap; } .advisory { margin-left: 0; } .score { grid-template-columns: 68px minmax(0, 1fr); gap: 6px 12px; } .score-value strong { font-size: 30px; } .score-label, .score-note { min-width: 0; overflow-wrap: anywhere; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   </style>
 </head>
 <body>
@@ -47,7 +53,13 @@
     <section class="card" aria-label="Synthetic ORM health guidance preview">
       <p class="state">Running</p>
       <section aria-labelledby="health-title" aria-live="polite">
-        <div class="heading"><h2 id="health-title">Health guidance</h2><span class="advisory">Advisory</span></div>
+        <div class="heading"><h2 id="health-title">Cache health</h2><span class="advisory">Advisory score</span></div>
+        <div class="score" aria-label="Synthetic ORM health score preview">
+          <div class="score-value" aria-label="Score 25 out of 100"><strong>25</strong><span> / 100</span></div>
+          <p class="score-label">Needs attention</p>
+          <p class="score-note">4 of 4 checks evaluated (100% evidence coverage). Unknown checks are not counted as passes.</p>
+        </div>
+        <p class="note">The score uses current account-scoped broker data only. It does not verify application connectivity, language extensions, or guarantee performance.</p>
         <ul class="findings">
           <li class="finding">
             <span class="severity">Warning</span><strong>Memory use is approaching the configured limit</strong>
@@ -65,7 +77,6 @@
             <p><strong>Suggested next step:</strong> Review whether the application is storing and reusing the intended cache entries. This cumulative ratio resets when the service restarts.</p>
           </li>
         </ul>
-        <p class="note">Heuristic thresholds are advisory. Guidance does not test application connectivity or guarantee cache performance.</p>
       </section>
       <h2 class="metrics-title">Current sample</h2>
       <div class="metrics">

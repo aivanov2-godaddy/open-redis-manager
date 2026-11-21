@@ -8,7 +8,9 @@ A separate per-account `orm-metrics-collect@<account>.timer` invokes the fixed c
 
 ## Health score
 
-Use understandable sub-signals: service availability, memory pressure, connection saturation, cache hit ratio, uptime and authentication posture. A score should link to underlying observations and recommended actions so it does not hide the reason for a warning.
+The cPanel page calculates a first-pass advisory score from four equal checks: verified running state, memory below 85% of the configured ceiling, connected clients below 85% of their configured limit, and a cumulative cache hit ratio of at least 50% after 100 lookups. It requires fresh current metrics and at least three verifiable checks before showing a number. The displayed coverage explains when a check is unknown; unknowns are excluded rather than treated as passes. The score links to the same individual findings and recommendations described in [health guidance](health-guidance.md).
+
+Uptime and optional AUTH status remain visible context, not scored signals: uptime is not proof of service health, and AUTH is optional for the account-private Unix socket. Application connectivity, installed PHP extensions, latency and trends are not tested. The score is a heuristic and not an availability or performance guarantee. Deeper trend-based health scoring remains on the roadmap.
 
 ## Application preflight
 

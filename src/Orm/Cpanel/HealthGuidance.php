@@ -3,12 +3,13 @@ declare(strict_types=1);
 
 namespace Orm\Cpanel;
 
-/** Turns validated account metrics into bounded, advisory-only health findings. */
+/** Turns validated account metrics into bounded, advisory-only health findings and a score. */
 final class HealthGuidance
 {
     private const STATES = ['not_configured', 'stopped', 'starting', 'running', 'stopping', 'failed'];
+    private const SCORE_CHECKS = 4;
 
-    /** @return array{state:string,findings:list<array{severity:string,title:string,detail:string,recommendation:string}>} */
+    /** @return array{state:string,score:array{value:int|null,coverage_percent:int,evaluated_checks:int,total_checks:int,label:string},findings:list<array{severity:string,title:string,detail:string,recommendation:string}>} */
     public static function build(?array $instanceStatus, ?array $metrics): array
     {
         $findings = [];
@@ -76,8 +77,11 @@ final class HealthGuidance
             && $configuration['memory_mib'] >= 8 && $configuration['memory_mib'] <= 64
             ? $configuration['memory_mib'] * 1024 * 1024
             : null;
+        $evaluatedChecks = 1;
+        $earnedChecks = 1; // A running state is verified by the account-scoped broker.
         if ($memoryLimitBytes !== null && is_int($metrics['memory_used_bytes'] ?? null)
             && $metrics['memory_used_bytes'] >= 0) {
+            ++$evaluatedChecks;
             $memoryPercent = ($metrics['memory_used_bytes'] / $memoryLimitBytes) * 100;
             if ($memoryPercent >= 85) {
                 $shownPercent = (string) (int) round($memoryPercent);
@@ -87,6 +91,8 @@ final class HealthGuidance
                     'detail' => 'The current Redis used-memory counter is about ' . $shownPercent . '% of the configured memory ceiling.',
                     'recommendation' => 'Review cache growth and eviction behavior. If the workload needs more capacity, ask your provider about the package limit before raising the setting.',
                 ];
+            } else {
+                ++$earnedChecks;
             }
         }
 
@@ -95,19 +101,24 @@ final class HealthGuidance
             ? $configuration['maxclients']
             : null;
         if ($clientLimit !== null && is_int($metrics['connected_clients'] ?? null)
-            && $metrics['connected_clients'] >= 0
-            && ($metrics['connected_clients'] / $clientLimit) >= 0.85) {
-            $findings[] = [
-                'severity' => 'warning',
-                'title' => 'Connected clients are near the configured limit',
-                'detail' => 'The current client count is at least 85% of the configured client ceiling.',
-                'recommendation' => 'Review application connection pooling and ask your provider before increasing the client ceiling.',
-            ];
+            && $metrics['connected_clients'] >= 0) {
+            ++$evaluatedChecks;
+            if (($metrics['connected_clients'] / $clientLimit) >= 0.85) {
+                $findings[] = [
+                    'severity' => 'warning',
+                    'title' => 'Connected clients are near the configured limit',
+                    'detail' => 'The current client count is at least 85% of the configured client ceiling.',
+                    'recommendation' => 'Review application connection pooling and ask your provider before increasing the client ceiling.',
+                ];
+            } else {
+                ++$earnedChecks;
+            }
         }
 
         $hits = $metrics['keyspace_hits'] ?? null;
         $misses = $metrics['keyspace_misses'] ?? null;
         if (is_int($hits) && $hits >= 0 && is_int($misses) && $misses >= 0 && ($hits + $misses) >= 100) {
+            ++$evaluatedChecks;
             $hitRatio = $hits / ($hits + $misses);
             if ($hitRatio < 0.5) {
                 $findings[] = [
@@ -116,27 +127,59 @@ final class HealthGuidance
                     'detail' => 'Since the current cache process started, fewer than half of the counted key lookups were hits.',
                     'recommendation' => 'Review whether the application is storing and reusing the intended cache entries. This cumulative ratio can change with workload and resets when the service restarts.',
                 ];
+            } else {
+                ++$earnedChecks;
             }
         }
 
+        $score = self::score($earnedChecks, $evaluatedChecks);
+
         if ($findings === []) {
+            if ($score['value'] === null) {
+                return self::result('unavailable', [[
+                    'severity' => 'info',
+                    'title' => 'There is not enough current data to score the cache',
+                    'detail' => 'Fewer than three of the four account-scoped health checks could be verified from current metrics and settings.',
+                    'recommendation' => 'Refresh after a current metrics sample is available. Ask your provider if settings or metrics remain unavailable.',
+                ]], $score);
+            }
             $findings[] = [
                 'severity' => 'info',
                 'title' => 'No current advisory thresholds were crossed',
                 'detail' => 'This check covers configured memory, connected clients, and the cumulative hit ratio when enough lookups are available.',
                 'recommendation' => 'Continue to review metrics over time. This result does not verify application connectivity or guarantee performance.',
             ];
-            return self::result('clear', $findings);
+            return self::result('clear', $findings, $score);
         }
 
-        return self::result('review', $findings);
+        return self::result('review', $findings, $score);
     }
 
     /** @param list<array{severity:string,title:string,detail:string,recommendation:string}> $findings
-     *  @return array{state:string,findings:list<array{severity:string,title:string,detail:string,recommendation:string}>}
+     *  @param array{value:int|null,coverage_percent:int,evaluated_checks:int,total_checks:int,label:string}|null $score
+     *  @return array{state:string,score:array{value:int|null,coverage_percent:int,evaluated_checks:int,total_checks:int,label:string},findings:list<array{severity:string,title:string,detail:string,recommendation:string}>}
      */
-    private static function result(string $state, array $findings): array
+    private static function result(string $state, array $findings, ?array $score = null): array
     {
-        return ['state' => $state, 'findings' => $findings];
+        return ['state' => $state, 'score' => $score ?? self::score(0, 0), 'findings' => $findings];
+    }
+
+    /** @return array{value:int|null,coverage_percent:int,evaluated_checks:int,total_checks:int,label:string} */
+    private static function score(int $earnedChecks, int $evaluatedChecks): array
+    {
+        $value = $evaluatedChecks >= 3
+            ? (int) round(($earnedChecks / $evaluatedChecks) * 100)
+            : null;
+        $label = $value === null
+            ? 'Not enough current data'
+            : ($value >= 90 ? 'Strong signals' : ($value >= 70 ? 'Review suggested' : 'Needs attention'));
+
+        return [
+            'value' => $value,
+            'coverage_percent' => (int) round(($evaluatedChecks / self::SCORE_CHECKS) * 100),
+            'evaluated_checks' => $evaluatedChecks,
+            'total_checks' => self::SCORE_CHECKS,
+            'label' => $label,
+        ];
     }
 }
