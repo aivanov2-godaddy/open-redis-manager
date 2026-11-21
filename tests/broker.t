@@ -1205,39 +1205,42 @@ my $valkey_metrics_manifest;
     close($manifest_file) or die "close metrics manifest fixture: $!";
     $valkey_metrics_manifest = JSON::PP->new->decode($redis_metrics_manifest_json);
 }
-$valkey_metrics_manifest->{backend} = 'valkey';
-open(my $valkey_metrics_manifest_file, '>', $metrics_manifest_path)
-    or die "write Valkey metrics manifest fixture: $!";
-print {$valkey_metrics_manifest_file} JSON::PP->new->canonical(1)->encode($valkey_metrics_manifest) . "\n";
-close($valkey_metrics_manifest_file) or die "close Valkey metrics manifest fixture: $!";
-chmod(0600, $metrics_manifest_path) or die "chmod Valkey metrics manifest fixture: $!";
-chown($<, $account->{gid}, $metrics_manifest_path) or die "chown Valkey metrics manifest fixture: $!";
-$metrics_info = join("\r\n",
-    'valkey_version:8.1.3', 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:3',
-    'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
-    'evicted_keys:12', 'total_commands_processed:72000', 'acl_access_denied_auth:9', '');
-my $valkey_metrics = $manager->dispatch('instance.metrics', $account);
-ok($valkey_metrics->{success} && $valkey_metrics->{memory_used_bytes} == 3145728,
-    'collect bounded account metrics from the selected Valkey backend');
-is_deeply($metrics_calls[-1], ['valkey', "$data_instances/ormtest/redis.sock"],
-    'probe Valkey metrics using the backend recorded in the trusted instance manifest');
-my $valkey_security_metrics = $manager->_read_security_metrics_snapshot($account);
-my $valkey_security_values = ref($valkey_security_metrics) eq 'HASH'
-    ? [@{$valkey_security_metrics}{qw(evicted_keys total_commands_processed acl_access_denied_auth)}]
-    : undef;
-is_deeply($valkey_security_values, [12, 72000, 9],
-    'retain Valkey INFO security counters in the root-owned counter snapshot');
-ok(ref($valkey_security_metrics) eq 'HASH' && $valkey_security_metrics->{available} == 1
-    && $valkey_security_metrics->{auth_available} == 1
-    && !defined($valkey_security_metrics->{window_seconds})
-    && !exists($valkey_metrics->{evicted_keys}) && !exists($valkey_metrics->{acl_access_denied_auth}),
-    'keep a Valkey counter baseline unknown until a second sample and exclude raw counters from the account response');
-open(my $restore_metrics_manifest_file, '>', $metrics_manifest_path)
-    or die "restore Redis metrics manifest fixture: $!";
-print {$restore_metrics_manifest_file} $redis_metrics_manifest_json;
-close($restore_metrics_manifest_file) or die "close restored Redis metrics manifest fixture: $!";
-chmod(0600, $metrics_manifest_path) or die "chmod restored Redis metrics manifest fixture: $!";
-chown($<, $account->{gid}, $metrics_manifest_path) or die "chown restored Redis metrics manifest fixture: $!";
+{
+    local $manager->{binary_probe} = sub { return 1; };
+    $valkey_metrics_manifest->{backend} = 'valkey';
+    open(my $valkey_metrics_manifest_file, '>', $metrics_manifest_path)
+        or die "write Valkey metrics manifest fixture: $!";
+    print {$valkey_metrics_manifest_file} JSON::PP->new->canonical(1)->encode($valkey_metrics_manifest) . "\n";
+    close($valkey_metrics_manifest_file) or die "close Valkey metrics manifest fixture: $!";
+    chmod(0600, $metrics_manifest_path) or die "chmod Valkey metrics manifest fixture: $!";
+    chown($<, $account->{gid}, $metrics_manifest_path) or die "chown Valkey metrics manifest fixture: $!";
+    $metrics_info = join("\r\n",
+        'valkey_version:8.1.3', 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:3',
+        'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
+        'evicted_keys:12', 'total_commands_processed:72000', 'acl_access_denied_auth:9', '');
+    my $valkey_metrics = $manager->dispatch('instance.metrics', $account);
+    ok($valkey_metrics->{success} && $valkey_metrics->{memory_used_bytes} == 3145728,
+        'collect bounded account metrics from the selected Valkey backend');
+    is_deeply($metrics_calls[-1], ['valkey', "$data_instances/ormtest/redis.sock"],
+        'probe Valkey metrics using the backend recorded in the trusted instance manifest');
+    my $valkey_security_metrics = $manager->_read_security_metrics_snapshot($account);
+    my $valkey_security_values = ref($valkey_security_metrics) eq 'HASH'
+        ? [@{$valkey_security_metrics}{qw(evicted_keys total_commands_processed acl_access_denied_auth)}]
+        : undef;
+    is_deeply($valkey_security_values, [12, 72000, 9],
+        'retain Valkey INFO security counters in the root-owned counter snapshot');
+    ok(ref($valkey_security_metrics) eq 'HASH' && $valkey_security_metrics->{available} == 1
+        && $valkey_security_metrics->{auth_available} == 1
+        && !defined($valkey_security_metrics->{window_seconds})
+        && !exists($valkey_metrics->{evicted_keys}) && !exists($valkey_metrics->{acl_access_denied_auth}),
+        'keep a Valkey counter baseline unknown until a second sample and exclude raw counters from the account response');
+    open(my $restore_metrics_manifest_file, '>', $metrics_manifest_path)
+        or die "restore Redis metrics manifest fixture: $!";
+    print {$restore_metrics_manifest_file} $redis_metrics_manifest_json;
+    close($restore_metrics_manifest_file) or die "close restored Redis metrics manifest fixture: $!";
+    chmod(0600, $metrics_manifest_path) or die "chmod restored Redis metrics manifest fixture: $!";
+    chown($<, $account->{gid}, $metrics_manifest_path) or die "chown restored Redis metrics manifest fixture: $!";
+}
 $metrics_info = $last_good_info;
 my $metrics_frame = '{"operation":"instance.metrics","version":1}' . "\n";
 my $metrics_response = Orm::Broker::Handler->handle_frame($metrics_frame, $account->{uid}, $resolver, $manager);
