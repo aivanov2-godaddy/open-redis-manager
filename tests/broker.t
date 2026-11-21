@@ -1099,6 +1099,8 @@ is_deeply([@{$measured_security_sample}{qw(auth_failures_delta auth_window_secon
     'derive anonymous backend authentication-failure deltas over their own bounded sample window');
 my $measured_fleet_summary = $manager->fleet_summary([$account]);
 ok($measured_fleet_summary && $measured_fleet_summary->{metrics}->{rate_accounts} == 1
+    && $measured_fleet_summary->{backend_counts}->{redis} == 1
+    && $measured_fleet_summary->{backend_counts}->{valkey} == 0
     && $measured_fleet_summary->{metrics}->{eviction_activity_accounts} == 1
     && $measured_fleet_summary->{metrics}->{max_evictions_per_window} == 2
     && $measured_fleet_summary->{metrics}->{max_operations_per_second} == 5
@@ -1109,6 +1111,40 @@ ok($measured_fleet_summary && $measured_fleet_summary->{metrics}->{rate_accounts
     && $measured_fleet_summary->{metrics}->{max_auth_failures_per_window} == 7
     && $measured_fleet_summary->{metrics}->{auth_rate_window_min_seconds} == 3600,
     'aggregate only bounded per-account counter rates and their evidence window for root WHM');
+my $empty_fleet_summary = $manager->fleet_summary([]);
+is_deeply($empty_fleet_summary->{backend_counts}, { redis => 0, valkey => 0 },
+    'report zero Redis and Valkey accounts for an empty managed fleet');
+my $backend_count_manifest_path = $manager->_manifest_path($account->{name});
+my $redis_backend_manifest;
+{
+    local $/;
+    open(my $manifest_file, '<', $backend_count_manifest_path)
+        or die "read backend-count manifest fixture: $!";
+    $redis_backend_manifest = JSON::PP->new->decode(<$manifest_file>);
+    close($manifest_file) or die "close backend-count manifest fixture: $!";
+}
+{
+    local $manager->{binary_probe} = sub { return 1; };
+    $redis_backend_manifest->{backend} = 'valkey';
+    open(my $manifest_file, '>', $backend_count_manifest_path)
+        or die "write Valkey backend-count manifest fixture: $!";
+    print {$manifest_file} JSON::PP->new->canonical(1)->encode($redis_backend_manifest) . "\n";
+    close($manifest_file) or die "close Valkey backend-count manifest fixture: $!";
+    chmod(0600, $backend_count_manifest_path) or die "chmod Valkey backend-count manifest fixture: $!";
+    chown($<, $account->{gid}, $backend_count_manifest_path)
+        or die "chown Valkey backend-count manifest fixture: $!";
+    my $valkey_fleet_summary = $manager->fleet_summary([$account]);
+    is_deeply($valkey_fleet_summary->{backend_counts}, { redis => 0, valkey => 1 },
+        'count a managed Valkey account from its validated manifest');
+    $redis_backend_manifest->{backend} = 'redis';
+    open(my $restore_manifest_file, '>', $backend_count_manifest_path)
+        or die "restore Redis backend-count manifest fixture: $!";
+    print {$restore_manifest_file} JSON::PP->new->canonical(1)->encode($redis_backend_manifest) . "\n";
+    close($restore_manifest_file) or die "close restored Redis backend-count manifest fixture: $!";
+    chmod(0600, $backend_count_manifest_path) or die "chmod restored Redis backend-count manifest fixture: $!";
+    chown($<, $account->{gid}, $backend_count_manifest_path)
+        or die "chown restored Redis backend-count manifest fixture: $!";
+}
 my @security_metrics_stat = stat($security_metrics_path);
 is($security_metrics_stat[4], $<, 'keep the security counter snapshot owned by the privileged manager');
 is($security_metrics_stat[2] & 0777, 0600, 'keep the security counter snapshot private to root');

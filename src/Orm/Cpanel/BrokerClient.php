@@ -730,7 +730,7 @@ final class BrokerClient
         return $decoded;
     }
 
-    /** @return array{success:true,version:1,account_count:int,managed_count:int,unconfigured_count:int,unverified_count:int,state_counts:array<string,int>,metrics:array<string,int>,partial:bool}|null */
+    /** @return array{success:true,version:1,account_count:int,managed_count:int,backend_counts:?array{redis:int,valkey:int},unconfigured_count:int,unverified_count:int,state_counts:array<string,int>,metrics:array<string,int>,partial:bool}|null */
     public function requestFleetSummary(): ?array
     {
         $request = "{\"operation\":\"fleet.summary\",\"version\":1}\n";
@@ -752,7 +752,13 @@ final class BrokerClient
         }
         $keys = array_keys($decoded);
         sort($keys);
-        if ($keys !== ['account_count', 'managed_count', 'metrics', 'partial', 'state_counts', 'success', 'unconfigured_count', 'unverified_count', 'version']) {
+        $expectedKeys = ['account_count', 'managed_count', 'metrics', 'partial', 'state_counts', 'success', 'unconfigured_count', 'unverified_count', 'version'];
+        $hasBackendCounts = array_key_exists('backend_counts', $decoded);
+        if ($hasBackendCounts) {
+            $expectedKeys[] = 'backend_counts';
+            sort($expectedKeys);
+        }
+        if ($keys !== $expectedKeys) {
             return null;
         }
         foreach (['account_count', 'managed_count', 'unconfigured_count', 'unverified_count'] as $field) {
@@ -762,6 +768,25 @@ final class BrokerClient
         }
         if ($decoded['managed_count'] + $decoded['unconfigured_count'] + $decoded['unverified_count'] !== $decoded['account_count']) {
             return null;
+        }
+        if ($hasBackendCounts) {
+            if (!is_array($decoded['backend_counts'])) {
+                return null;
+            }
+            $backendKeys = array_keys($decoded['backend_counts']);
+            sort($backendKeys);
+            if ($backendKeys !== ['redis', 'valkey']) {
+                return null;
+            }
+            foreach (['redis', 'valkey'] as $backend) {
+                if (!is_int($decoded['backend_counts'][$backend]) || $decoded['backend_counts'][$backend] < 0
+                    || $decoded['backend_counts'][$backend] > $decoded['managed_count']) {
+                    return null;
+                }
+            }
+            if ($decoded['backend_counts']['redis'] + $decoded['backend_counts']['valkey'] !== $decoded['managed_count']) {
+                return null;
+            }
         }
         $stateKeys = ['failed', 'running', 'starting', 'stopped', 'stopping', 'unavailable'];
         if (!is_array($decoded['state_counts']) || array_keys($decoded['state_counts']) !== $stateKeys) {
@@ -876,6 +901,7 @@ final class BrokerClient
                 return null;
             }
         }
+        $decoded['backend_counts'] ??= null;
         return $decoded;
     }
 

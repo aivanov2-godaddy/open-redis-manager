@@ -636,8 +636,9 @@ $summaryClient = new BrokerClient(static function (string $request) use (&$summa
 });
 $summaryResult = $summaryClient->requestFleetSummary();
 $assert($summaryRequests[0] === "{\"operation\":\"fleet.summary\",\"version\":1}\n"
-    && ($summaryResult['partial'] ?? false) && $summaryResult['metrics']['missing_accounts'] === 1,
-    'Request the root fleet summary and preserve missing data as explicitly partial.');
+    && ($summaryResult['partial'] ?? false) && $summaryResult['metrics']['missing_accounts'] === 1
+    && array_key_exists('backend_counts', $summaryResult) && $summaryResult['backend_counts'] === null,
+    'Request the root fleet summary, preserve missing data as partial, and normalize legacy broker counts to unavailable.');
 $unsafeSummary = new BrokerClient(static fn (string $request): string =>
     str_replace('"partial":true', '"partial":true,"secret":"x"', $summaryResponse));
 $assert($unsafeSummary->requestFleetSummary() === null, 'Reject extra fields in the fleet summary response.');
@@ -648,12 +649,26 @@ $extendedSummaryPayload['metrics'] = array_replace($extendedSummaryPayload['metr
     'rate_window_earliest_start_at' => 1794756400, 'rate_window_latest_end_at' => 1794760000,
     'rate_window_max_seconds' => 3600, 'rate_window_min_seconds' => 3600,
 ]);
+$extendedSummaryPayload['backend_counts'] = ['redis' => 1, 'valkey' => 1];
 $extendedSummaryResponse = json_encode($extendedSummaryPayload, JSON_THROW_ON_ERROR) . "\n";
 $extendedSummaryClient = new BrokerClient(static fn (string $request): string => $extendedSummaryResponse);
 $extendedSummaryResult = $extendedSummaryClient->requestFleetSummary();
 $assert(($extendedSummaryResult['metrics']['rate_accounts'] ?? null) === 1
-    && $extendedSummaryResult['metrics']['max_operations_per_second'] === 5,
-    'Parse optional bounded counter-rate aggregates while accepting legacy summaries too.');
+    && $extendedSummaryResult['metrics']['max_operations_per_second'] === 5
+    && $extendedSummaryResult['backend_counts'] === ['redis' => 1, 'valkey' => 1],
+    'Parse mixed Redis/Valkey counts and bounded counter-rate aggregates while accepting legacy summaries too.');
+$invalidBackendCountsPayload = $extendedSummaryPayload;
+$invalidBackendCountsPayload['backend_counts'] = ['redis' => 2, 'valkey' => 1];
+$invalidBackendCounts = new BrokerClient(static fn (string $request): string =>
+    json_encode($invalidBackendCountsPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($invalidBackendCounts->requestFleetSummary() === null,
+    'Reject backend totals that do not equal the verified managed-account count.');
+$extraBackendCountsPayload = $extendedSummaryPayload;
+$extraBackendCountsPayload['backend_counts']['other'] = 0;
+$extraBackendCounts = new BrokerClient(static fn (string $request): string =>
+    json_encode($extraBackendCountsPayload, JSON_THROW_ON_ERROR) . "\n");
+$assert($extraBackendCounts->requestFleetSummary() === null,
+    'Reject unknown backend-count keys.');
 $invalidRateSummaryPayload = $extendedSummaryPayload;
 $invalidRateSummaryPayload['metrics']['rate_accounts'] = 2;
 $invalidRateSummary = new BrokerClient(static fn (string $request): string =>

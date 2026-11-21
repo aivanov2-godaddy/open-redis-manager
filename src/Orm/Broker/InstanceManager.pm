@@ -231,6 +231,7 @@ sub fleet_summary {
     return undef if ref($accounts) ne 'ARRAY' || @{$accounts} > $MAX_FLEET_SUMMARY_ACCOUNTS;
     my %seen;
     my @managed;
+    my %backendCounts = (redis => 0, valkey => 0);
     my $unconfigured = 0;
     my $unverified = 0;
     for my $account (@{$accounts}) {
@@ -249,6 +250,7 @@ sub fleet_summary {
             next;
         }
         push @managed, { account => $account, manifest => $manifest };
+        ++$backendCounts{$manifest->{backend}};
     }
 
     my @names = map { $_->{account}->{name} } @managed;
@@ -356,6 +358,7 @@ sub fleet_summary {
     return {
         account_count => scalar(@{$accounts}),
         managed_count => scalar(@managed),
+        backend_counts => \%backendCounts,
         unconfigured_count => $unconfigured,
         unverified_count => $unverified,
         state_counts => \%states,

@@ -14,6 +14,9 @@ $cpanel = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/inde
 $assert(is_string($whm) && is_string($cpanel), 'read the installed WHM and cPanel interfaces');
 $assert(str_contains($whm, "requestFleetSummary()") && str_contains($whm, "'fleet.summary'"),
     'request fleet aggregates only through the root WHM POST action');
+$assert(str_contains($whm, 'Managed ORM accounts') && str_contains($whm, "\$fleetSummary['backend_counts']")
+    && str_contains($whm, 'Load root fleet summary') && str_contains($whm, 'Root-only aggregate'),
+    'show backend-specific managed account counts only from a loaded root fleet summary');
 $assert(str_contains($whm, "'security.policy.update'")
     && str_contains($whm, 'WhmSecurityReportPolicyStore')
     && str_contains($whm, 'Configure report-only thresholds')
