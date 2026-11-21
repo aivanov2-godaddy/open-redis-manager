@@ -1,7 +1,7 @@
 # Unreleased development notes
 
 **Updated:** 2026-11-21
-**Release:** `0.1.0-rc.4` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
+**Release:** `0.1.0-rc.5` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
 
 These notes distinguish repository implementation from deployment readiness. A feature can exist in the code while remaining experimental for cPanel deployments.
 
@@ -27,6 +27,7 @@ These notes distinguish repository implementation from deployment readiness. A f
 - Root-only WHM signed-release preview and apply for manually staged bundles: signature and digest verification, explicit conflict-free confirmation, candidate-bound asynchronous transaction jobs, bounded status, and recovery-required reporting. Existing installs must have an exact v3 manifest; v1/v2 manifest adoption only succeeds for an exact match. Apply verifies the installed version, complete managed-file manifest, WHM registration, and the broker's prior service state; when active it also checks the root-owned socket type and permissions. Live disposable cPanel validation remains open.
 - Offline release bundle builder for clean, version-matched Git checkouts. It signs bounded metadata with an external RSA private key, derives the public key, validates the archive, and refuses dirty source, unsafe key/output paths, and overwriting an existing bundle. It does not automate publishing or key rotation.
 - Optional root-managed provider event delivery signs a fixed allowlist of lifecycle and policy events, queues them locally for bounded retries, and sends them through a separate HTTPS worker. It is disabled by default, requires Perl `IO::Socket::SSL`, and does not send secrets or arbitrary account data. Live receiver delivery remains unvalidated.
+- Broker and provider-event systemd units tolerate missing event storage on upgrades; the broker reads provider-event configuration without receiving write access to that file. This avoids service startup failures on installations upgrading from builds that did not create the event paths.
 - Signed release metadata v2 binds the exact source commit and declares `state_migrations|none`; the verifier and WHM preview reject unsupported state migrations and display both values before confirmation. Persistent-state transforms require a separate reviewed updater path.
 - Exact pre-existing root-owned candidate files missing from an installed v3 manifest can be explicitly reviewed and adopted without rewriting them. Preview and apply require matching fixed path, regular-file type, mode, owner, and signed digest; interrupted recovery preserves adopted files while restoring the prior manifest.
 - Root-owned unmanifested files that match the signed candidate after CRLF-to-LF normalization can be explicitly reviewed and normalized to the signed bytes. Apply snapshots the original bytes, and interrupted recovery restores them.
