@@ -11,6 +11,7 @@ final class BrokerClient
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
     private const MAX_RESPONSE_BYTES = 262144;
     private const MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
+    private const DIAGNOSTIC_COMMAND_CLASSES = ['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'dbsize'];
     private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
@@ -958,14 +959,17 @@ final class BrokerClient
         return $decoded;
     }
 
-    /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,state?:string,diagnostics?:array<string,int|string>,error?:string}|null */
-    public function diagnoseFleetAccount(string $username): ?array
+    /** @return array{success:bool,version:int,username?:string,command_class?:string,action?:string,audit_logged?:bool,state?:string,result?:array<string,int|string>,error?:string}|null */
+    public function diagnoseFleetAccount(string $username, string $commandClass): ?array
     {
         if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1) {
             return null;
         }
+        if (!in_array($commandClass, self::DIAGNOSTIC_COMMAND_CLASSES, true)) {
+            return null;
+        }
         $request = json_encode(
-            ['operation' => 'fleet.diagnostics', 'username' => $username, 'version' => 1],
+            ['command_class' => $commandClass, 'operation' => 'fleet.diagnostics', 'username' => $username, 'version' => 1],
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         ) . "\n";
         $response = $this->exchange === null
@@ -986,10 +990,11 @@ final class BrokerClient
         $keys = array_keys($decoded);
         sort($keys);
         if ($decoded['success']) {
-            if ($keys !== ['action', 'audit_logged', 'diagnostics', 'state', 'success', 'username', 'version']
-                || ($decoded['action'] ?? null) !== 'diagnostics.read' || ($decoded['username'] ?? null) !== $username
+            if ($keys !== ['action', 'audit_logged', 'command_class', 'result', 'state', 'success', 'username', 'version']
+                || ($decoded['action'] ?? null) !== ('diagnostics.' . $commandClass)
+                || ($decoded['command_class'] ?? null) !== $commandClass || ($decoded['username'] ?? null) !== $username
                 || ($decoded['state'] ?? null) !== 'running' || !is_bool($decoded['audit_logged'] ?? null)
-                || !self::validFleetDiagnostics($decoded['diagnostics'] ?? null)) {
+                || !self::validDiagnosticCommandResult($commandClass, $decoded['result'] ?? null)) {
                 return null;
             }
             return $decoded;
@@ -1005,7 +1010,7 @@ final class BrokerClient
             ], true)) {
             return null;
         }
-        if (isset($decoded['action']) && ($decoded['action'] !== 'diagnostics.read'
+        if (isset($decoded['action']) && ($decoded['action'] !== ('diagnostics.' . $commandClass)
             || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null))) {
             return null;
         }
@@ -1014,7 +1019,8 @@ final class BrokerClient
             'error' => $decoded['error'],
             'version' => 1,
             ...(isset($decoded['action']) ? [
-                'action' => 'diagnostics.read',
+                'action' => 'diagnostics.' . $commandClass,
+                'command_class' => $commandClass,
                 'username' => $username,
                 'audit_logged' => $decoded['audit_logged'],
             ] : []),
@@ -1164,35 +1170,46 @@ final class BrokerClient
         return is_array($decoded) ? $decoded : null;
     }
 
-    private static function validFleetDiagnostics(mixed $diagnostics): bool
+    private static function validDiagnosticCommandResult(string $commandClass, mixed $result): bool
     {
-        if (!is_array($diagnostics)) {
+        if (!is_array($result)) {
             return false;
         }
-        $expected = [
-            'backend', 'blocked_clients', 'commands_per_second', 'connected_clients', 'database_keys',
-            'evicted_keys', 'expired_keys', 'keyspace_hits', 'keyspace_misses', 'maxclients', 'maxmemory_bytes',
-            'memory_peak_bytes', 'memory_used_bytes', 'server_version', 'uptime_seconds',
-        ];
-        $keys = array_keys($diagnostics);
+        $expected = match ($commandClass) {
+            'ping' => ['response'],
+            'dbsize' => ['database_keys'],
+            'info_server' => ['server_version', 'uptime_seconds'],
+            'info_memory' => ['maxmemory_bytes', 'memory_peak_bytes', 'memory_used_bytes'],
+            'info_clients' => ['blocked_clients', 'connected_clients', 'maxclients'],
+            'info_stats' => ['commands_per_second', 'evicted_keys', 'expired_keys', 'keyspace_hits', 'keyspace_misses'],
+            default => [],
+        };
+        $keys = array_keys($result);
         sort($keys);
-        if ($keys !== $expected || !in_array($diagnostics['backend'], ['redis', 'valkey'], true)
-            || !is_string($diagnostics['server_version'])
-            || preg_match('/\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/', $diagnostics['server_version']) !== 1) {
+        sort($expected);
+        if ($expected === [] || $keys !== $expected) {
+            return false;
+        }
+        if ($commandClass === 'ping') {
+            return ($result['response'] ?? null) === 'PONG';
+        }
+        if ($commandClass === 'info_server' && (!is_string($result['server_version'] ?? null)
+            || preg_match('/\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/', $result['server_version']) !== 1)) {
             return false;
         }
         foreach ($expected as $field) {
-            if (in_array($field, ['backend', 'server_version'], true)) {
+            if ($field === 'server_version') {
                 continue;
             }
-            if (!is_int($diagnostics[$field]) || $diagnostics[$field] < 0
-                || $diagnostics[$field] > self::MAX_DIAGNOSTIC_INTEGER) {
+            if (!is_int($result[$field]) || $result[$field] < 0 || $result[$field] > self::MAX_DIAGNOSTIC_INTEGER) {
                 return false;
             }
         }
-        return $diagnostics['memory_peak_bytes'] >= $diagnostics['memory_used_bytes']
-            && $diagnostics['connected_clients'] <= $diagnostics['maxclients']
-            && $diagnostics['maxclients'] > 0 && $diagnostics['maxclients'] <= 100000;
+        return ($commandClass !== 'info_memory'
+                || $result['memory_peak_bytes'] >= $result['memory_used_bytes'])
+            && ($commandClass !== 'info_clients'
+                || ($result['maxclients'] > 0 && $result['maxclients'] <= 100000
+                    && $result['connected_clients'] <= $result['maxclients']));
     }
 
     /** @return array{success:bool,version:int,action?:string,audit_logged?:bool,state?:string,username?:string,error?:string}|null */

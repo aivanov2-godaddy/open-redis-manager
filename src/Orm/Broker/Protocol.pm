@@ -21,8 +21,8 @@ sub parse_request {
     if ($frame =~ /\A\{"operation":"fleet\.summary","version":1\}\n\z/) {
         return { operation => 'fleet.summary', version => 1 };
     }
-    if ($frame =~ /\A\{"operation":"fleet\.diagnostics","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
-        return { operation => 'fleet.diagnostics', username => $1, version => 1 };
+    if ($frame =~ /\A\{"command_class":"(ping|info_server|info_memory|info_clients|info_stats|dbsize)","operation":"fleet\.diagnostics","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
+        return { command_class => $1, operation => 'fleet.diagnostics', username => $2, version => 1 };
     }
     if ($frame =~ /\A\{"operation":"fleet\.recovery\.scan","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.recovery.scan', username => $1, version => 1 };

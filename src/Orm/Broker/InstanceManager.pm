@@ -673,6 +673,84 @@ sub read_diagnostics {
     };
 }
 
+sub read_diagnostic_command {
+    my ($self, $account, $command_class) = @_;
+    return _failure('invalid_request') if !_valid_account($account)
+        || !defined($command_class) || ref($command_class)
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)\z/;
+    my $status = $self->status($account);
+    return $status if ref($status) ne 'HASH' || !$status->{success};
+    return _failure('not_configured') if $status->{state} eq 'not_configured';
+    return _failure('not_running') if $status->{state} ne 'running';
+
+    my $manifest = $self->_read_manifest($account);
+    return _failure('diagnostics_unavailable') if ref($manifest) ne 'HASH'
+        || ($manifest->{backend} // '') !~ /\A(?:redis|valkey)\z/;
+    my $backend = $manifest->{backend};
+    my $socket = $manifest->{socket};
+    my $version_field = $backend eq 'valkey' ? 'valkey_version' : 'redis_version';
+    my ($result, @command);
+    if ($command_class eq 'ping') {
+        @command = ('PING');
+        my $response = $self->_run_redis_cli($backend, $socket, @command);
+        return _failure('diagnostics_unavailable') if !defined($response) || $response ne "PONG\n";
+        $result = { response => 'PONG' };
+    } elsif ($command_class eq 'dbsize') {
+        @command = ('DBSIZE');
+        my $response = $self->_run_redis_cli($backend, $socket, @command);
+        return _failure('diagnostics_unavailable') if !defined($response)
+            || $response !~ /\A(?:0|[1-9][0-9]{0,15})\n\z/
+            || substr($response, 0, -1) > $MAX_DIAGNOSTIC_INTEGER;
+        $result = { database_keys => 0 + substr($response, 0, -1) };
+    } else {
+        my %sections = (
+            info_server => ['server', { $version_field => 'version', uptime_in_seconds => 'integer' }],
+            info_memory => ['memory', { used_memory => 'integer', used_memory_peak => 'integer', maxmemory => 'integer' }],
+            info_clients => ['clients', { connected_clients => 'integer', blocked_clients => 'integer', maxclients => 'integer' }],
+            info_stats => ['stats', {
+                instantaneous_ops_per_sec => 'integer', keyspace_hits => 'integer', keyspace_misses => 'integer',
+                expired_keys => 'integer', evicted_keys => 'integer',
+            }],
+        );
+        my $section = $sections{$command_class};
+        @command = ('INFO', $section->[0]);
+        my $fields = _parse_info_fields($self->_run_redis_cli($backend, $socket, @command), $section->[1]);
+        return _failure('diagnostics_unavailable') if ref($fields) ne 'HASH';
+        if ($command_class eq 'info_server') {
+            return _failure('diagnostics_unavailable') if !defined($fields->{$version_field});
+            $result = { server_version => $fields->{$version_field}, uptime_seconds => $fields->{uptime_in_seconds} };
+        } elsif ($command_class eq 'info_memory') {
+            $result = {
+                maxmemory_bytes => $fields->{maxmemory},
+                memory_peak_bytes => $fields->{used_memory_peak},
+                memory_used_bytes => $fields->{used_memory},
+            };
+        } elsif ($command_class eq 'info_clients') {
+            $result = {
+                blocked_clients => $fields->{blocked_clients},
+                connected_clients => $fields->{connected_clients},
+                maxclients => $fields->{maxclients},
+            };
+        } else {
+            $result = {
+                commands_per_second => $fields->{instantaneous_ops_per_sec},
+                evicted_keys => $fields->{evicted_keys},
+                expired_keys => $fields->{expired_keys},
+                keyspace_hits => $fields->{keyspace_hits},
+                keyspace_misses => $fields->{keyspace_misses},
+            };
+        }
+    }
+
+    return {
+        command_class => $command_class,
+        result => $result,
+        state => 'running',
+        success => JSON::PP::true,
+        version => 1,
+    };
+}
+
 sub recovery_health_check {
     my ($self, $account) = @_;
     return _failure('invalid_request') if !_valid_account($account);

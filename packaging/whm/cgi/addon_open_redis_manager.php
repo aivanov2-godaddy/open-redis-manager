@@ -133,20 +133,30 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     }
 }
 $resellerSummary = null;
+$diagnosticCommands = [
+    'ping' => ['label' => 'PING', 'fields' => ['response' => 'Response']],
+    'info_server' => ['label' => 'INFO server', 'fields' => ['server_version' => 'Server version', 'uptime_seconds' => 'Uptime (seconds)']],
+    'info_memory' => ['label' => 'INFO memory', 'fields' => ['memory_used_bytes' => 'Memory used (bytes)', 'memory_peak_bytes' => 'Memory peak (bytes)', 'maxmemory_bytes' => 'Configured memory limit (bytes)']],
+    'info_clients' => ['label' => 'INFO clients', 'fields' => ['connected_clients' => 'Connected clients', 'blocked_clients' => 'Blocked clients', 'maxclients' => 'Client limit']],
+    'info_stats' => ['label' => 'INFO stats', 'fields' => ['commands_per_second' => 'Commands per second', 'keyspace_hits' => 'Keyspace hits', 'keyspace_misses' => 'Keyspace misses', 'expired_keys' => 'Expired keys', 'evicted_keys' => 'Evicted keys']],
+    'dbsize' => ['label' => 'DBSIZE', 'fields' => ['database_keys' => 'Keys in database 0']],
+];
 $fleetDiagnosticsMessage = null;
 $fleetDiagnosticsResult = null;
 $fleetDiagnosticsRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
     && ($_POST['orm_action'] ?? null) === 'fleet.diagnostics';
 if ($fleetDiagnosticsRequest) {
     $username = $_POST['username'] ?? null;
-    $result = is_string($username) ? $fleetClient->diagnoseFleetAccount($username) : null;
+    $commandClass = $_POST['command_class'] ?? null;
+    $result = is_string($username) && is_string($commandClass)
+        ? $fleetClient->diagnoseFleetAccount($username, $commandClass) : null;
     if ($result === null) {
         $fleetDiagnosticsMessage = ['type' => 'error', 'text' => 'The diagnostic request could not be verified. Refresh the page and try again.'];
     } elseif ($result['success']) {
         $fleetDiagnosticsResult = $result;
         $fleetDiagnosticsMessage = [
             'type' => 'success',
-            'text' => 'Read-only diagnostics completed for ' . $result['username'] . '.'
+            'text' => 'Read-only ' . $diagnosticCommands[$result['command_class']]['label'] . ' probe completed for ' . $result['username'] . '.'
                 . ($result['audit_logged'] ? ' The action was recorded in the system authentication log.'
                     : ' Warning: the result is available, but its audit record could not be confirmed.'),
         ];
@@ -857,24 +867,17 @@ WHM::header('Open Redis Manager', 0, 0);
         <p role="<?= $fleetRecoveryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetRecoveryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
       <?php if ($fleetDiagnosticsResult !== null): ?>
-        <?php $diagnosticLabels = [
-            'backend' => 'Backend', 'server_version' => 'Server version', 'uptime_seconds' => 'Uptime (seconds)',
-            'memory_used_bytes' => 'Memory used (bytes)', 'memory_peak_bytes' => 'Memory peak (bytes)',
-            'maxmemory_bytes' => 'Configured memory limit (bytes)', 'connected_clients' => 'Connected clients',
-            'blocked_clients' => 'Blocked clients', 'maxclients' => 'Client limit', 'commands_per_second' => 'Commands per second',
-            'database_keys' => 'Keys in database 0', 'keyspace_hits' => 'Keyspace hits',
-            'keyspace_misses' => 'Keyspace misses', 'expired_keys' => 'Expired keys', 'evicted_keys' => 'Evicted keys',
-        ]; ?>
-        <h3>Read-only diagnostics for <code><?= htmlspecialchars($fleetDiagnosticsResult['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></h3>
+        <?php $diagnosticDefinition = $diagnosticCommands[$fleetDiagnosticsResult['command_class']]; ?>
+        <h3>Read-only <?= htmlspecialchars($diagnosticDefinition['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> result for <code><?= htmlspecialchars($fleetDiagnosticsResult['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></h3>
         <table><tbody>
-          <?php foreach ($diagnosticLabels as $field => $label): ?>
+          <?php foreach ($diagnosticDefinition['fields'] as $field => $label): ?>
             <tr><th scope="row"><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
-              <td><?= htmlspecialchars(is_int($fleetDiagnosticsResult['diagnostics'][$field])
-                    ? number_format($fleetDiagnosticsResult['diagnostics'][$field])
-                    : (string) $fleetDiagnosticsResult['diagnostics'][$field], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td></tr>
+              <td><?= htmlspecialchars(is_int($fleetDiagnosticsResult['result'][$field])
+                    ? number_format($fleetDiagnosticsResult['result'][$field])
+                    : (string) $fleetDiagnosticsResult['result'][$field], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td></tr>
           <?php endforeach; ?>
         </tbody></table>
-        <p>Only fixed, read-only Redis/Valkey probes are used. This report contains counters and configuration metrics; it does not return keys, values, credentials, or raw command output.</p>
+        <p>Only the selected fixed, read-only Redis/Valkey command class was run. This view never returns keys, values, credentials, or raw command output.</p>
       <?php endif; ?>
         <?php if ($fleetSummaryMessage !== null): ?><p role="<?= $fleetSummaryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetSummaryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
         <form method="post" class="orm-fleet-actions">
@@ -981,7 +984,14 @@ WHM::header('Open Redis Manager', 0, 0);
                   <form method="post" class="orm-fleet-actions">
                     <input type="hidden" name="orm_action" value="fleet.diagnostics">
                     <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
-                    <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>>Run diagnostics</button>
+                    <label><span class="orm-visually-hidden">Read-only command for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
+                      <select name="command_class" aria-label="Read-only command for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                        <?php foreach ($diagnosticCommands as $commandClass => $definition): ?>
+                          <option value="<?= htmlspecialchars($commandClass, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars($definition['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    </label>
+                    <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?>>Run read-only probe</button>
                   </form>
                 </td>
                 <td>
@@ -1470,7 +1480,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>

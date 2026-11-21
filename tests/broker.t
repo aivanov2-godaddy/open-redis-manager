@@ -59,9 +59,13 @@ for my $operation (qw(backup.list backup.create)) {
 }
 is(parse_request('{"operation":"fleet.backup.create","username":"acct01","version":1}' . "\n")->
     { operation }, 'fleet.backup.create', 'accept a canonical root fleet backup request');
-my $fleet_diagnostics_request = '{"operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
-is(parse_request($fleet_diagnostics_request)->{operation}, 'fleet.diagnostics',
-    'accept a canonical root read-only diagnostics request');
+my $fleet_diagnostics_request = '{"command_class":"info_memory","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
+is(parse_request($fleet_diagnostics_request)->{command_class}, 'info_memory',
+    'accept a canonical fixed read-only diagnostics command class');
+for my $command_class (qw(ping info_server info_memory info_clients info_stats dbsize)) {
+    is(parse_request('{"command_class":"' . $command_class . '","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n")
+        ->{command_class}, $command_class, "accept the fixed $command_class diagnostic class");
+}
 my $fleet_restore = parse_request('{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n");
 ok($fleet_restore && $fleet_restore->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb'
     && $fleet_restore->{username} eq 'acct01', 'accept a canonical account-scoped fleet restore request');
@@ -102,7 +106,8 @@ for my $invalid (
     '{"operation":"fleet.backup.create","username":"acct01","path":"/tmp/x","version":1}' . "\n",
     '{"operation":"fleet.summary","version":1,"scope":"all"}' . "\n",
     '{"operation":"fleet.backup.batch.create","targets":["acct01","../root"],"version":1}' . "\n",
-    '{"command":"CONFIG SET dir /tmp","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n",
+    '{"command_class":"flushall","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n",
+    '{"command":"INFO","command_class":"info_memory","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n",
     '{"backup_id":"../x.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n",
     '{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"backup.restore","path":"/tmp/other.rdb","version":1}' . "\n",
     '{"operation":"fleet.migrate","target_backend":"redis","username":"acct01","version":1,"writes_quiesced":true}' . "\n",
@@ -637,6 +642,27 @@ ok((grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-inst
     is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [
         ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'], ['DBSIZE'],
     ], 'run only the fixed read-only Redis command and INFO section allowlist');
+    @diagnostics_commands = ();
+    my %expected_diagnostic_results = (
+        ping => { response => 'PONG' },
+        info_server => { server_version => '7.2.4', uptime_seconds => 3600 },
+        info_memory => { maxmemory_bytes => 67108864, memory_peak_bytes => 2097152, memory_used_bytes => 1048576 },
+        info_clients => { blocked_clients => 0, connected_clients => 3, maxclients => 100 },
+        info_stats => { commands_per_second => 12, evicted_keys => 2, expired_keys => 4, keyspace_hits => 90, keyspace_misses => 10 },
+        dbsize => { database_keys => 42 },
+    );
+    for my $command_class (qw(ping info_server info_memory info_clients info_stats dbsize)) {
+        my $probe = $manager->read_diagnostic_command($account, $command_class);
+        ok($probe->{success} && $probe->{command_class} eq $command_class,
+            "run selected $command_class probe and return its fixed class");
+        is_deeply($probe->{result}, $expected_diagnostic_results{$command_class},
+            "return only the normalized $command_class result fields");
+    }
+    is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [
+        ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'], ['DBSIZE'],
+    ], 'execute each selected class using only its fixed Redis arguments');
+    ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_memory', { memory_used_bytes => 'raw' }),
+        'reject nonnumeric output from a selected diagnostic class');
     is(Orm::Broker::InstanceManager::_parse_info_fields("counter:9000000000000001\n", { counter => 'integer' }), undef,
         'reject counters above the numeric response boundary shared with PHP');
     my $valkey_info = Orm::Broker::InstanceManager::_parse_info_fields(

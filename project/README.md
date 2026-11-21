@@ -31,6 +31,7 @@ Goal: implement the remaining documented administration workflows after the safe
 - [#71 — Add WHM security and abuse reporting](https://github.com/aivanov2-godaddy/open-redis-manager/issues/71) ([draft](issues/13-security-abuse-reports.md))
 - [#95 — Add configurable WHM defaults for new Redis and Valkey instances](https://github.com/aivanov2-godaddy/open-redis-manager/issues/95) ([draft](issues/14-whm-global-defaults.md))
 - [#143 — Add optional signed provider automation events](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143) ([draft](issues/15-provider-events.md))
+- [#159 — Add selectable safe WHM Redis diagnostic command classes](https://github.com/aivanov2-godaddy/open-redis-manager/issues/159) ([draft](issues/16-whm-diagnostic-console.md))
 
 Issue #2 now has read-only backend discovery, a WHM root-only backend choice for new instances, and a closed peer-credential broker for per-account lifecycle, live metrics, fixed setup presets and bounded configuration. PR #16 merged the initial lifecycle slice; live disposable cPanel validation is still required before production use.
 

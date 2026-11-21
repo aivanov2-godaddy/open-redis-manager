@@ -197,8 +197,11 @@ sub backup_batch {
 }
 
 sub diagnostics {
-    my ($self, $username) = @_;
-    my $action = 'diagnostics.read';
+    my ($self, $username, $command_class) = @_;
+    return _fleet_failure('invalid_request', $username, 'diagnostics.read', 0)
+        if !defined($command_class) || ref($command_class)
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)\z/;
+    my $action = 'diagnostics.' . $command_class;
     return _fleet_failure('invalid_request', $username, $action, 0)
         if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
 
@@ -208,14 +211,16 @@ sub diagnostics {
         return _fleet_failure('account_unavailable', $username, $action, $audited);
     }
 
-    my $result = eval { $self->{instance_manager}->read_diagnostics($account) }
-        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('read_diagnostics') };
+    my $result = eval { $self->{instance_manager}->read_diagnostic_command($account, $command_class) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('read_diagnostic_command') };
     if (ref($result) ne 'HASH') {
         my $audited = _audit_event($self, 0, $username, $action, 'diagnostics_unavailable', 'unavailable');
         return _fleet_failure('diagnostics_unavailable', $username, $action, $audited);
     }
     if ($result->{success}) {
-        if (($result->{state} // '') ne 'running' || !_valid_diagnostics($result->{diagnostics})) {
+        if (($result->{state} // '') ne 'running'
+            || ($result->{command_class} // '') ne $command_class
+            || !_valid_diagnostic_result($command_class, $result->{result})) {
             my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
             return _fleet_failure('operation_failed', $username, $action, $audited);
         }
@@ -223,7 +228,8 @@ sub diagnostics {
         return {
             action => $action,
             audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
-            diagnostics => $result->{diagnostics},
+            command_class => $command_class,
+            result => $result->{result},
             state => 'running',
             success => JSON::PP::true,
             username => $username,
@@ -609,7 +615,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.read|recovery\.scan|recovery\.start)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -618,7 +624,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:recovery\.scan|recovery\.start)\z/;
+        || $action !~ /\A(?:diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 
@@ -643,6 +649,40 @@ sub _valid_diagnostics {
     return 0 if $diagnostics->{memory_peak_bytes} < $diagnostics->{memory_used_bytes}
         || $diagnostics->{connected_clients} > $diagnostics->{maxclients}
         || $diagnostics->{maxclients} > 100000;
+    return 1;
+}
+
+sub _valid_diagnostic_result {
+    my ($command_class, $result) = @_;
+    return 0 if ref($result) ne 'HASH';
+    my %expected = (
+        ping => [qw(response)],
+        dbsize => [qw(database_keys)],
+        info_server => [qw(server_version uptime_seconds)],
+        info_memory => [qw(maxmemory_bytes memory_peak_bytes memory_used_bytes)],
+        info_clients => [qw(blocked_clients connected_clients maxclients)],
+        info_stats => [qw(commands_per_second evicted_keys expired_keys keyspace_hits keyspace_misses)],
+    );
+    my $fields = $expected{$command_class};
+    return 0 if !defined($fields) || join(',', sort keys %{$result}) ne join(',', sort @{$fields});
+    if ($command_class eq 'ping') {
+        return defined($result->{response}) && !ref($result->{response}) && $result->{response} eq 'PONG';
+    }
+    if ($command_class eq 'info_server') {
+        return 0 if !defined($result->{server_version}) || ref($result->{server_version})
+            || $result->{server_version} !~ /\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/;
+    }
+    my $max_integer = 9_000_000_000_000_000;
+    for my $field (@{$fields}) {
+        next if $field eq 'server_version' || $field eq 'response';
+        return 0 if !defined($result->{$field}) || ref($result->{$field})
+            || $result->{$field} !~ /\A(?:0|[1-9][0-9]{0,15})\z/ || $result->{$field} > $max_integer;
+    }
+    return 0 if $command_class eq 'info_memory'
+        && ($result->{memory_peak_bytes} < $result->{memory_used_bytes});
+    return 0 if $command_class eq 'info_clients'
+        && ($result->{maxclients} < 1 || $result->{maxclients} > 100000
+            || $result->{connected_clients} > $result->{maxclients});
     return 1;
 }
 

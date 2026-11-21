@@ -475,46 +475,57 @@ $assert($controlWithoutAudit->controlFleetAccount('demo', 'start')['audit_logged
     'Keep an unconfirmed audit status separate from a successful service request.');
 
 $diagnosticRequests = [];
-$diagnosticPayload = [
-    'backend' => 'redis', 'blocked_clients' => 0, 'commands_per_second' => 12, 'connected_clients' => 3,
-    'database_keys' => 42, 'evicted_keys' => 2, 'expired_keys' => 4, 'keyspace_hits' => 90,
-    'keyspace_misses' => 10, 'maxclients' => 100, 'maxmemory_bytes' => 67108864,
-    'memory_peak_bytes' => 2097152, 'memory_used_bytes' => 1048576, 'server_version' => '7.2.4', 'uptime_seconds' => 3600,
+$diagnosticPayloads = [
+    'ping' => ['response' => 'PONG'],
+    'info_server' => ['server_version' => '7.2.4', 'uptime_seconds' => 3600],
+    'info_memory' => ['memory_used_bytes' => 1048576, 'memory_peak_bytes' => 2097152, 'maxmemory_bytes' => 67108864],
+    'info_clients' => ['connected_clients' => 3, 'blocked_clients' => 0, 'maxclients' => 100],
+    'info_stats' => ['commands_per_second' => 12, 'keyspace_hits' => 90, 'keyspace_misses' => 10, 'expired_keys' => 4, 'evicted_keys' => 2],
+    'dbsize' => ['database_keys' => 42],
 ];
-$diagnosticClient = new BrokerClient(static function (string $request) use (&$diagnosticRequests, $diagnosticPayload): string {
+$diagnosticClient = new BrokerClient(static function (string $request) use (&$diagnosticRequests, $diagnosticPayloads): string {
     $diagnosticRequests[] = $request;
+    $commandClass = json_decode($request, true, 4, JSON_THROW_ON_ERROR)['command_class'];
     return json_encode([
-        'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+        'action' => 'diagnostics.' . $commandClass, 'audit_logged' => true,
+        'command_class' => $commandClass, 'result' => $diagnosticPayloads[$commandClass],
         'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
 });
-$diagnosticResult = $diagnosticClient->diagnoseFleetAccount('demo');
-$assert($diagnosticRequests[0] === "{\"operation\":\"fleet.diagnostics\",\"username\":\"demo\",\"version\":1}\n",
-    'Send only the fixed root diagnostics operation and validated account name.');
-$assert(($diagnosticResult['success'] ?? false) && $diagnosticResult['diagnostics']['database_keys'] === 42,
-    'Parse the strict structured diagnostics allowlist.');
-$assert($diagnosticClient->diagnoseFleetAccount('../root') === null && count($diagnosticRequests) === 1,
+$assert(($diagnosticClient->diagnoseFleetAccount('demo', 'dbsize')['result']['database_keys'] ?? null) === 42,
+    'Parse a normalized fixed diagnostics response.');
+foreach (['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'dbsize'] as $commandClass) {
+    $diagnosticResult = $diagnosticClient->diagnoseFleetAccount('demo', $commandClass);
+    $lastRequest = end($diagnosticRequests);
+    $assert(($diagnosticResult['success'] ?? false) && $diagnosticResult['command_class'] === $commandClass
+        && $lastRequest === "{\"command_class\":\"{$commandClass}\",\"operation\":\"fleet.diagnostics\",\"username\":\"demo\",\"version\":1}\n",
+        "Send only and validate the fixed {$commandClass} command class.");
+}
+$requestCountBeforeInvalid = count($diagnosticRequests);
+$assert($diagnosticClient->diagnoseFleetAccount('../root', 'ping') === null
+    && $diagnosticClient->diagnoseFleetAccount('demo', 'flushall') === null
+    && count($diagnosticRequests) === $requestCountBeforeInvalid,
     'Reject unsafe diagnostics targets before broker I/O.');
 $badDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
-    'action' => 'diagnostics.read', 'audit_logged' => true,
-    'diagnostics' => [...$diagnosticPayload, 'raw_output' => 'private data'],
+    'action' => 'diagnostics.dbsize', 'audit_logged' => true, 'command_class' => 'dbsize',
+    'result' => ['database_keys' => 42, 'raw_output' => 'private data'],
     'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
-$assert($badDiagnosticClient->diagnoseFleetAccount('demo') === null,
+$assert($badDiagnosticClient->diagnoseFleetAccount('demo', 'dbsize') === null,
     'Reject unexpected raw or unbounded fields from diagnostics responses.');
-$diagnosticPayload['database_keys'] = 9_000_000_000_000_000;
 $boundaryDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
-    'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+    'action' => 'diagnostics.dbsize', 'audit_logged' => true, 'command_class' => 'dbsize',
+    'result' => ['database_keys' => 9_000_000_000_000_000],
     'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
-$assert(($boundaryDiagnosticClient->diagnoseFleetAccount('demo')['diagnostics']['database_keys'] ?? null) === 9_000_000_000_000_000,
+$assert(($boundaryDiagnosticClient->diagnoseFleetAccount('demo', 'dbsize')['result']['database_keys'] ?? null) === 9_000_000_000_000_000,
     'Accept diagnostics counters at the shared numeric response boundary.');
-$diagnosticPayload['database_keys']++;
 $tooLargeDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
-    'action' => 'diagnostics.read', 'audit_logged' => true, 'diagnostics' => $diagnosticPayload,
+    'action' => 'diagnostics.dbsize', 'audit_logged' => true, 'command_class' => 'dbsize',
+    'result' => ['database_keys' => 9_000_000_000_000_001],
     'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
-$assert($tooLargeDiagnosticClient->diagnoseFleetAccount('demo') === null,
+$assert($tooLargeDiagnosticClient->diagnoseFleetAccount('demo', 'dbsize') === null,
     'Reject diagnostics counters above the shared numeric response boundary.');
 $recoveryRequests = [];
 $recoveryClient = new BrokerClient(static function (string $request) use (&$recoveryRequests): string {

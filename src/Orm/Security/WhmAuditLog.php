@@ -21,7 +21,9 @@ final class WhmAuditLog
     ];
     private const ACTIONS = [
         'start', 'stop', 'restart', 'backup.create', 'backup.restore', 'migration.to-valkey',
-        'diagnostics.read', 'recovery.scan', 'recovery.start', 'auth.enable', 'auth.rotate', 'auth.disable',
+        'diagnostics.read', 'diagnostics.ping', 'diagnostics.info_server', 'diagnostics.info_memory',
+        'diagnostics.info_clients', 'diagnostics.info_stats', 'diagnostics.dbsize',
+        'recovery.scan', 'recovery.start', 'auth.enable', 'auth.rotate', 'auth.disable',
         'provider.default', 'provider.package.save', 'provider.package.remove',
         'provider.reseller.save', 'provider.reseller.remove', 'provider.branding.save',
         'backend.select', 'provider.events.configure', 'policy.violation', 'security.report', 'security.thresholds.update',
