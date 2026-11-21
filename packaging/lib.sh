@@ -534,13 +534,12 @@ orm_adopt_current_install_manifest() {
 }
 
 orm_installed_files_match_current_package() {
-    local key source target mode source_owner installed_mode owner
+    local key source target mode installed_mode owner
     while IFS='|' read -r key source target mode; do
         [[ -f "$source" && ! -L "$source" && -f "$target" && ! -L "$target" ]] || return 1
-        source_owner="$(stat -c '%u' -- "$source")" || return 1
         owner="$(stat -c '%u' -- "$target")" || return 1
         installed_mode="$(stat -c '%a' -- "$target")" || return 1
-        [[ "$source_owner" == 0 && "$owner" == 0 && "$installed_mode" == "$mode" ]] || return 1
+        [[ "$owner" == 0 && "$installed_mode" == "$mode" ]] || return 1
         if [[ "$key" == whm_appconfig ]]; then
             orm_appconfig_matches_package "$target" || return 1
             continue
