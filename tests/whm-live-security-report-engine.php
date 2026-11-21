@@ -47,6 +47,37 @@ if (!$fleetVerified || !$reportGenerated || !$reportOnly || !$auditReadSucceeded
     exit(1);
 }
 
+$requirePodmanEvidence = getenv('ORM_LIVE_REQUIRE_PODMAN_EVIDENCE') === '1';
+if ($requirePodmanEvidence) {
+    $podman = is_array($fleet['podman_metrics'] ?? null) ? $fleet['podman_metrics'] : [];
+    $window = is_array($podman['counter_window'] ?? null) ? $podman['counter_window'] : [];
+    $findings = is_array($report['findings'] ?? null) ? array_column($report['findings'], null, 'category') : [];
+    $podmanEvidenceVerified = ($podman['version'] ?? null) === 2
+        && ($podman['success'] ?? null) === true
+        && ($podman['partial'] ?? true) === false
+        && ($podman['scan_complete'] ?? false) === true
+        && ($podman['reachable_count'] ?? 0) > 0
+        && ($window['status'] ?? null) === 'measured'
+        && ($window['process_count'] ?? 0) === ($podman['reachable_count'] ?? null)
+        && ($window['window_seconds'] ?? 0) > 0
+        && ($window['sampled_at'] ?? null) === $podman['sampled_at']
+        && in_array($findings['podman_eviction_rate']['severity'] ?? null, ['info', 'warning'], true)
+        && in_array($findings['podman_operation_rate']['severity'] ?? null, ['info', 'warning'], true)
+        && in_array($findings['podman_authentication_failures']['severity'] ?? null, ['info', 'warning', 'unknown'], true)
+        && !isset($findings['podman_counter_rates_unknown'])
+        && !isset($report['unmeasured']['ea_podman_counter_rates']);
+    if (!$podmanEvidenceVerified) {
+        fwrite(STDERR, "Podman live evidence check failed; details were withheld.\n");
+        exit(1);
+    }
+    printf(
+        "EA Podman live report evidence passed: %d continuity-matched process(es) contributed a bounded counter window; eviction, operation, and optional authentication findings were generated in report-only mode; partial=%s; audit source read succeeded.\n",
+        $window['process_count'],
+        ($report['partial'] ?? true) ? 'yes' : 'no'
+    );
+    exit(0);
+}
+
 $requireValkeyEvidence = getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1';
 if ($requireValkeyEvidence) {
     $metrics = is_array($fleet['metrics'] ?? null) ? $fleet['metrics'] : [];
