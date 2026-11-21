@@ -2,7 +2,7 @@
 
 ## Scope and source
 
-The public marketing, documentation, and update pages of UnderHost's cPanel Redis Manager were reviewed with REA on 2026-11-16. The public overview page was rechecked on 2026-11-20; it still identifies the product as v2.6.11. The new capture is recorded in the [REA evidence ledger](rea-evidence.md).
+The public marketing, documentation, and update pages of UnderHost's cPanel Redis Manager were reviewed with REA on 2026-11-16. The overview page was rechecked on 2026-11-20. All three public pages were rechecked on 2026-11-21; each still identifies the product as v2.6.11. The capture IDs and limits are recorded in the [REA evidence ledger](rea-evidence.md). Page-by-page summaries are indexed in [reference-site notes](reference-site/README.md).
 
 - [Product overview and screenshots](https://cpanelredismanager.com/index.php)
 - [Documentation](https://cpanelredismanager.com/documentation.php)
