@@ -242,6 +242,11 @@ sub handle_frame {
             $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 }
                 if ref($response) ne 'HASH';
             _emit_operation_event($event_emitter, $request, $response, $instance_manager, $account);
+            eval {
+                $instance_manager->audit_account_operation(
+                    $peer_uid, $account, $request->{operation}, $response,
+                ) if eval { $instance_manager->can('audit_account_operation') };
+            };
         } else {
             $response = { error => 'not_authorized', success => JSON::PP::false, version => 1 };
         }

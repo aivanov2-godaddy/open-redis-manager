@@ -89,6 +89,7 @@ sub new {
         config_set => $args{config_set},
         auth_probe => $args{auth_probe},
         auth_audit => $args{auth_audit},
+        account_operation_audit => $args{account_operation_audit},
         backup_create => $args{backup_create},
         atomic_write_call => $args{atomic_write_call},
         atomic_commit => $args{atomic_commit},
@@ -586,6 +587,43 @@ sub _auth_audit {
         closelog();
     };
     eval { closelog(); };
+}
+
+sub audit_account_operation {
+    my ($self, $actor_uid, $account, $operation, $response) = @_;
+    my %actions = map { $_ => 1 } qw(
+        instance.provision instance.configure instance.start instance.stop
+    );
+    return 0 if ref($account) ne 'HASH' || !_valid_account($account)
+        || !defined($actor_uid) || ref($actor_uid) || $actor_uid !~ /\A[0-9]{1,10}\z/
+        || $actor_uid != $account->{uid} || !defined($operation) || !$actions{$operation};
+
+    my $result = ref($response) eq 'HASH' && $response->{success} ? 'success' : 'failure';
+    my $state = ref($response) eq 'HASH' && defined($response->{state}) && !ref($response->{state})
+        && $response->{state} =~ /\A(?:running|stopped|starting|stopping|failed|unavailable|not_configured)\z/
+        ? $response->{state} : undef;
+    if (!defined($state)) {
+        my $status = eval { $self->status($account) };
+        $state = ref($status) eq 'HASH' && defined($status->{state}) && !ref($status->{state})
+            && $status->{state} =~ /\A(?:running|stopped|starting|stopping|failed|unavailable|not_configured)\z/
+            ? $status->{state} : 'unavailable';
+    }
+    if (ref($self->{account_operation_audit}) eq 'CODE') {
+        my $logged = eval {
+            $self->{account_operation_audit}->($actor_uid, $account->{name}, $operation, $result, $state)
+        };
+        return $logged ? 1 : 0;
+    }
+    my $logged = eval {
+        openlog('orm-broker', 'pid', 'authpriv');
+        syslog(LOG_NOTICE, 'account_operation actor_uid=%s account=%s action=%s result=%s state=%s',
+            $actor_uid, $account->{name}, $operation, $result, $state)
+            or die "syslog write failed";
+        closelog();
+        1;
+    };
+    eval { closelog(); };
+    return $logged ? 1 : 0;
 }
 
 sub _rotate_auth_locked {

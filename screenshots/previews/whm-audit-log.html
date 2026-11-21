@@ -21,17 +21,18 @@
         <div><label>From (UTC)</label><input type="date" value="2026-11-15"></div>
         <div><label>Through (UTC)</label><input type="date" value="2026-11-16"></div>
         <div><label>Account</label><input value="" placeholder="Any account or global"></div>
-        <div><label>Action</label><select><option>All actions</option><option>diagnostics.read</option></select></div>
+        <div><label>Action</label><select><option>All actions</option><option>instance.provision</option><option>instance.configure</option><option>instance.start</option><option>instance.stop</option><option>diagnostics.read</option></select></div>
         <div><label>Result</label><input value="" placeholder="Any result"></div>
         <button type="button">Search audit log</button>
       </form>
-      <div class="status"><div><div class="count">4 records in range · coverage is partial</div><div class="hint">Newest first · 50 records per page</div></div><button type="button">↓ &nbsp; Download normalized JSON</button></div>
-      <div class="chips"><span class="chip" style="margin-left:22px"><code>orm-broker</code> &nbsp; Complete · 3 recognized</span><span class="chip partial"><code>orm-whm</code> &nbsp; Partial · 2 recognized · 1 unrecognized</span></div>
+      <div class="status"><div><div class="count">5 records in range · coverage is partial</div><div class="hint">Newest first · 50 records per page</div></div><button type="button">↓ &nbsp; Download normalized JSON</button></div>
+      <div class="chips"><span class="chip" style="margin-left:22px"><code>orm-broker</code> &nbsp; Complete · 4 recognized</span><span class="chip partial"><code>orm-whm</code> &nbsp; Partial · 2 recognized · 1 unrecognized</span></div>
       <div class="notice">Some source data was unrecognized or unavailable. Treat these results as incomplete.</div>
       <div class="tablewrap">
         <table>
           <thead><tr><th>TIME (UTC)</th><th>SOURCE</th><th>ACTOR UID</th><th>ACCOUNT</th><th>ACTION</th><th>RESULT</th><th>STATE</th></tr></thead>
           <tbody>
+            <tr><td>2026-11-16 15:43:12</td><td><code>orm-broker</code></td><td>1004</td><td>acct02</td><td><code>instance.configure</code></td><td class="result">success</td><td>running</td></tr>
             <tr><td>2026-11-16 15:42:51</td><td><code>orm-whm</code></td><td>0</td><td>global</td><td><code>provider.package.save</code></td><td class="result">success</td><td>updated</td></tr>
             <tr><td>2026-11-16 15:41:07</td><td><code>orm-broker</code></td><td>1004</td><td>acct01</td><td><code>auth.rotate</code></td><td class="result">success</td><td>running</td></tr>
             <tr><td>2026-11-16 15:39:42</td><td><code>orm-whm</code></td><td>0</td><td>global</td><td><code>backend.select</code></td><td class="result">success</td><td>valkey</td></tr>
@@ -39,8 +40,8 @@
           </tbody>
         </table>
       </div>
-      <div class="foot"><span>4 normalized events · journal limits apply</span><span class="pager"><button type="button">Previous</button><span>Page 1 of 1</span><button type="button">Next</button></span></div>
-      <div class="coverage"><strong>Coverage and retention</strong><br>Only recognized events from the two ORM sources are shown. cPanel provisioning, configuration, start, and stop events are not included. Host journal retention controls how far back records exist. Raw messages, host paths, Redis data, and passwords are not shown or exported.</div>
+      <div class="foot"><span>5 normalized events · journal limits apply</span><span class="pager"><button type="button">Previous</button><span>Page 1 of 1</span><button type="button">Next</button></span></div>
+      <div class="coverage"><strong>Coverage and retention</strong><br>ORM-managed cPanel provisioning, configuration, start, and stop requests are included. EA Podman commands and other host activity are not. Host journal retention controls how far back records exist. Raw messages, settings, secrets, host paths, Redis data, and passwords are not shown or exported.</div>
     </section>
     <div class="caption">Synthetic preview · No live cPanel or journal data</div>
   </main>

@@ -408,6 +408,7 @@ my @auth_probe_calls;
 my $current_snapshot = 'synthetic RDB snapshot';
 my @restore_audit;
 my @auth_audit;
+my @account_operation_audit;
 my @rdb_check_calls;
 my $fail_config_get;
 my %runtime_settings = (memory_mib => 64, maxmemory_policy => 'allkeys-lru', maxclients => 100, timeout => 0);
@@ -451,6 +452,7 @@ my $manager = Orm::Broker::InstanceManager->new(
     },
     restore_audit => sub { push @restore_audit, [@_]; return 1; },
     auth_audit => sub { push @auth_audit, [@_]; return 1; },
+    account_operation_audit => sub { push @account_operation_audit, [@_]; return 1; },
     config_set => sub {
         my ($backend, $socket, $parameter, $value) = @_;
         push @config_calls, [$backend, $socket, $parameter, $value];
@@ -552,8 +554,18 @@ is_deeply($manager->dispatch('instance.status', $diskfull_account),
     { state => 'not_configured', success => JSON::PP::true, version => 1 },
     'leave the account unconfigured after partial state is rolled back');
 delete $manager->{atomic_write_call};
-my $provisioned = $manager->dispatch('instance.provision', $account);
+my $provision_frame = JSON::PP->new->canonical(1)->encode({ operation => 'instance.provision', version => 1 }) . "\n";
+my $provisioned = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $provision_frame, $account->{uid}, $resolver, $manager,
+));
 ok($provisioned->{success} && $provisioned->{state} eq 'running', 'provision and start a private account instance');
+is_deeply($account_operation_audit[-1], [$account->{uid}, 'ormtest', 'instance.provision', 'success', 'running'],
+    'audit cPanel provisioning with the kernel peer UID and normalized outcome only');
+my $account_audit_count = scalar @account_operation_audit;
+ok(!$manager->audit_account_operation($account->{uid} + 1, $account, 'instance.start', { success => 1, state => 'running' })
+    && !$manager->audit_account_operation($account->{uid}, $account, 'instance.metrics', { success => 1, state => 'running' })
+    && scalar(@account_operation_audit) == $account_audit_count,
+    'refuse mismatched actor UIDs and read-only actions at the account audit writer');
 is($provisioned->{preset}, 'generic', 'default new instances to the generic preset');
 my $instance_systemctl_call = $manager->{systemctl_call};
 $manager->{systemctl_call} = sub {
@@ -1416,10 +1428,12 @@ my $valkey_metrics_manifest;
 }
 $metrics_info = $last_good_info;
 my $metrics_frame = '{"operation":"instance.metrics","version":1}' . "\n";
+my $audit_count_before_read = scalar @account_operation_audit;
 my $metrics_response = Orm::Broker::Handler->handle_frame($metrics_frame, $account->{uid}, $resolver, $manager);
 my $decoded_metrics = JSON::PP->new->decode($metrics_response);
 ok($decoded_metrics->{success} && $decoded_metrics->{connected_clients} == 3,
     'route account metrics through peer-credential resolution');
+is(scalar @account_operation_audit, $audit_count_before_read, 'do not create account operation audit events for read-only metrics');
 my $history = $manager->dispatch('metrics.history', $account, undef, undef, undef, '24h');
 diag('initial history response: ' . JSON::PP->new->canonical(1)->encode($history))
     if !$history->{success} || !$history->{scheduled} || !@{$history->{history} // []};
@@ -1488,12 +1502,24 @@ is($manager->dispatch('metrics.history', $account, undef, undef, undef, '24h')->
     'reject malformed history instead of returning partial data');
 is($manager->dispatch('instance.status', { name => 'ormother', uid => $< + 1, gid => $account->{gid} })->{state},
     'not_configured', 'another account cannot see the first account manifest');
-is($manager->dispatch('instance.stop', $account)->{state}, 'stopped', 'stop the account-scoped unit');
+my $stop_frame = JSON::PP->new->canonical(1)->encode({ operation => 'instance.stop', version => 1 }) . "\n";
+my $stopped_by_handler = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $stop_frame, $account->{uid}, $resolver, $manager,
+));
+is($stopped_by_handler->{state}, 'stopped', 'stop the account-scoped unit through the authenticated handler');
+is_deeply($account_operation_audit[-1], [$account->{uid}, 'ormtest', 'instance.stop', 'success', 'stopped'],
+    'audit the cPanel stop request and final normalized state');
 my $stopped_metrics = $manager->dispatch('instance.metrics', $account);
 ok($stopped_metrics->{success} && $stopped_metrics->{stale} && $stopped_metrics->{retained}
     && $stopped_metrics->{memory_used_bytes} == 1048576,
     'show the last sample with a stale marker while the instance is stopped');
-is($manager->dispatch('instance.start', $account)->{state}, 'running', 'start the account-scoped unit');
+my $start_frame = JSON::PP->new->canonical(1)->encode({ operation => 'instance.start', version => 1 }) . "\n";
+my $started_by_handler = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $start_frame, $account->{uid}, $resolver, $manager,
+));
+is($started_by_handler->{state}, 'running', 'start the account-scoped unit through the authenticated handler');
+is_deeply($account_operation_audit[-1], [$account->{uid}, 'ormtest', 'instance.start', 'success', 'running'],
+    'audit the cPanel start request');
 my $settings = { memory_mib => 48, maxmemory_policy => 'allkeys-lfu', maxclients => 50, timeout => 60 };
 my $config_calls_before_invalid = scalar @config_calls;
 is($manager->dispatch('instance.configure', $account, undef, { %{$settings}, memory_mib => 65 })->{error},
@@ -1521,12 +1547,21 @@ my $handler_config = Orm::Broker::Handler->handle_frame($config_request, $accoun
 my $decoded_config = JSON::PP->new->decode($handler_config);
 ok($decoded_config->{success} && $decoded_config->{config}->{memory_mib} == 48,
     'route only allowlisted settings through the peer-credential handler');
+is_deeply($account_operation_audit[-1], [$account->{uid}, 'ormtest', 'instance.configure', 'success', 'running'],
+    'audit successful cPanel configuration without recording submitted setting values');
 my $handler_settings = { memory_mib => 48, maxmemory_policy => 'allkeys-lru', maxclients => 50, timeout => 0 };
 is_deeply(\%runtime_settings, $handler_settings, 'apply the canonical handler request values');
 $fail_config_once = 'timeout';
 my $failed_settings = { memory_mib => 56, maxmemory_policy => 'allkeys-lru', maxclients => 60, timeout => 90 };
-my $config_failure = $manager->dispatch('instance.configure', $account, undef, $failed_settings);
+my $failed_config_frame = JSON::PP->new->canonical(1)->encode({
+    %{$failed_settings}, operation => 'instance.configure', version => 1,
+}) . "\n";
+my $config_failure = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $failed_config_frame, $account->{uid}, $resolver, $manager,
+));
 is($config_failure->{error}, 'configuration_failed', 'report a rejected setting after restoring changed runtime values');
+is_deeply($account_operation_audit[-1], [$account->{uid}, 'ormtest', 'instance.configure', 'failure', 'running'],
+    'audit failed cPanel configuration without exposing raw error details or values');
 is($manager->dispatch('instance.status', $account)->{config}->{memory_mib}, 48,
     'preserve the saved configuration after a rolled-back update');
 is_deeply(\%runtime_settings, $handler_settings, 'restore the exact prior live values after a failed update');

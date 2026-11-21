@@ -1516,7 +1516,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
@@ -1576,7 +1576,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <?php endif; ?>
         <?php endif; ?>
         <h3>Coverage and retention</h3>
-        <p>Only recognized events retained by <code>orm-broker</code> and <code>orm-whm</code> are shown. cPanel provisioning, configuration, start, and stop requests are not included. Host journal retention and forwarding determine how far back records exist. Raw messages, command output, Redis keys/values, passwords, host paths, and other journal identifiers are never shown or exported.</p>
+        <p>Only recognized events retained by <code>orm-broker</code> and <code>orm-whm</code> are shown. ORM-managed cPanel provisioning, configuration, start, and stop requests are included from the version that introduced account-operation auditing; cPanel EA Podman commands and other host activity are not. Host journal retention and forwarding determine how far back records exist. Raw messages, command output, Redis keys/values, passwords, host paths, and other journal identifiers are never shown or exported.</p>
       <?php endif; ?>
     </section>
   <?php endif; ?>
