@@ -38,7 +38,15 @@ The opt-in lifecycle smoke exercises the cPanel page's actual SSO POST path for 
 python3 tests/cpanel-live-podman-lifecycle-smoke.py --user example --confirm-lifecycle
 ```
 
-The check reads the container ID and initial state from that account's authenticated page, runs only the fixed start/stop/restart actions, verifies the resulting page state after each request, and returns the container to its initial running/stopped state. It refuses unknown or unhealthy initial states. `--confirm-lifecycle` is required because the test stops the cache briefly. Output omits the account name, container ID, socket path, session URL, cookies, and page content. This check validates the cPanel HTTP/session path, not ORM-managed direct-service lifecycle or cross-account authorization.
+The check reads one container ID and its initial state from that account's authenticated page, runs only the fixed start/stop/restart actions, verifies the resulting page state after each request, and returns the container to its initial running/stopped state. It refuses ambiguous, unknown, or unhealthy selections. If the account has both Redis and Valkey, select one explicitly with `--backend redis` or `--backend valkey`; without a selector, a multi-container page is rejected. `--confirm-lifecycle` is required because the test stops the cache briefly. Output omits the account name, container ID, socket path, session URL, cookies, and page content. This check validates the cPanel HTTP/session path, not ORM-managed direct-service lifecycle or cross-account authorization.
+
+For example, to target an account-owned EA Podman Valkey container:
+
+```sh
+python3 tests/cpanel-live-podman-lifecycle-smoke.py --user example --backend valkey --confirm-lifecycle
+```
+
+The source-matched Valkey page lifecycle passed on the owner-designated test system; see the [sanitized live record](records/2026-11-21-cpanel-ea-valkey-web-lifecycle.md).
 
 ## Live two-account Podman web authorization
 

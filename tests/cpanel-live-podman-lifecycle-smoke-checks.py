@@ -20,11 +20,27 @@ def check(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-section = '''<section aria-labelledby="orm-podman-title">
+section = '''<section aria-labelledby="orm-podman-title"><article class="orm-preset-card">
 <input type="hidden" name="orm_podman_container" value="ea-redis62.example.01">
-<strong>Status:</strong> Reachable</section>'''
+<strong>Status:</strong> Reachable</article></section>'''
 check(SMOKE.parse_cache(section) == ("ea-redis62.example.01", "reachable"),
-      "parse only the authenticated page's supported account cache")
+      "parse one authenticated page's supported account cache")
+check(SMOKE.parse_cache(section, "redis") == ("ea-redis62.example.01", "reachable"),
+      "select the requested Redis backend")
+check(SMOKE.parse_cache(section, "valkey") is None,
+      "refuse a backend mismatch")
+multiple_backends = '''<section aria-labelledby="orm-podman-title">
+<article><input name="orm_podman_container" value="ea-redis62.example.01">
+<strong>Status:</strong> Reachable</article>
+<article><input name="orm_podman_container" value="ea-valkey72.example.01">
+<strong>Status:</strong> Socket missing</article></section>'''
+check(SMOKE.parse_cache(multiple_backends) is None,
+      "refuse ambiguous multi-backend pages without an explicit selector")
+check(SMOKE.parse_cache(multiple_backends, "valkey") ==
+      ("ea-valkey72.example.01", "socket missing"),
+      "select Valkey from a page that also lists Redis")
+check(SMOKE.page_diagnostic(multiple_backends, "valkey") == "podman_status_socket_missing",
+      "report status for the selected backend rather than the first cache")
 check(SMOKE.page_diagnostic(section) == "podman_status_reachable",
       "return only a fixed page-state diagnostic")
 check(SMOKE.page_diagnostic("<html>") == "podman_section_missing",
@@ -69,4 +85,4 @@ except ValueError:
     pass
 else:
     raise AssertionError("unhealthy state must not authorize mutations")
-print("cPanel live Podman lifecycle smoke assertions passed: 16")
+print("cPanel live Podman lifecycle smoke assertions passed: 21")

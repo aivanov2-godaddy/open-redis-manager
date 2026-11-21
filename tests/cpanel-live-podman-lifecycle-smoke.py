@@ -2,10 +2,11 @@
 """Authenticated cPanel SSO smoke for the account-owned EA Podman controls.
 
 Run as root on a disposable cPanel host. This check starts, stops, and restarts
-the first Redis/Valkey container rendered for the selected account, verifies
-each result through the account page, and restores the container's initial
-running/stopped state. The account, session URL, container ID, socket path, and
-page body stay in memory and are never printed or written to disk.
+one Redis/Valkey container rendered for the selected account, verifies each
+result through the account page, and restores the container's initial
+running/stopped state. Pass --backend when the account has multiple backends.
+The account, session URL, container ID, socket path, and page body stay in
+memory and are never printed or written to disk.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ CONTAINER = re.compile(
     r'<input\b(?=[^>]*\bname=["\']orm_podman_container["\'])'
     r'(?=[^>]*\bvalue=["\']([^"\']+)["\'])[^>]*>', re.IGNORECASE,
 )
+CACHE_CARD = re.compile(r'<article\b[^>]*>.*?</article>', re.IGNORECASE | re.DOTALL)
 STATUS = re.compile(r'<strong>\s*Status:\s*</strong>\s*([^<·]+)', re.IGNORECASE)
 VERIFIED_ACCOUNT = re.compile(
     r'<p\b[^>]*>\s*Verified cPanel account:\s*<code\b[^>]*>([^<]*)</code>\s*</p>',
@@ -66,33 +68,53 @@ class CpanelSessionRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(request, response, code, message, headers, new_url)
 
 
-def parse_cache(body: str) -> tuple[str, str] | None:
-    """Return the first page-rendered container ID and its sanitized status."""
+def parse_cache(body: str, backend: str | None = None) -> tuple[str, str] | None:
+    """Return one unambiguous page-rendered container and its sanitized status."""
+    if backend not in {None, "redis", "valkey"}:
+        return None
     section = PODMAN_SECTION.search(body)
     if section is None:
         return None
-    container = CONTAINER.search(section.group(0))
-    status = STATUS.search(section.group(0))
-    if container is None or status is None:
+    matches: list[tuple[str, str]] = []
+    for card in CACHE_CARD.findall(section.group(0)):
+        container = CONTAINER.search(card)
+        status = STATUS.search(card)
+        if container is None or status is None:
+            continue
+        identifier = html.unescape(container.group(1))
+        if re.fullmatch(r"ea-(?:redis|valkey)[a-zA-Z0-9._-]{1,96}", identifier) is None:
+            continue
+        actual_backend = "redis" if identifier.startswith("ea-redis") else "valkey"
+        if backend is not None and actual_backend != backend:
+            continue
+        state = " ".join(status.group(1).strip().lower().split())
+        matches.append((identifier, state))
+    if len(matches) != 1 or matches[0][1] not in {"reachable", "socket missing"}:
         return None
-    identifier = html.unescape(container.group(1))
-    state = " ".join(status.group(1).strip().lower().split())
-    if re.fullmatch(r"ea-(?:redis|valkey)[a-zA-Z0-9._-]{1,96}", identifier) is None:
-        return None
-    if state not in {"reachable", "socket missing"}:
-        return None
-    return identifier, state
+    return matches[0]
 
 
-def page_diagnostic(body: str) -> str:
+def page_diagnostic(body: str, backend: str | None = None) -> str:
     """Return only fixed structural/state labels, never page data."""
+    if backend not in {None, "redis", "valkey"}:
+        return "podman_status_missing"
     section = PODMAN_SECTION.search(body)
     if section is None:
         return "podman_section_missing"
-    state = STATUS.search(section.group(0))
-    if state is None:
+    states: list[str] = []
+    for card in CACHE_CARD.findall(section.group(0)):
+        container = CONTAINER.search(card)
+        state = STATUS.search(card)
+        if container is None or state is None:
+            continue
+        identifier = html.unescape(container.group(1))
+        actual_backend = "redis" if identifier.startswith("ea-redis") else "valkey"
+        if backend is not None and actual_backend != backend:
+            continue
+        states.append(state.group(1))
+    if len(states) != 1:
         return "podman_status_missing"
-    label = " ".join(state.group(1).strip().lower().split())
+    label = " ".join(states[0].strip().lower().split())
     if label not in {"reachable", "socket missing", "unavailable", "not checked"}:
         label = "other"
     return "podman_status_" + label.replace(" ", "_")
@@ -200,19 +222,19 @@ def verified_page(opener: urllib.request.OpenerDirector, url: str,
 
 
 def wait_for_state(opener: urllib.request.OpenerDirector, url: str, account: str,
-                   container: str, expected_state: str) -> str:
+                   container: str, expected_state: str, backend: str | None = None) -> str:
     last_diagnostic = "page_unavailable"
     for attempt in range(21):
         _, body = verified_page(opener, url, account)
-        last_diagnostic = page_diagnostic(body)
-        if parse_cache(body) == (container, expected_state):
+        last_diagnostic = page_diagnostic(body, backend)
+        if parse_cache(body, backend) == (container, expected_state):
             return body
         if attempt < 20:
             time.sleep(1)
     raise RuntimeError("state-verification-failed:" + last_diagnostic)
 
 
-def run(user: str, confirmed: bool) -> int:
+def run(user: str, confirmed: bool, backend: str | None = None) -> int:
     if not confirmed:
         print("Pass --confirm-lifecycle to run the account-owned start/stop/restart smoke.")
         return 2
@@ -239,7 +261,7 @@ def run(user: str, confirmed: bool) -> int:
         target = plugin_url(landing)
         phase = "initial-page"
         _, body = verified_page(opener, target, account)
-        initial_cache = parse_cache(body)
+        initial_cache = parse_cache(body, backend)
         if initial_cache is None:
             raise RuntimeError("no-single-healthy-podman-cache")
         container, initial_state = initial_cache
@@ -258,8 +280,8 @@ def run(user: str, confirmed: bool) -> int:
             if code != 200 or not same_path:
                 raise RuntimeError("lifecycle-post-failed")
             phase = "verify-" + action
-            refreshed = wait_for_state(opener, target, account, container, expected_state)
-        final_cache = parse_cache(refreshed)
+            refreshed = wait_for_state(opener, target, account, container, expected_state, backend)
+        final_cache = parse_cache(refreshed, backend)
         if final_cache is None or final_cache[1] != initial_state:
             raise RuntimeError("initial-state-not-restored")
     except Exception as error:  # Never reveal account, URL, container, socket, or response details.
@@ -268,10 +290,10 @@ def run(user: str, confirmed: bool) -> int:
                 and container is not None and initial_state is not None:
             try:
                 _, current_body = verified_page(opener, target, account)
-                current = parse_cache(current_body)
+                current = parse_cache(current_body, backend)
                 if current is None or current[0] != container:
                     restoration_failed = True
-                    restoration_detail = page_diagnostic(current_body)
+                    restoration_detail = page_diagnostic(current_body, backend)
                 elif current[1] != initial_state:
                     restore_action = "start" if initial_state == "reachable" else "stop"
                     code, _, _ = request_page(opener, target, restore_action, container)
@@ -279,7 +301,7 @@ def run(user: str, confirmed: bool) -> int:
                         restoration_failed = True
                     else:
                         try:
-                            wait_for_state(opener, target, account, container, initial_state)
+                            wait_for_state(opener, target, account, container, initial_state, backend)
                         except Exception as restore_error:
                             restoration_failed = True
                             restoration_detail = type(restore_error).__name__
@@ -299,7 +321,8 @@ def run(user: str, confirmed: bool) -> int:
         print(f"Live cPanel Podman lifecycle smoke failed at {phase} ({type(failure).__name__})"
               f"{diagnostic}{detail}.")
         return 1
-    print("Live cPanel Podman lifecycle passed: authenticated page, fixed action POSTs, state checks, initial state restored.")
+    target_label = f"{backend} backend" if backend is not None else "single discovered backend"
+    print(f"Live cPanel Podman lifecycle passed for {target_label}: authenticated page, fixed action POSTs, state checks, initial state restored.")
     return 0
 
 
@@ -308,9 +331,11 @@ def main() -> int:
     parser.add_argument("--user", required=True, help="cPanel account that owns the disposable Podman cache")
     parser.add_argument("--confirm-lifecycle", action="store_true",
                         help="allow the smoke to stop/restart the account-owned cache")
+    parser.add_argument("--backend", choices=("redis", "valkey"),
+                        help="require exactly one healthy cache of this backend")
     args = parser.parse_args()
     try:
-        return run(args.user, args.confirm_lifecycle)
+        return run(args.user, args.confirm_lifecycle, args.backend)
     except ValueError:
         print("Provide a valid cPanel account name.")
         return 2
