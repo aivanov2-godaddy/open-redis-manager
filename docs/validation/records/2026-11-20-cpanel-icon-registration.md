@@ -117,3 +117,9 @@ This record omits the hostname, IP address, domain, account names, credentials, 
 - The cPanel `install_plugin` script accepted the v4 icon package. Its group icon must be SVG; a PNG-only group package was rejected and was not used as the final registration.
 - Regenerated the Jupiter sprite synchronously and updated the stylesheet cache key to the SHA-256 digest of that exact sprite. The generated sprite contains the full v4 red tile and white cache cube for both group and launcher. Installed group SVG, launcher SVG, and launcher PNG hashes match the packaged assets.
 - The repo includes a local [v4 asset preview](../../../screenshots/previews/cpanel-icons-v4-preview.png). An authenticated cPanel browser screenshot after the refresh was not available, so the actual browser view remains to be visually confirmed. No ORM service, Redis/Valkey instance, account data, or unrelated cPanel settings were changed.
+
+## Authenticated Jupiter browser visual check — 2026-11-21
+
+- The authenticated cPanel Tools page displayed the ORM group header and launcher with the red tile and white cache-cube mark. The cube is visible in both rendered icons; neither appeared as a solid red block in this browser view.
+- The sanitized [browser screenshot](../../../screenshots/validation/cpanel-jupiter-live-icon.png) contains only the ORM card. The browser address/session path, account panel, and server information are excluded.
+- This verifies the visible result in one authenticated Jupiter session only. It does not establish the installed package's source commit, plugin lifecycle behavior, WHM behavior, or a supported-host combination.
