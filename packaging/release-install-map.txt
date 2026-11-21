@@ -25,6 +25,7 @@ broker_account_resolver|src/Orm/Broker/AccountResolver.pm|/usr/local/cpanel/3rdp
 broker_backend_policy|src/Orm/Broker/BackendPolicy.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/BackendPolicy.pm|644
 broker_handler|src/Orm/Broker/Handler.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm|644
 broker_instance_manager|src/Orm/Broker/InstanceManager.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/InstanceManager.pm|644
+broker_instance_manifest|src/Orm/Broker/InstanceManifest.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/InstanceManifest.pm|644
 broker_fleet_inventory|src/Orm/Broker/FleetInventory.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/FleetInventory.pm|644
 broker_peer_credentials|src/Orm/Broker/PeerCredentials.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PeerCredentials.pm|644
 broker_protocol|src/Orm/Broker/Protocol.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Protocol.pm|644

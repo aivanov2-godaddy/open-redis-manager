@@ -202,6 +202,7 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/BackendPolicy.pm
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/InstanceManager.pm
+    /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/InstanceManifest.pm
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/FleetInventory.pm
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PeerCredentials.pm
     /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Protocol.pm
