@@ -278,15 +278,21 @@ try {
         'https://' . $host . ':2087' . $reportPath);
     $reportBody = $report['body'];
     $requireValkeyEvidence = getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1';
+    $requirePodmanEvidence = getenv('ORM_LIVE_REQUIRE_PODMAN_EVIDENCE') === '1';
     $valkeyFindingsRendered = !$requireValkeyEvidence || (
         str_contains($reportBody, '<strong>Eviction Rate</strong>')
         && str_contains($reportBody, '<strong>Operation Rate</strong>')
         && str_contains($reportBody, '<strong>Client Authentication Failures</strong>')
     );
+    $podmanFindingsRendered = !$requirePodmanEvidence || (
+        str_contains($reportBody, '<strong>Podman Eviction Rate</strong>')
+        && str_contains($reportBody, '<strong>Podman Operation Rate</strong>')
+        && str_contains($reportBody, '<strong>Podman Authentication Failures</strong>')
+    );
     $result['rendered'] = $report['code'] === 200
         && str_contains($reportBody, 'Security and abuse review')
         && preg_match('/Generated [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/', $reportBody) === 1
-        && $valkeyFindingsRendered;
+        && $valkeyFindingsRendered && $podmanFindingsRendered;
     $audit = (new \Orm\Security\WhmAuditLog())->read(max(0, $reportStartedAt - 2), time() + 1, [
         'action' => 'security.report', 'result' => 'success',
     ]);
@@ -326,6 +332,9 @@ try {
             . '; whm_shell=' . (stripos($reportBody, 'WebHost Manager') !== false ? 'yes' : 'no')
             . '; php_error_marker=' . (preg_match('/fatal error|uncaught (?:error|exception|typeerror)/i', $reportBody) === 1 ? 'yes' : 'no')
             . '; audit_event=' . ($result['audit'] ? 'yes' : 'no');
+        if ($requirePodmanEvidence) {
+            $diagnostics .= '; podman_findings=' . ($podmanFindingsRendered ? 'yes' : 'no');
+        }
         throw new RuntimeException('WHM POST did not render a generated report (' . $diagnostics . ')');
     }
     if (!$result['audit']) {
@@ -394,6 +403,8 @@ if ($fleetSummaryOnly) {
     fwrite(STDOUT, "Live WHM {$mode}fleet-summary form passed: authenticated SSO; form rendered; read-only summary POST rendered.\n");
 } elseif ($confirmPolicyRoundtrip) {
     fwrite(STDOUT, "Live WHM threshold roundtrip passed: authenticated SSO; temporary advisory threshold update verified; original thresholds restored.\n");
+} elseif (getenv('ORM_LIVE_REQUIRE_PODMAN_EVIDENCE') === '1') {
+    fwrite(STDOUT, "Live WHM Podman report form passed: authenticated SSO; Podman eviction, operation, and optional authentication findings rendered; audit event verified.\n");
 } elseif (getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1') {
     fwrite(STDOUT, "Live WHM Valkey report form passed: authenticated SSO; eviction, operation, and optional authentication findings rendered; audit event verified.\n");
 } else {
