@@ -1389,6 +1389,24 @@ my $valkey_metrics_manifest;
         && !defined($valkey_security_metrics->{window_seconds})
         && !exists($valkey_metrics->{evicted_keys}) && !exists($valkey_metrics->{acl_access_denied_auth}),
         'keep a Valkey counter baseline unknown until a second sample and exclude raw counters from the account response');
+    $metrics_info = join("\r\n",
+        'valkey_version:8.1.10', 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:3',
+        'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
+        'evicted_keys:12', 'total_commands_processed:72000', '');
+    unlink($security_metrics_path) or die "reset security metrics fixture for Valkey without auth counter: $!";
+    my $valkey_without_auth_metrics = $manager->dispatch('instance.metrics', $account);
+    ok($valkey_without_auth_metrics->{success} && $valkey_without_auth_metrics->{memory_used_bytes} == 3145728,
+        'collect Valkey account metrics when its optional authentication counter is absent');
+    is_deeply($metrics_calls[-1], ['valkey', "$data_instances/ormtest/redis.sock"],
+        'keep the Valkey backend selected when the optional authentication counter is absent');
+    my $valkey_without_auth_sample = $manager->_read_security_metrics_snapshot($account);
+    ok(ref($valkey_without_auth_sample) eq 'HASH' && $valkey_without_auth_sample->{available} == 1
+        && $valkey_without_auth_sample->{evicted_keys} == 12
+        && $valkey_without_auth_sample->{total_commands_processed} == 72000
+        && $valkey_without_auth_sample->{auth_available} == 0
+        && !defined($valkey_without_auth_sample->{auth_failures_delta})
+        && !exists($valkey_without_auth_metrics->{acl_access_denied_auth}),
+        'retain Valkey eviction and command evidence while marking the absent auth signal unknown');
     open(my $restore_metrics_manifest_file, '>', $metrics_manifest_path)
         or die "restore Redis metrics manifest fixture: $!";
     print {$restore_metrics_manifest_file} $redis_metrics_manifest_json;
