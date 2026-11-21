@@ -21,6 +21,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Disposable-host validation record template](validation/record-template.md)
 - [Live WHM diagnostics validation — 2026-11-21](validation/records/2026-11-21-whm-diagnostics-live.md)
 - [Live WHM report-only form smoke — 2026-11-21](validation/records/2026-11-21-whm-security-report-live.md)
+- [Valkey security-counter field probe — 2026-11-21](validation/records/2026-11-21-valkey-security-counter-probe.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
 - [WHM signed update preview operations](guides/update-preview.md)
