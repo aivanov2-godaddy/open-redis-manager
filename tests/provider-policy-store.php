@@ -132,6 +132,7 @@ $policy['mode'] = 'warn';
 $policy['exposure'] = 'advanced';
 $policy['packages']['starter'] = [
     'enabled' => true, 'max_memory_mib' => 24, 'backup_retention' => 2, 'max_clients' => 40, 'max_databases' => 6,
+    'auto_provision' => false,
 ];
 $policy['default']['max_clients'] = 80;
 $policy['default']['max_databases'] = 12;
