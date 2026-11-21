@@ -186,6 +186,8 @@ my %allowed_install_targets = map { $_ => 1 } qw(
     /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReport.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Security/WhmSecurityReportPolicyStore.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AuthenticatedAccountContext.php
+    /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/AccountCreateHook.php
+    /usr/local/cpanel/3rdparty/bin/orm-account-create-hook.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerIdentityVerifier.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerClient.php
     /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ConnectionDetails.php
