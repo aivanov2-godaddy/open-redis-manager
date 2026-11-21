@@ -72,6 +72,10 @@ jobs:
         run: python tests/cpanel-live-podman-web-isolation-smoke-checks.py
       - name: Check live WHM report-form smoke entry point
         run: php tests/whm-live-security-report-form.php --help >/dev/null
+      - name: Check live WHM diagnostics smoke entry point
+        run: php tests/whm-live-diagnostics-form.php --help >/dev/null
+      - name: Check live WHM diagnostics smoke assertions
+        run: python tests/whm-live-diagnostics-form-checks.py
       - name: Check broker Perl syntax and tests
         run: |
           for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl bin/orm-provider-events-worker.pl; do perl -I src -c "$file"; done
