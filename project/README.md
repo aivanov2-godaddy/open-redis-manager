@@ -53,3 +53,4 @@ Open a feature branch and pull request for each coherent implementation incremen
 - [#161 — Validate selectable WHM diagnostics on disposable cPanel](https://github.com/aivanov2-godaddy/open-redis-manager/issues/161) ([draft](issues/17-whm-diagnostics-live-validation.md))
 - [#197 — Add a cPanel first-run native vs EA Podman setup wizard](https://github.com/aivanov2-godaddy/open-redis-manager/issues/197) ([draft](issues/18-cpanel-backend-onboarding.md))
 - [#201 — Add live account-scoped usage metrics for cPanel EA Podman caches](https://github.com/aivanov2-godaddy/open-redis-manager/issues/201) ([draft](issues/19-cpanel-podman-live-metrics.md))
+- [#203 — Show PhpRedis readiness for the cPanel runtime](https://github.com/aivanov2-godaddy/open-redis-manager/issues/203) ([draft](issues/20-cpanel-phpredis-runtime-readiness.md))

@@ -15,6 +15,11 @@ require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Security/SessionRequestGuar
 require_once '/usr/local/cpanel/3rdparty/orm/src/Orm/Backend/BackendDiscovery.php';
 
 $cpanel = new CPANEL();
+$phpRedisRuntimeAvailable = extension_loaded('redis') && class_exists('Redis', false);
+$phpRedisRuntimeVersion = $phpRedisRuntimeAvailable ? phpversion('redis') : false;
+$phpRedisRuntimeVersion = is_string($phpRedisRuntimeVersion)
+    && preg_match('/\A[0-9][A-Za-z0-9.+_-]{0,31}\z/', $phpRedisRuntimeVersion) === 1
+    ? $phpRedisRuntimeVersion : null;
 $account = \Orm\Cpanel\AuthenticatedAccountContext::fromLiveApi($cpanel);
 $brokerVerified = $account !== null
     && (new \Orm\Cpanel\BrokerIdentityVerifier())->verifies($account->username());
@@ -452,7 +457,9 @@ try {
                 } ?></li>
                 <li><strong>Connection details:</strong> <?= $connectionDetails !== null ? 'Available for this cPanel account.' : 'Available after the cache is initialized.' ?></li>
                 <li><strong>Application connection:</strong> Not verified. ORM does not read application configuration or test an application runtime.</li>
+                <li><strong>PhpRedis in this cPanel page runtime:</strong> <?= $phpRedisRuntimeAvailable ? 'Available' . ($phpRedisRuntimeVersion !== null ? ' · version ' . htmlspecialchars($phpRedisRuntimeVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '') : 'Not detected.' ?></li>
               </ul>
+              <p class="orm-note">This checks only the PHP runtime serving this cPanel page. It does not report the PHP version or extensions selected for your domains. PHP sites that use PhpRedis need the extension enabled for their own selected runtime; Node.js and Python clients do not use PhpRedis. Ask your hosting administrator to enable it for a domain when needed.</p>
               <h4>Application discovery</h4>
               <p class="orm-note">On demand, ORM checks fixed marker paths in your cPanel domain roots. It does not read file contents, configuration, secrets, or change application files. Results identify possible applications only; they do not confirm an active Redis integration.</p>
               <p><a href="?orm_app_scan=run">Scan for common applications</a></p>

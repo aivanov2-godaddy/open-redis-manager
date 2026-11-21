@@ -17,6 +17,8 @@ These notes distinguish repository implementation from deployment readiness. A f
 
 - WHM security reports now support separate root-owned, report-only thresholds for eviction deltas, average operations per second, and optional authentication-failure deltas. All thresholds default to disabled; a threshold only changes finding severity. Automated enforcement remains unimplemented. See the [threshold guide](guides/security-report-thresholds.md).
 
+- cPanel setup preflight now reports whether PhpRedis is loaded in the PHP runtime serving the ORM page, with a version when available. It warns that domain PHP handlers may differ, suggests enabling the extension only for PHP applications that need it, and does not claim application connectivity. See [issue #203](https://github.com/aivanov2-godaddy/open-redis-manager/issues/203) and the refreshed [application preflight screenshot](../screenshots/cpanel-application-discovery.png).
+
 - Standalone sample-data PHP prototype for reviewing layout and workflows; it does not connect to Redis.
 - Application guides and copyable connection examples; ORM does not edit application files or establish client compatibility for a specific host.
 - Broker-backed Redis/Valkey per-account provisioning, status, bounded configuration, lifecycle controls, metrics, and hourly history.

@@ -4,6 +4,8 @@ The reference product documents a broad range of application clients. The authen
 
 Step-by-step connection examples are collected in the [application guides](guides/applications/README.md). They use placeholders and describe integration steps; they do not configure customer applications.
 
+The cPanel preflight reports whether PhpRedis is loaded in the PHP runtime serving the ORM page. It cannot identify the PHP version or extension set selected by each domain, and it does not test application connectivity. Enable PhpRedis in a domain's own runtime only when the selected PHP client requires it; Node.js and Python clients do not use this extension.
+
 | Integration | Use case | Guide and helper |
 |---|---|---|
 | WordPress | Persistent object cache | [Object-cache setup](guides/applications/wordpress.md) |
