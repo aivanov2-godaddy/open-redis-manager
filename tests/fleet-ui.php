@@ -70,12 +70,20 @@ $assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_r
 $assert(str_contains($whm, "\$finding['window_start_utc']")
     && str_contains($whm, "\$finding['window_end_utc']") && str_contains($whm, 'Evidence window:'),
     'render escaped UTC evidence bounds on each WHM security report finding');
-$assert(str_contains($cpanel, 'PodmanCacheDiscovery::forCurrentAccount')
+$assert(str_contains($cpanel, 'PodmanCacheDiscovery::currentAccountInventory')
     && str_contains($cpanel, 'PodmanLifecycleManager::manage')
     && str_contains($cpanel, 'read-only PING') && str_contains($cpanel, 'cPanel Podman caches')
     && str_contains($cpanel, 'orm_podman_action'),
     'show verified current-account Podman containers, bounded probe status, and fixed lifecycle actions');
 $assert(str_contains($cpanel, 'valkey-via-containers') && str_contains($cpanel, 'redis-via-containers'),
     'link the cPanel Redis and Valkey container instructions');
+$assert(str_contains($cpanel, 'First-time setup') && str_contains($cpanel, 'orm_setup=native')
+    && str_contains($cpanel, 'orm_setup=podman') && str_contains($cpanel, 'BackendDiscovery')
+    && str_contains($cpanel, 'PodmanLifecycleManager::inspectSetup'),
+    'offer native and Podman onboarding choices backed by bounded read-only discovery');
+$assert(str_contains($cpanel, 'ea-podman install <?= htmlspecialchars($packageInfo[\'package\']')
+    && str_contains($cpanel, 'will not run a host package manager')
+    && str_contains($cpanel, 'could not safely verify this account’s cPanel container inventory'),
+    'show only fixed EA package setup instructions and preserve unknown inventory states');
 
 fwrite(STDOUT, "Fleet UI checks passed: {$checks}\n");
