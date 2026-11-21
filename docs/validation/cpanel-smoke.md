@@ -87,6 +87,10 @@ The live two-account broker isolation check passed once on 2026-11-20 on the des
 
 Other narrowly scoped live test results are recorded separately: the [managed-v1 package upgrade](records/2026-11-20-managed-v1-upgrade.md) passed on one cPanel test system, and the [Jupiter icon registration refresh](records/2026-11-20-cpanel-icon-registration.md) records the accepted flattened-path icon package and sprite regeneration. These checks do not establish host support.
 
+## Authenticated cPanel page visual review
+
+The authenticated Jupiter browser view opened ORM from the cPanel Tools launcher and rendered the cache-instance status, setup preflight, and application-discovery guidance. The sanitized [live page capture](../../screenshots/validation/cpanel-user-preflight-live.png) excludes the browser URL/session path and account/server details; the full temporary capture was deleted. No discovery scan, lifecycle action, or configuration change was performed. See the [visual review record](records/2026-11-21-cpanel-user-page-visual.md). The installed source revision was not established, so this is page-render evidence only.
+
 See the [host compatibility and validation matrix](compatibility-matrix.md) for the remaining scenarios and candidate host combinations, and use the [validation record template](record-template.md) to capture future runs without recording private host or account details.
 
 The test uses cPanel's documented [`create_user_session` single-sign-on flow](https://api.docs.cpanel.net/guides/guide-to-api-authentication/guide-to-api-authentication-single-sign-on).
