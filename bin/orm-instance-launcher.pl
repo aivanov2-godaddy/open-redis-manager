@@ -2,7 +2,10 @@
 use strict;
 use warnings;
 use Fcntl qw(O_RDONLY O_NOFOLLOW :mode);
+use FindBin;
+use lib "$FindBin::Bin/../lib";
 use JSON::PP ();
+use Orm::Broker::InstanceManifest qw(validate_instance_manifest);
 
 my $username = shift @ARGV;
 die "invalid ORM instance\n" if @ARGV || !defined($username)
@@ -22,13 +25,9 @@ _traversable_directory('/etc/orm-instances');
 _traversable_directory('/var/lib/orm-instances');
 _trusted_account_directory($config_dir, $gid);
 my $manifest = _read_manifest($manifest_path, $gid);
-die "invalid ORM instance\n" if ref($manifest) ne 'HASH';
-my @keys = sort keys %{$manifest};
-die "invalid ORM instance\n" if join(',', @keys) ne 'backend,config,data,gid,socket,uid,version';
-die "invalid ORM instance\n" if ($manifest->{version} // 0) != 1
-    || ($manifest->{uid} // -1) != $uid || ($manifest->{gid} // -1) != $gid
-    || $manifest->{config} ne $config_path || $manifest->{data} ne $data_path
-    || $manifest->{socket} ne "$data_path/redis.sock";
+die "invalid ORM instance\n" if !validate_instance_manifest(
+    $manifest, $username, $uid, $gid, '/etc/orm-instances', '/var/lib/orm-instances'
+);
 
 _trusted_config($config_path, $gid);
 _trusted_data_directory($data_path, $uid, $gid);

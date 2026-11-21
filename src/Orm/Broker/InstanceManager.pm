@@ -10,6 +10,7 @@ use POSIX qw(WNOHANG _exit setgid setuid);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use Orm::Broker::BackendPolicy;
 use Orm::Broker::ProviderPolicy;
+use Orm::Broker::InstanceManifest qw(validate_instance_manifest);
 use Sys::Syslog qw(:standard :macros);
 
 my %SERVER_BINARIES = (
@@ -2614,32 +2615,12 @@ sub _read_manifest {
     my $closed = close($handle);
     return undef if !defined($read) || !$closed || length($json) > 4096;
     my $manifest = eval { JSON::PP->new->decode($json) };
-    return undef if ref($manifest) ne 'HASH';
-    my @keys = sort keys %{$manifest};
-    my $manifest_version = $manifest->{version} // 0;
-    if ($manifest_version == 1) {
-        return undef if join(',', @keys) ne 'backend,config,data,gid,socket,uid,version';
+    return undef if !validate_instance_manifest(
+        $manifest, $account->{name}, $account->{uid}, $account->{gid}, $self->{etc_root}, $self->{data_root}
+    );
+    if ($manifest->{version} == 1) {
         $manifest->{preset} = 'generic';
-    } elsif ($manifest_version == 2) {
-        return undef if join(',', @keys) ne 'backend,config,data,gid,preset,socket,uid,version';
-        return undef if !defined($manifest->{preset}) || ref($manifest->{preset})
-            || !exists($PRESET_MEMORY_BYTES{$manifest->{preset}});
-    } elsif ($manifest_version == 3) {
-        return undef if join(',', @keys) ne 'backend,config,data,gid,preset,provisioned_defaults,socket,uid,version';
-        return undef if !defined($manifest->{preset}) || ref($manifest->{preset})
-            || !exists($PRESET_MEMORY_BYTES{$manifest->{preset}})
-            || !_valid_provisioned_defaults($manifest->{provisioned_defaults});
-    } else {
-        return undef;
     }
-    return undef if ($manifest->{uid} // -1) != $account->{uid}
-        || ($manifest->{gid} // -1) != $account->{gid};
-    return undef if !defined($manifest->{backend}) || $manifest->{backend} !~ /\A(?:redis|valkey)\z/;
-    my $expected_data = $self->_account_data_dir($account->{name});
-    my $expected_config = File::Spec->catfile($self->_account_config_dir($account->{name}), 'redis.conf');
-    my $expected_socket = File::Spec->catfile($expected_data, 'redis.sock');
-    return undef if $manifest->{data} ne $expected_data
-        || $manifest->{config} ne $expected_config || $manifest->{socket} ne $expected_socket;
     return undef if !defined($self->_available_binary($manifest->{backend}));
     my ($settings, $auth_secret, $canonical) = $self->_valid_config($account, $manifest, $allow_config_drift);
     return undef if !$settings;
