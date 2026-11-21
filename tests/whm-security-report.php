@@ -83,6 +83,16 @@ $assert(($byCategory['podman_metrics_coverage']['severity'] ?? null) === 'info'
     && str_contains($byCategory['podman_metrics_coverage']['evidence'], '2 Redis, 1 Valkey')
     && str_contains($byCategory['podman_metrics_coverage']['evidence'], 'separate from ORM-managed accounts'),
     'report separate, anonymous Redis and Valkey Podman coverage');
+$assert(($byCategory['podman_counter_rates_unknown']['severity'] ?? null) === 'unknown'
+    && array_key_exists('count', $byCategory['podman_counter_rates_unknown'])
+    && $byCategory['podman_counter_rates_unknown']['count'] === null
+    && str_contains($byCategory['podman_counter_rates_unknown']['evidence'], 'cannot prove the same Redis/Valkey server processes')
+    && str_contains($byCategory['podman_counter_rates_unknown']['evidence'], 'thresholds were not evaluated')
+    && $byCategory['podman_counter_rates_unknown']['sampled_at_utc'] === gmdate('Y-m-d\\TH:i:s\\Z', $now - 60)
+    && $byCategory['podman_counter_rates_unknown']['window_start_utc'] === null
+    && $byCategory['podman_counter_rates_unknown']['window_end_utc'] === null
+    && isset($report['unmeasured']['ea_podman_counter_rates']),
+    'keep Podman rate and threshold evidence explicitly unknown when the aggregate snapshot has no process continuity');
 $assert(($byCategory['memory_pressure']['count'] ?? null) === 1
     && ($byCategory['client_pressure']['count'] ?? null) === 2
     && ($byCategory['low_hit_ratio']['count'] ?? null) === 1
@@ -134,6 +144,8 @@ $assert($thresholdReport['mode'] === 'report-only'
     && $thresholdFindings['operation_rate']['severity'] === 'warning'
     && str_contains($thresholdFindings['operation_rate']['evidence'], 'Report-only threshold: 120')
     && $thresholdFindings['client_authentication_failures']['severity'] === 'warning'
+    && $thresholdFindings['podman_counter_rates_unknown']['severity'] === 'unknown'
+    && !str_contains($thresholdFindings['podman_counter_rates_unknown']['evidence'], 'Report-only threshold:')
     && str_contains($thresholdFindings['client_authentication_failures']['evidence'], 'Report-only threshold: 4')
     && str_contains($thresholdFindings['client_authentication_failures']['recommendation'], 'does not identify a client'),
     'raise advisory severity at configured aggregate thresholds without taking enforcement action');
@@ -229,8 +241,12 @@ $missingPodmanFleet['podman_metrics'] = null;
 $missingPodman = WhmSecurityReport::build($missingPodmanFleet, $audit, $now);
 $missingPodmanCategories = array_column($missingPodman['findings'], null, 'category');
 $assert($missingPodman['partial'] && ($missingPodmanCategories['podman_metrics_unknown']['severity'] ?? null) === 'unknown'
-    && isset($missingPodman['unmeasured']['ea_podman_metrics']),
-    'keep missing Podman snapshots explicitly unknown and mark the report partial');
+    && ($missingPodmanCategories['podman_counter_rates_unknown']['severity'] ?? null) === 'unknown'
+    && $missingPodmanCategories['podman_counter_rates_unknown']['sampled_at_utc'] === null
+    && $missingPodmanCategories['podman_counter_rates_unknown']['window_start_utc'] === null
+    && isset($missingPodman['unmeasured']['ea_podman_metrics'])
+    && isset($missingPodman['unmeasured']['ea_podman_counter_rates']),
+    'keep missing Podman snapshots and unavailable counter windows explicitly unknown and mark the report partial');
 
 if (function_exists('posix_geteuid')) {
     $directory = sys_get_temp_dir() . '/orm-security-report-' . bin2hex(random_bytes(5));
