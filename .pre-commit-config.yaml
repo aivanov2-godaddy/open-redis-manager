@@ -95,3 +95,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: whm-live-diagnostics-smoke-checks
+        name: WHM live diagnostics smoke assertions
+        entry: python tests/whm-live-diagnostics-form-checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
