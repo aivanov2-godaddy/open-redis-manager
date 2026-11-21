@@ -51,3 +51,4 @@ Open a feature branch and pull request for each coherent implementation incremen
 - Application connection guides document values and examples; ORM does not configure application files. WHM applies manually staged signed file releases for exact v3 installs. There is no automatic release feed or production signing service; AppConfig changes, first-time bootstrap of older installs, upgrades outside the exact tested managed-v1 baseline, and the remaining live-host validation remain release gates. See the [update lifecycle guide](../docs/guides/update-lifecycle.md).
 
 - [#161 — Validate selectable WHM diagnostics on disposable cPanel](https://github.com/aivanov2-godaddy/open-redis-manager/issues/161) ([draft](issues/17-whm-diagnostics-live-validation.md))
+- [#197 — Add a cPanel first-run native vs EA Podman setup wizard](https://github.com/aivanov2-godaddy/open-redis-manager/issues/197) ([draft](issues/18-cpanel-backend-onboarding.md))

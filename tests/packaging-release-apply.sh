@@ -99,7 +99,7 @@ second_target="$(awk -F'|' '$1 == "whm_cgi" { print $3 }' "$repo_root/packaging/
 broker_target="$(awk -F'|' '$1 == "broker_handler" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 version_target="$(awk -F'|' '$1 == "release_version" { print $3 }' "$repo_root/packaging/release-install-map.txt")"
 
-# The updater may accept only the one intentional additive row introduced after rc.1.
+# The updater may accept only the known application-discovery row and exact future EA Podman paths.
 old_install_map="$test_root/installed-release-install-map.txt"
 new_install_map="$repo_root/packaging/release-install-map.txt"
 approved_additions=(
@@ -116,6 +116,17 @@ podman_old_install_map="$test_root/installed-map-with-application-discovery.txt"
 grep -Fvx -f <(printf '%s\n' "${approved_additions[@]:1}") "$new_install_map" >"$podman_old_install_map"
 orm_release_install_map_is_compatible "$new_install_map" "$podman_old_install_map" \
     || { printf 'updater rejected the approved EA Podman collector additions to a current installed map.\n' >&2; exit 1; }
+future_install_map="$test_root/future-ea-podman-release-install-map.txt"
+cp -- "$new_install_map" "$future_install_map"
+printf '%s\n' "${approved_additions[@]:1}" >>"$future_install_map"
+orm_release_install_map_is_compatible "$future_install_map" "$new_install_map" \
+    || { printf 'updater rejected the exact future EA Podman collector paths.\n' >&2; exit 1; }
+sed 's#orm-podman-metrics.service|644$#orm-podman-metrics.service|600#' "$future_install_map" \
+    >"$test_root/tampered-future-release-install-map.txt"
+if orm_release_install_map_is_compatible "$test_root/tampered-future-release-install-map.txt" "$new_install_map"; then
+    printf 'updater accepted a modified future install-map row.\n' >&2
+    exit 1
+fi
 cp -- "$new_install_map" "$test_root/tampered-release-install-map.txt"
 sed -i 's#ApplicationDiscovery.php|644$#ApplicationDiscovery.php|600#' "$test_root/tampered-release-install-map.txt"
 if orm_release_install_map_is_compatible "$test_root/tampered-release-install-map.txt" "$old_install_map"; then

@@ -2,14 +2,14 @@
 
 <p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager red tile logo with a white cache cube"></p>
 
-An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages direct Redis/Valkey instances and can discover and control the lifecycle of existing cPanel EA Podman Redis/Valkey containers owned by the current account. WHM includes root-only fleet operations, bounded snapshot batches, scan-guided service and safe configuration recovery, audit history, and guarded Redis-to-Valkey migration. EA Podman metrics add a separate scheduled aggregate-coverage snapshot; Podman counter-rate thresholds and supported-host validation remain open.
+An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages direct Redis/Valkey instances and can discover and control the lifecycle of existing cPanel EA Podman Redis/Valkey containers owned by the current account. Its cPanel first-run wizard guides users to the native or EA Podman path and checks verified account/host prerequisites. WHM includes root-only fleet operations, bounded snapshot batches, scan-guided service and safe configuration recovery, audit history, and guarded Redis-to-Valkey migration. EA Podman metrics add a separate scheduled aggregate-coverage snapshot; Podman counter-rate thresholds and supported-host validation remain open.
 
-> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector use a closed broker for ORM-managed direct instances. The cPanel page also detects current-account cPanel EA Podman Redis/Valkey sockets and generates connection settings without taking over their lifecycle. Root WHM provides on-demand fleet aggregates and create/restore batches capped at two visible accounts. Validate against a disposable cPanel host before production use.
+> **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector use a closed broker for ORM-managed direct instances. The cPanel first-run wizard detects standard native binaries and account-scoped cPanel EA Podman package/container state, then guides installation in the required administrator or account context. Root WHM provides on-demand fleet aggregates and create/restore batches capped at two visible accounts. Validate against a disposable cPanel host before production use.
 
 ## What is here
 
 - A responsive cPanel and WHM interface prototype in [`index.php`](index.php).
-- cPanel and WHM entry points, a root-owned backend choice, and account-scoped direct Redis/Valkey provision/status/configure/start/stop through a Linux peer-identity broker. The account page discovers the current account's EA Podman Redis/Valkey containers and offers start/stop/restart through cPanel's fixed account-level tool. Authenticated Podman web lifecycle smokes passed for Redis and Valkey on one disposable host ([Redis record](docs/validation/records/2026-11-21-cpanel-podman-web-lifecycle.md), [Valkey record](docs/validation/records/2026-11-21-cpanel-ea-valkey-web-lifecycle.md)); the broader host matrix remains unverified. WHM diagnostics and fleet metrics use fixed, validated reads.
+- cPanel and WHM entry points, a root-owned backend choice, account-scoped direct Redis/Valkey lifecycle through a Linux peer-identity broker, and a first-run native versus cPanel EA Podman setup wizard. The wizard keeps host installs and WHM backend policy administrator-controlled, detects known host/account requirements, and provides fixed cPanel package install steps followed by account-scoped verification. The account page discovers current-account EA Podman caches and offers start/stop/restart through cPanel's fixed account-level tool. Authenticated Podman web lifecycle smokes passed for Redis and Valkey on one disposable host ([Redis record](docs/validation/records/2026-11-21-cpanel-podman-web-lifecycle.md), [Valkey record](docs/validation/records/2026-11-21-cpanel-ea-valkey-web-lifecycle.md)); the broader host matrix remains unverified.
 - A read-only Redis/Valkey backend discovery command in [`bin/orm`](bin/orm).
 - A feature-by-feature product inventory and original docs in [`docs/`](docs/).
 - Current implementation maturity, cPanel vendor host eligibility, ORM validation coverage, and a secret-free disposable-host record template are documented in [`docs/release-notes.md`](docs/release-notes.md) and the [host validation matrix](docs/validation/compatibility-matrix.md).
@@ -54,6 +54,8 @@ Latest metrics and hourly history use the retention value recorded for each new 
 
 The installed cPanel and WHM entry points expose direct and Podman connection modes. ORM-managed direct instances support account-scoped lifecycle, configuration, metrics, snapshots, and Redis-to-Valkey migration. Existing cPanel EA Podman containers are discovered only for the current account, optionally PINGed through PhpRedis, and shown with socket-based examples; ORM offers only fixed start/stop/restart controls while cPanel retains package configuration and data ownership. The root sampler provides anonymous WHM aggregate coverage without taking over container lifecycle; Podman counter-rate findings are not implemented. Provider controls, rollback behavior, and production limits are described in the [feature catalog](docs/features/catalog.md) and [cPanel Redis/Valkey container guide](docs/guides/cpanel-podman.md).
 
+The authenticated cPanel first-run page now guides the owner through native versus EA Podman setup. It keeps native backend selection in WHM, checks the current account’s fixed EA package inventory, shows supported account-scoped installation commands, and verifies the resulting owner-only container socket. See the [first-run setup guide](docs/guides/cpanel-first-run-setup.md) for unknown states and host prerequisites.
+
 See the [preset guide](docs/guides/configuration-presets.md), [instance lifecycle guide](docs/guides/instance-lifecycle.md), [monitoring and diagnostics guide](docs/guides/monitoring-diagnostics.md), [provider policy guide](docs/guides/provider-package-policy.md), and [operations guide](docs/operations.md) for current limits and validation status.
 
 ## Documentation
@@ -65,6 +67,7 @@ See the [preset guide](docs/guides/configuration-presets.md), [instance lifecycl
 - [Live cPanel smoke test](docs/validation/cpanel-smoke.md)
 - [Instance lifecycle](docs/guides/instance-lifecycle.md)
 - [cPanel Redis and Valkey containers](docs/guides/cpanel-podman.md)
+- [cPanel first-run setup wizard](docs/guides/cpanel-first-run-setup.md)
 - [Security model](docs/security-model.md)
 - [Provider policy and reseller quotas](docs/guides/provider-package-policy.md)
 - [Operations: monitoring, backups, recovery](docs/operations.md)
