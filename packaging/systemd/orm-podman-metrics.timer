@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule Open Redis Manager EA Podman metrics collection
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+RandomizedDelaySec=1min
+Persistent=true
+Unit=orm-podman-metrics.service
+
+[Install]
+WantedBy=timers.target

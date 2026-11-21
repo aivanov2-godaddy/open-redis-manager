@@ -51,12 +51,16 @@ src/Orm/Broker/ProviderEventEmitter.pm
 src/Orm/Broker/ProviderEventQueue.pm
 src/Orm/Broker/ProviderEventTransport.pm
 src/Orm/Broker/ProviderEvents.pm
+src/Orm/Broker/PodmanMetricsCollector.pm
+bin/orm-podman-metrics-collect.pl
 packaging/systemd/orm-broker.service
 packaging/systemd/orm-provider-events.service
 packaging/systemd/orm-provider-events.timer
 packaging/systemd/orm-instance@.service
 packaging/systemd/orm-metrics-collect@.service
 packaging/systemd/orm-metrics-collect@.timer
+packaging/systemd/orm-podman-metrics.service
+packaging/systemd/orm-podman-metrics.timer
 src/Orm/Backend/ProviderPolicyStore.php
 src/Orm/Broker/ProviderPolicy.pm
 src/Orm/Update/ReleasePreview.php

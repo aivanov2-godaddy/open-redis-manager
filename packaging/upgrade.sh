@@ -108,6 +108,7 @@ instance_roots_prepared=0
 files_touched=0
 upgrade_succeeded=0
 provider_events_timer_started=0
+podman_metrics_timer_started=0
 keep_backup=0
 quarantine_path=''
 
@@ -132,6 +133,11 @@ rollback_upgrade() {
         "$ORM_SYSTEMCTL" disable --now orm-provider-events.timer >/dev/null 2>&1 || rollback_failed=1
         "$ORM_SYSTEMCTL" stop orm-provider-events.service >/dev/null 2>&1 || rollback_failed=1
         provider_events_timer_started=0
+    fi
+    if [[ "$podman_metrics_timer_started" -eq 1 ]]; then
+        "$ORM_SYSTEMCTL" disable --now orm-podman-metrics.timer >/dev/null 2>&1 || rollback_failed=1
+        "$ORM_SYSTEMCTL" stop orm-podman-metrics.service >/dev/null 2>&1 || rollback_failed=1
+        podman_metrics_timer_started=0
     fi
     if [[ "$files_touched" -eq 1 ]]; then
         if [[ -n "${temporary:-}" ]]; then
@@ -372,6 +378,8 @@ if ! orm_broker_state_matches_initial; then
 fi
 provider_events_timer_started=1
 "$ORM_SYSTEMCTL" enable --now orm-provider-events.timer
+podman_metrics_timer_started=1
+"$ORM_SYSTEMCTL" enable --now orm-podman-metrics.timer
 upgrade_succeeded=1
 if [[ "$legacy_install_kind" == managed ]]; then
     printf 'Open Redis Manager managed v1 installation upgraded. Broker state, existing instance data, and cPanel-managed containers were preserved.\n'

@@ -102,10 +102,20 @@ version_target="$(awk -F'|' '$1 == "release_version" { print $3 }' "$repo_root/p
 # The updater may accept only the one intentional additive row introduced after rc.1.
 old_install_map="$test_root/installed-release-install-map.txt"
 new_install_map="$repo_root/packaging/release-install-map.txt"
-approved_addition='application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
-grep -Fvx -- "$approved_addition" "$new_install_map" >"$old_install_map"
+approved_additions=(
+    'application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+    'broker_podman_metrics_collector|src/Orm/Broker/PodmanMetricsCollector.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PodmanMetricsCollector.pm|644'
+    'podman_metrics_collector|bin/orm-podman-metrics-collect.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl|755'
+    'podman_metrics_service|packaging/systemd/orm-podman-metrics.service|/etc/systemd/system/orm-podman-metrics.service|644'
+    'podman_metrics_timer|packaging/systemd/orm-podman-metrics.timer|/etc/systemd/system/orm-podman-metrics.timer|644'
+)
+grep -Fvx -f <(printf '%s\n' "${approved_additions[@]}") "$new_install_map" >"$old_install_map"
 orm_release_install_map_is_compatible "$new_install_map" "$old_install_map" \
-    || { printf 'updater rejected its exact additive ApplicationDiscovery map migration.\n' >&2; exit 1; }
+    || { printf 'updater rejected its exact approved additive map migration.\n' >&2; exit 1; }
+podman_old_install_map="$test_root/installed-map-with-application-discovery.txt"
+grep -Fvx -f <(printf '%s\n' "${approved_additions[@]:1}") "$new_install_map" >"$podman_old_install_map"
+orm_release_install_map_is_compatible "$new_install_map" "$podman_old_install_map" \
+    || { printf 'updater rejected the approved EA Podman collector additions to a current installed map.\n' >&2; exit 1; }
 cp -- "$new_install_map" "$test_root/tampered-release-install-map.txt"
 sed -i 's#ApplicationDiscovery.php|644$#ApplicationDiscovery.php|600#' "$test_root/tampered-release-install-map.txt"
 if orm_release_install_map_is_compatible "$test_root/tampered-release-install-map.txt" "$old_install_map"; then

@@ -40,6 +40,7 @@ whm_registered=0
 broker_stopped=0
 instance_roots_removed=0
 provider_events_timer_stopped=0
+podman_metrics_timer_stopped=0
 
 restore_uninstalled_files() {
     local key source target mode saved rollback_failed=0
@@ -111,6 +112,9 @@ rollback_uninstall() {
     if [[ "$provider_events_timer_stopped" -eq 1 ]]; then
         "$ORM_SYSTEMCTL" enable --now orm-provider-events.timer >/dev/null 2>&1 || rollback_failed=1
     fi
+    if [[ "$podman_metrics_timer_stopped" -eq 1 ]]; then
+        "$ORM_SYSTEMCTL" enable --now orm-podman-metrics.timer >/dev/null 2>&1 || rollback_failed=1
+    fi
     if [[ "$rollback_failed" -eq 0 ]]; then
         if [[ "$broker_stopped" -eq 1 ]] || ! orm_broker_state_matches_initial; then
             orm_restore_broker_state >/dev/null 2>&1 || rollback_failed=1
@@ -147,6 +151,7 @@ if [[ -e "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]]; then
     orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" \
         || orm_die 'the install manifest or an ORM-owned installed file failed integrity validation.'
 fi
+
 orm_verify_installed_files
 if orm_registration_state; then
     whm_registered=1
@@ -198,6 +203,18 @@ if [[ -f "$ORM_PROVIDER_EVENTS_TIMER" ]]; then
     fi
 fi
 
+if [[ -f "$ORM_PODMAN_METRICS_TIMER" ]]; then
+    podman_timer_enabled="$("$ORM_SYSTEMCTL" is-enabled orm-podman-metrics.timer 2>/dev/null || true)"
+    podman_timer_active="$("$ORM_SYSTEMCTL" is-active orm-podman-metrics.timer 2>/dev/null || true)"
+    case "$podman_timer_enabled" in enabled|disabled|enabled-runtime) ;; *) orm_die 'could not determine EA Podman metrics timer state; refusing uninstall.' ;; esac
+    case "$podman_timer_active" in active|inactive|failed) ;; *) orm_die 'could not determine EA Podman metrics timer activity; refusing uninstall.' ;; esac
+    if [[ "$podman_timer_enabled" == enabled || "$podman_timer_enabled" == enabled-runtime || "$podman_timer_active" == active ]]; then
+        "$ORM_SYSTEMCTL" disable --now orm-podman-metrics.timer || orm_die 'could not stop the EA Podman metrics timer; no files were removed.'
+        "$ORM_SYSTEMCTL" stop orm-podman-metrics.service >/dev/null 2>&1 || true
+        podman_metrics_timer_stopped=1
+    fi
+fi
+
 if orm_instances_exist; then
     orm_die 'an instance appeared during uninstall preflight; no files were removed.'
 else
@@ -233,4 +250,4 @@ orm_remove_empty_instance_directories \
     || orm_die 'could not remove the empty, root-owned ORM instance directories.'
 uninstall_succeeded=1
 transaction_started=0
-printf 'Open Redis Manager panel files and registrations removed. Redis/Valkey services, data, and configuration were left untouched.\n'
+printf 'Open Redis Manager panel files and registrations removed. Redis/Valkey services, data, configuration, and the private anonymous Podman metrics snapshot were left untouched.\n'

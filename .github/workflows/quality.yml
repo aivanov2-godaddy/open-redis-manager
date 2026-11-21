@@ -80,7 +80,7 @@ jobs:
         run: python tests/whm-live-diagnostics-form-checks.py
       - name: Check broker Perl syntax and tests
         run: |
-          for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl bin/orm-provider-events-worker.pl; do perl -I src -c "$file"; done
+          for file in src/Orm/Broker/*.pm bin/orm-broker.pl bin/orm-instance-launcher.pl bin/orm-metrics-collect.pl bin/orm-podman-metrics-collect.pl bin/orm-provider-events-worker.pl; do perl -I src -c "$file"; done
           prove -I src tests/*.t
       - name: Check cPanel broker client
         run: php tests/cpanel-broker-client.php
@@ -116,5 +116,7 @@ jobs:
         run: sudo install -D -m 0755 bin/orm-metrics-collect.pl /usr/local/cpanel/3rdparty/orm/bin/orm-metrics-collect.pl
       - name: Stage provider event worker for systemd unit verification
         run: sudo install -D -m 0755 bin/orm-provider-events-worker.pl /usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl
+      - name: Stage EA Podman metrics collector for systemd unit verification
+        run: sudo install -D -m 0755 bin/orm-podman-metrics-collect.pl /usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl
       - name: Verify ORM systemd units
-        run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service packaging/systemd/orm-metrics-collect@.service packaging/systemd/orm-metrics-collect@.timer packaging/systemd/orm-provider-events.service packaging/systemd/orm-provider-events.timer
+        run: systemd-analyze verify packaging/systemd/orm-broker.service packaging/systemd/orm-instance@.service packaging/systemd/orm-metrics-collect@.service packaging/systemd/orm-metrics-collect@.timer packaging/systemd/orm-provider-events.service packaging/systemd/orm-provider-events.timer packaging/systemd/orm-podman-metrics.service packaging/systemd/orm-podman-metrics.timer

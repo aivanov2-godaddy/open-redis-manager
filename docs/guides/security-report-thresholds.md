@@ -12,6 +12,10 @@ All thresholds default to zero, which disables threshold classification. Thresho
 - **Operations:** the threshold is the maximum observed average number of processed commands per second over the measured interval.
 - **Authentication failures:** the threshold is a counter delta per sampled interval when the backend exposes the optional authentication-failure INFO field. Unsupported fields, missing baselines, resets, and incomplete intervals stay unknown.
 
+## EA Podman coverage
+
+The WHM report includes a separate EA Podman Redis/Valkey coverage finding from the root-owned scheduled snapshot. It shows discovered, sampled, unmeasured, and skipped counts and does not combine these containers with ORM-managed account totals. A missing, stale, invalid, or partial snapshot is reported as unknown. The six allowlisted Podman counters are currently aggregate-state evidence only; Podman counter deltas and thresholds are not implemented. This coverage finding does not establish abuse or trigger remediation.
+
 These measurements are anonymous fleet aggregates. They do not identify which account or client produced the maximum, distinguish mistakes from attacks, or prove abuse. A threshold warning is a review prompt, not an incident finding. Do not treat missing or stale evidence as zero.
 
 The report remains rate-limited to one generation per minute. Changing the threshold policy requires an authenticated root WHM POST and is recorded as a fixed metadata-only audit event. The report and audit record do not contain secrets, cache keys, values, or client identities.

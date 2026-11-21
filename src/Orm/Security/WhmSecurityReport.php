@@ -87,6 +87,8 @@ final class WhmSecurityReport
         $policy ??= self::defaultSecurityReportPolicy();
         $thresholds = $policy['thresholds'];
         $metrics = is_array($fleet['metrics'] ?? null) ? $fleet['metrics'] : null;
+        $podmanMetrics = is_array($fleet['podman_metrics'] ?? null) ? $fleet['podman_metrics'] : null;
+        $podmanMetricsValid = self::validPodmanMetrics($podmanMetrics, $generatedAt);
         $fleetValid = ($fleet['success'] ?? null) === true && is_array($metrics)
             && is_int($metrics['fresh_accounts'] ?? null) && $metrics['fresh_accounts'] >= 0
             && is_int($metrics['high_memory_accounts'] ?? null) && $metrics['high_memory_accounts'] >= 0
@@ -160,13 +162,34 @@ final class WhmSecurityReport
             && is_bool($audit['partial'] ?? null) && is_array($audit['sources'] ?? null);
         $partial = !$fleetValid || !$ratesValid || !$authRatesValid || !$auditValid || ($fleet['partial'] ?? true) !== false
             || ($audit['partial'] ?? true) !== false || ($ratesValid && $metrics['rate_missing_accounts'] > 0);
-        $partial = $partial || ($authRatesValid && $metrics['auth_rate_missing_accounts'] > 0) || !$policyValid;
+        $partial = $partial || ($authRatesValid && $metrics['auth_rate_missing_accounts'] > 0) || !$policyValid
+            || !$podmanMetricsValid || ($podmanMetricsValid && $podmanMetrics['partial']);
         $findings = [];
 
         if (!$policyValid) {
             $findings[] = self::finding('report_policy_unavailable', 'unknown', null,
                 'The root-owned security report policy could not be verified; optional abuse thresholds were not evaluated.',
                 'Repair or restore the root-owned report policy before relying on threshold-based findings.');
+        }
+
+        if (!$podmanMetricsValid) {
+            $findings[] = self::finding('podman_metrics_unknown', 'unknown', null,
+                'EA Podman Redis/Valkey coverage is unavailable, invalid, or older than 30 minutes; these services were not measured.',
+                'Check the scheduled root EA Podman sampler and wait for a fresh, verified snapshot. Unknown containers are excluded from ORM-managed account totals.');
+        } else {
+            $podmanSampledAt = gmdate('Y-m-d\TH:i:s\Z', $podmanMetrics['sampled_at']);
+            $coverageSeverity = $podmanMetrics['partial'] ? 'unknown' : 'info';
+            $findings[] = self::finding('podman_metrics_coverage', $coverageSeverity, null,
+                $podmanMetrics['discovered_count'] . ' EA Podman containers discovered ('
+                    . $podmanMetrics['backend_counts']['redis'] . ' Redis, '
+                    . $podmanMetrics['backend_counts']['valkey'] . ' Valkey); '
+                    . $podmanMetrics['sampled_count'] . ' were probed, '
+                    . $podmanMetrics['reachable_count'] . ' responded, '
+                    . $podmanMetrics['unmeasured_count'] . ' could not be measured, and '
+                    . $podmanMetrics['skipped_count'] . ' were skipped by scan bounds; '
+                    . $podmanMetrics['unverified_account_count'] . ' accounts could not be verified. Podman metrics are separate from ORM-managed accounts.',
+                'Treat skipped, unmeasured, or partial Podman coverage as unknown; check the sampler status before drawing fleet-wide conclusions.',
+                $podmanSampledAt, $podmanSampledAt, $podmanSampledAt);
         }
 
         if ($fleetValid) {
@@ -288,6 +311,9 @@ final class WhmSecurityReport
         $unmeasured = [
             'credential_strength' => 'Weak or reused passwords are not inspected.',
         ];
+        if (!$podmanMetricsValid) {
+            $unmeasured['ea_podman_metrics'] = 'No fresh, verified root-owned EA Podman snapshot was available.';
+        }
         return [
             'generated_at_utc' => gmdate('Y-m-d\TH:i:s\Z', max(0, $generatedAt)),
             'mode' => 'report-only',
@@ -311,6 +337,61 @@ final class WhmSecurityReport
                 'auth_failures_per_window' => 0,
             ],
         ];
+    }
+
+    /** @param array<string,mixed>|null $metrics */
+    private static function validPodmanMetrics(?array $metrics, int $generatedAt): bool
+    {
+        if ($metrics === null || ($metrics['success'] ?? null) !== true || ($metrics['version'] ?? null) !== 1
+            || !is_bool($metrics['partial'] ?? null) || !is_bool($metrics['scan_complete'] ?? null)
+            || !is_int($metrics['sampled_at'] ?? null) || $metrics['sampled_at'] < $generatedAt - 1800
+            || $metrics['sampled_at'] > $generatedAt) {
+            return false;
+        }
+        foreach (['discovered_count', 'sampled_count', 'reachable_count', 'unmeasured_count', 'skipped_count', 'unverified_account_count'] as $field) {
+            if (!is_int($metrics[$field] ?? null) || $metrics[$field] < 0 || $metrics[$field] > 10240000) {
+                return false;
+            }
+        }
+        if ($metrics['sampled_count'] !== $metrics['reachable_count'] + $metrics['unmeasured_count']
+            || $metrics['sampled_count'] + $metrics['skipped_count'] !== $metrics['discovered_count']) {
+            return false;
+        }
+        if (!is_array($metrics['backend_counts'] ?? null) || !is_array($metrics['sampled_backend_counts'] ?? null)) {
+            return false;
+        }
+        foreach (['backend_counts', 'sampled_backend_counts'] as $field) {
+            $keys = array_keys($metrics[$field]);
+            sort($keys);
+            if ($keys !== ['redis', 'valkey']) {
+                return false;
+            }
+            foreach ($metrics[$field] as $count) {
+                if (!is_int($count) || $count < 0 || $count > 10240000) {
+                    return false;
+                }
+            }
+        }
+        if (array_sum($metrics['backend_counts']) !== $metrics['discovered_count']
+            || array_sum($metrics['sampled_backend_counts']) !== $metrics['sampled_count']) {
+            return false;
+        }
+        $metricKeys = ['connected_clients', 'evicted_keys', 'keyspace_hits', 'keyspace_misses', 'memory_used_bytes', 'total_commands_processed'];
+        if (!is_array($metrics['metrics'] ?? null)) {
+            return false;
+        }
+        $actualMetricKeys = array_keys($metrics['metrics']);
+        sort($actualMetricKeys);
+        sort($metricKeys);
+        if ($actualMetricKeys !== $metricKeys) {
+            return false;
+        }
+        foreach ($metrics['metrics'] as $value) {
+            if (!is_int($value) || $value < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** @param list<array<string,mixed>> $findings */

@@ -22,6 +22,7 @@ registered_whm=0
 installed_files=0
 broker_started=0
 provider_events_timer_started=0
+podman_metrics_timer_started=0
 cleanup_on_error() {
     local status=$?
     if [[ "$status" -ne 0 ]]; then
@@ -31,6 +32,10 @@ cleanup_on_error() {
         if [[ "$provider_events_timer_started" -eq 1 ]]; then
             "$ORM_SYSTEMCTL" disable --now orm-provider-events.timer >/dev/null 2>&1 || true
             "$ORM_SYSTEMCTL" stop orm-provider-events.service >/dev/null 2>&1 || true
+        fi
+        if [[ "$podman_metrics_timer_started" -eq 1 ]]; then
+            "$ORM_SYSTEMCTL" disable --now orm-podman-metrics.timer >/dev/null 2>&1 || true
+            "$ORM_SYSTEMCTL" stop orm-podman-metrics.service >/dev/null 2>&1 || true
         fi
         if [[ "$registered_whm" -eq 1 ]]; then
             "$ORM_UNREGISTER_APPCONFIG" open_redis_manager >/dev/null 2>&1 || true
@@ -83,6 +88,8 @@ broker_started=1
 "$ORM_SYSTEMCTL" enable --now orm-broker.service
 provider_events_timer_started=1
 "$ORM_SYSTEMCTL" enable --now orm-provider-events.timer
+podman_metrics_timer_started=1
+"$ORM_SYSTEMCTL" enable --now orm-podman-metrics.timer
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
 orm_write_install_manifest "$ORM_INSTALL_MANIFEST"

@@ -52,6 +52,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl
         /usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher
         /usr/local/cpanel/3rdparty/orm/bin/orm-metrics-collect.pl
+        /usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/AccountResolver.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/BackendPolicy.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm
@@ -66,6 +67,7 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventQueue.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventTransport.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEvents.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PodmanMetricsCollector.pm
         /usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl
         /etc/systemd/system/orm-broker.service
         /etc/systemd/system/orm-provider-events.service
@@ -73,6 +75,8 @@ sub allowed_target {
         /etc/systemd/system/orm-instance@.service
         /etc/systemd/system/orm-metrics-collect@.service
         /etc/systemd/system/orm-metrics-collect@.timer
+        /etc/systemd/system/orm-podman-metrics.service
+        /etc/systemd/system/orm-podman-metrics.timer
         /usr/local/cpanel/3rdparty/orm/src/Orm/Backend/ProviderPolicyStore.php
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderPolicy.pm
         /usr/local/cpanel/3rdparty/orm/VERSION

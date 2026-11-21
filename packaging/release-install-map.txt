@@ -35,10 +35,14 @@ broker_provider_event_emitter|src/Orm/Broker/ProviderEventEmitter.pm|/usr/local/
 broker_provider_event_queue|src/Orm/Broker/ProviderEventQueue.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventQueue.pm|644
 broker_provider_event_transport|src/Orm/Broker/ProviderEventTransport.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventTransport.pm|644
 broker_provider_events|src/Orm/Broker/ProviderEvents.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEvents.pm|644
+broker_podman_metrics_collector|src/Orm/Broker/PodmanMetricsCollector.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PodmanMetricsCollector.pm|644
 provider_events_worker|bin/orm-provider-events-worker.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl|755
+podman_metrics_collector|bin/orm-podman-metrics-collect.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl|755
 broker_unit|packaging/systemd/orm-broker.service|/etc/systemd/system/orm-broker.service|644
 provider_events_service|packaging/systemd/orm-provider-events.service|/etc/systemd/system/orm-provider-events.service|644
 provider_events_timer|packaging/systemd/orm-provider-events.timer|/etc/systemd/system/orm-provider-events.timer|644
+podman_metrics_service|packaging/systemd/orm-podman-metrics.service|/etc/systemd/system/orm-podman-metrics.service|644
+podman_metrics_timer|packaging/systemd/orm-podman-metrics.timer|/etc/systemd/system/orm-podman-metrics.timer|644
 instance_unit|packaging/systemd/orm-instance@.service|/etc/systemd/system/orm-instance@.service|644
 metrics_service|packaging/systemd/orm-metrics-collect@.service|/etc/systemd/system/orm-metrics-collect@.service|644
 metrics_timer|packaging/systemd/orm-metrics-collect@.timer|/etc/systemd/system/orm-metrics-collect@.timer|644
