@@ -327,8 +327,8 @@ sub _probe_socket {
             keyspace_misses => $info{keyspace_misses},
             memory_used_bytes => $info{used_memory},
             total_commands_processed => $info{total_commands_processed},
-            run_id => $info{run_id},
         };
+        $result->{run_id} = $info{run_id} if defined($info{run_id});
         $result->{acl_access_denied_auth} = $info{acl_access_denied_auth}
             if exists($info{acl_access_denied_auth});
         1;

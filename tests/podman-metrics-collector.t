@@ -151,8 +151,9 @@ ok(!defined(Orm::Broker::PodmanMetricsCollector->read_snapshot(
 
 my %rate_values = (%values, run_id => '0123456789abcdef0123456789abcdef01234567', acl_access_denied_auth => 1);
 my $rate_time = 1_800_100_000;
+my $rate_baseline_path = "$state_dir/rate-baseline.json";
 my $rate_collector = Orm::Broker::PodmanMetricsCollector->new(
-    account_root => $account_root, snapshot_path => $snapshot_path, baseline_path => "$state_dir/counter-baseline.json",
+    account_root => $account_root, snapshot_path => $snapshot_path, baseline_path => $rate_baseline_path,
     resolver => $resolver, expected_owner_uid => $uid, expected_owner_gid => $gid,
     read_names => sub { return ('ormtest') }, lookup_home => sub { return $home },
     probe => sub { return { %rate_values } }, clock => sub { return $rate_time },
@@ -170,7 +171,7 @@ is($second_rate_snapshot->{counter_window}->{status}, 'measured', 'measure rates
 is($second_rate_snapshot->{counter_window}->{max_evictions_delta}, 6, 'measure the maximum per-process eviction delta');
 is($second_rate_snapshot->{counter_window}->{max_operations_per_second}, 2, 'measure the maximum per-process operation rate');
 is($second_rate_snapshot->{counter_window}->{max_auth_failures_delta}, 3, 'measure optional auth failures when both samples provide the counter');
-my $baseline_text = do { local (@ARGV, $/) = ("$state_dir/counter-baseline.json"); <> };
+my $baseline_text = do { local (@ARGV, $/) = ($rate_baseline_path); <> };
 ok(index($baseline_text, '0123456789abcdef0123456789abcdef01234567') < 0
     && index($baseline_text, sha256_hex('0123456789abcdef0123456789abcdef01234567')) >= 0,
     'persist only the hashed run ID and never the raw identifier');
@@ -205,14 +206,14 @@ is($optional_auth_snapshot->{counter_window}->{status}, 'measured', 'keep core c
 ok(!$optional_auth_snapshot->{counter_window}->{auth_available}
     && $optional_auth_snapshot->{counter_window}->{max_auth_failures_delta} == 0,
     'leave optional auth evidence unknown when either sample lacks its counter');
-my $baseline_before_partial = do { local (@ARGV, $/) = ("$state_dir/counter-baseline.json"); <> };
+my $baseline_before_partial = do { local (@ARGV, $/) = ($rate_baseline_path); <> };
 my $sampled_before_partial = JSON::PP->new->decode($baseline_before_partial)->{sampled_at};
 {
     local $ENV{ORM_TEST_UNVERIFIED} = 1;
     my $partial_snapshot = $rate_collector->collect();
     is($partial_snapshot->{counter_window}->{reason}, 'incomplete_scan', 'keep counter rates unknown for incomplete account scans');
 }
-my $baseline_after_partial = do { local (@ARGV, $/) = ("$state_dir/counter-baseline.json"); <> };
+my $baseline_after_partial = do { local (@ARGV, $/) = ($rate_baseline_path); <> };
 is(JSON::PP->new->decode($baseline_after_partial)->{sampled_at}, $sampled_before_partial,
     'do not replace a trusted baseline with a partial scan');
 $rate_time -= 3600;
