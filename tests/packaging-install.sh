@@ -142,6 +142,7 @@ case "${1:-}" in
     *) exit 2 ;;
 esac
 MOCK
+    chmod 0755 "$ORM_MANAGE_HOOKS"
     cat >"$ORM_SYSTEMCTL" <<'MOCK'
 #!/usr/bin/env bash
 set -Eeuo pipefail
