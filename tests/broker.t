@@ -1039,6 +1039,42 @@ my @metrics_stat = stat($metrics_path);
 is($metrics_stat[4], $<, 'metrics snapshot is owned by the privileged manager');
 is($metrics_stat[5], $<, 'metrics snapshot is not readable through the cPanel account group');
 is($metrics_stat[2] & 0777, 0600, 'metrics snapshot permissions are root-only');
+my $probe_calls_before_fleet_usage = scalar @metrics_calls;
+my $fresh_fleet_usage = $manager->fleet_usage($account);
+is_deeply($fresh_fleet_usage, {
+    connected_clients => 3, client_limit => 100, memory_limit_bytes => 64 * 1024 * 1024,
+    memory_used_bytes => 1048576, sampled_at => 0 + $metrics->{sampled_at}, state => 'fresh',
+}, 'show fresh account usage and validated limits from the root-owned snapshot');
+is(scalar @metrics_calls, $probe_calls_before_fleet_usage,
+    'read fleet row usage without probing Redis or Valkey');
+ok($manager->_write_metrics_snapshot($account, {
+    commands_per_second => 12, connected_clients => 3, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, uptime_seconds => 3600,
+    sampled_at => int(time - 16 * 60),
+}), 'write a valid stale metrics fixture');
+my $stale_fleet_usage = $manager->fleet_usage($account);
+ok($stale_fleet_usage->{state} eq 'stale' && $stale_fleet_usage->{memory_used_bytes} == 1048576
+    && $stale_fleet_usage->{client_limit} == 100,
+    'retain stale snapshot measurements with configured per-account limits');
+ok($manager->_write_metrics_snapshot($account, {
+    commands_per_second => 12, connected_clients => 3, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, uptime_seconds => 3600,
+    sampled_at => int(time + 120),
+}), 'write a bounded future-dated metrics fixture');
+my $future_fleet_usage = $manager->fleet_usage($account);
+ok($future_fleet_usage->{state} eq 'unknown' && !defined($future_fleet_usage->{memory_used_bytes})
+    && !defined($future_fleet_usage->{sampled_at}),
+    'treat future-dated snapshots as unknown instead of fresh');
+unlink($metrics_path) or die "remove metrics fixture: $!";
+my $missing_fleet_usage = $manager->fleet_usage($account);
+ok($missing_fleet_usage->{state} eq 'unknown' && !defined($missing_fleet_usage->{connected_clients})
+    && $missing_fleet_usage->{client_limit} == 100,
+    'keep missing usage unknown while retaining validated configured limits');
+ok($manager->_write_metrics_snapshot($account, {
+    commands_per_second => 12, connected_clients => 3, keyspace_hits => 90, keyspace_misses => 10,
+    memory_peak_bytes => 2097152, memory_used_bytes => 1048576, uptime_seconds => 3600,
+    sampled_at => int(time),
+}), 'restore a fresh metrics fixture for fleet aggregation');
 my $security_metrics_path = "$etc_instances/ormtest/security-metrics.json";
 unlink($security_metrics_path) if -e $security_metrics_path;
 my $security_now = time - 3600;

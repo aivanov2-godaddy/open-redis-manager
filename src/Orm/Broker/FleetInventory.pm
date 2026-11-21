@@ -457,12 +457,25 @@ sub page {
             } else {
                 $backups_available = 0;
             }
+            my $usage = {
+                connected_clients => undef,
+                client_limit => undef,
+                memory_limit_bytes => undef,
+                memory_used_bytes => undef,
+                sampled_at => undef,
+                state => 'unknown',
+            };
+            if (eval { $self->{instance_manager}->can('fleet_usage') }) {
+                my $candidate_usage = eval { $self->{instance_manager}->fleet_usage($candidate->{account}) };
+                $usage = $candidate_usage if _valid_fleet_usage($candidate_usage);
+            }
             push @page, {
                 backups => \@backups,
                 backups_available => $backups_available ? JSON::PP::true : JSON::PP::false,
                 backend => $backend,
                 username => $candidate->{username},
                 state => $state,
+                usage => $usage,
             };
         }
     }
@@ -583,6 +596,29 @@ sub _valid_backup_entry {
     return 0 if !defined($backup->{size_bytes}) || ref($backup->{size_bytes})
         || $backup->{size_bytes} !~ /\A[1-9][0-9]*\z/ || $backup->{size_bytes} > $MAX_BACKUP_BYTES;
     return 1;
+}
+
+sub _valid_fleet_usage {
+    my ($usage) = @_;
+    return 0 if ref($usage) ne 'HASH';
+    return 0 if join(',', sort keys %{$usage}) ne join(',', sort qw(
+        connected_clients client_limit memory_limit_bytes memory_used_bytes sampled_at state
+    ));
+    return 0 if !defined($usage->{state}) || ref($usage->{state})
+        || $usage->{state} !~ /\A(?:fresh|stale|unknown)\z/;
+    for my $field (qw(connected_clients client_limit memory_limit_bytes memory_used_bytes sampled_at)) {
+        next if !defined($usage->{$field});
+        return 0 if ref($usage->{$field}) || $usage->{$field} !~ /\A(?:0|[1-9][0-9]{0,15})\z/;
+    }
+    return 0 if defined($usage->{client_limit}) && $usage->{client_limit} < 1;
+    return 0 if defined($usage->{memory_limit_bytes}) && $usage->{memory_limit_bytes} < 1;
+    if ($usage->{state} eq 'unknown') {
+        return !defined($usage->{connected_clients}) && !defined($usage->{memory_used_bytes})
+            && !defined($usage->{sampled_at});
+    }
+    return defined($usage->{connected_clients}) && defined($usage->{memory_used_bytes})
+        && defined($usage->{sampled_at}) && defined($usage->{client_limit})
+        && defined($usage->{memory_limit_bytes});
 }
 
 sub _audit_control {
