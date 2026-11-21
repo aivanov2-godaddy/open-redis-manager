@@ -1112,7 +1112,7 @@ WHM::header('Open Redis Manager', 0, 0);
     <section aria-labelledby="orm-backends-title">
       <h2 id="orm-backends-title">Redis-compatible backends</h2>
       <table>
-        <thead><tr><th scope="col">Backend</th><th scope="col">Binary</th><th scope="col">Version</th><th scope="col">Service state</th></tr></thead>
+        <thead><tr><th scope="col">Backend</th><th scope="col">Binary</th><th scope="col">Version</th><th scope="col">Service state</th><th scope="col">Managed ORM accounts</th></tr></thead>
         <tbody>
           <?php foreach ($report['backends'] as $backend): ?>
             <tr>
@@ -1120,12 +1120,14 @@ WHM::header('Open Redis Manager', 0, 0);
               <td><?= htmlspecialchars($backend['status'] === 'detected' ? (string)$backend['server_binary'] : 'Not detected in known paths', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
               <td><?= htmlspecialchars($backend['version'] ?? 'Unknown', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
               <td><?= htmlspecialchars($backend['service']['status'] . ($backend['service']['unit'] ? ' · ' . $backend['service']['unit'] : ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+              <td><?php if (!$rootAuthorized): ?>Root-only aggregate<?php elseif ($fleetSummary === null): ?>Load root fleet summary<?php elseif (!is_array($fleetSummary['backend_counts'] ?? null)): ?>Not reported by this broker<?php else: ?><?= number_format($fleetSummary['backend_counts'][$backend['id']] ?? 0) ?><?php endif; ?></td>
             </tr>
           <?php endforeach; ?>
         </tbody>
       </table>
       <p>Discovery checks common fixed paths and systemd units. A missing match does not prove that a backend is absent.</p>
       <p>Discovery queries fixed binary version output and systemd service state. It does not change services or read account data, Redis configuration, credentials, or Redis data.</p>
+      <p>Managed-account counts come from the separate root-only fleet summary, which counts only accounts with validated ORM manifests. Load that summary to display counts; older brokers may not report them. The counts do not include unmanaged services or containers.</p>
     </section>
     <section aria-labelledby="orm-provider-events-title">
       <h2 id="orm-provider-events-title">Provider event delivery</h2>
