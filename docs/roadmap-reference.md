@@ -32,7 +32,7 @@ The reference [documentation roadmap](https://cpanelredismanager.com/documentati
 | 2.10.x | REST API, webhooks and automation events, Redis version management, and external Redis integration. |
 | 3.0.x | Shared architecture, DirectAdmin support, and cluster, Sentinel and scaling-oriented deployment. |
 
-The reference documentation also describes provider hook events for backend changes, denied access, quota limits and billing automation. This is a vendor-described capability, not evidence that ORM implements it. ORM tracks a separately designed, optional signed event adapter in [issue #143](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143); it must not couple core service control to WHMCS or send secrets and Redis data in event payloads.
+The reference documentation also describes provider hook events for backend changes, denied access, quota limits and billing automation. ORM implements a separately scoped optional signed event adapter under [issue #143](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143). It remains disabled by default, is independent of WHMCS, and sends only fixed event metadata; source-matched disposable-host validation remains a release gate. See the [provider event guide](guides/provider-events.md).
 
 ## ORM planning rule
 

@@ -44,12 +44,18 @@ chmod(0755, $policy_root) or die "chmod policy root: $!";
 
 my @groups = split /\s+/, $);
 my $gid = 0 + ($groups[0] // $<);
+my $test_uid = 0 + $<;
+if ($test_uid == 0) {
+    my @unprivileged = getpwnam('nobody');
+    die "root-run reseller tests require the system nobody account" if @unprivileged < 4;
+    ($test_uid, $gid) = @unprivileged[2, 3];
+}
 my %owners = (
     'acct-one' => 'reseller1',
     'acct-two' => 'reseller1',
     'acct-three' => 'reseller2',
 );
-my $resolver = bless { uid => 0 + $<, gid => $gid, owners => \%owners }, 'Local::ResellerTestResolver';
+my $resolver = bless { uid => $test_uid, gid => $gid, owners => \%owners }, 'Local::ResellerTestResolver';
 my $policy_path = "$policy_root/provider-policy.json";
 my $provider_policy = Orm::Broker::ProviderPolicy->new(path => $policy_path, expected_owner_uid => $<);
 my $policy = {
@@ -113,7 +119,7 @@ for my $name (sort keys %instances) {
     chmod(0750, $config_dir) or die "chmod account config directory: $!";
     chown($<, $gid, $config_dir) or die "chown account config directory: $!";
     chmod(0700, $data_dir) or die "chmod account data directory: $!";
-    chown($<, $gid, $data_dir) or die "chown account data directory: $!";
+    chown($test_uid, $gid, $data_dir) or die "chown account data directory: $!";
     my $socket = "$data_dir/redis.sock";
     my $settings = {
         memory_mib => $instances{$name}->{memory_mib},
@@ -129,7 +135,7 @@ for my $name (sort keys %instances) {
     chown($<, $gid, $config_path) or die "chown Redis config fixture: $!";
     my $manifest = {
         backend => 'redis', config => $config_path, data => $data_dir,
-        gid => $gid, preset => 'generic', socket => $socket, uid => 0 + $<, version => 2,
+        gid => $gid, preset => 'generic', socket => $socket, uid => $test_uid, version => 2,
     };
     open(my $metadata, '>', "$config_dir/manifest.json") or die "create manifest fixture: $!";
     print {$metadata} JSON::PP->new->canonical(1)->encode($manifest) . "\n";
@@ -148,7 +154,7 @@ is_deeply($summary->{resellers}->[0], {
     max_instances => 2, max_memory_mib => 64,
 }, 'return only bounded reseller totals and configured quotas');
 my $quota_denial = $manager->dispatch('instance.provision', {
-    name => 'acct-new', uid => 0 + $<, gid => $gid, owner => 'reseller1', plan => 'starter',
+    name => 'acct-new', uid => $test_uid, gid => $gid, owner => 'reseller1', plan => 'starter',
 });
 is($quota_denial->{error}, 'provider_policy_denied', 'enforce reseller quotas on a new provision only');
 ok(!-e "$etc_root/acct-new" && !-e "$data_root/acct-new", 'do not create files when a quota denies provisioning');
@@ -158,12 +164,12 @@ ok(@lock_stat && $lock_stat[4] == $< && ($lock_stat[2] & 0777) == 0600,
 
 my $exposure_frame = '{"operation":"provider.exposure","version":1}' . "\n";
 my $exposure = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
-    $exposure_frame, 0 + $<, $resolver, $manager,
+    $exposure_frame, $test_uid, $resolver, $manager,
 ));
 is($exposure->{exposure}, 'advanced', 'return only a validated exposure tier to an authenticated cPanel account');
 my $branding_frame = '{"operation":"provider.branding","version":1}' . "\n";
 my $branding = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
-    $branding_frame, 0 + $<, $resolver, $manager,
+    $branding_frame, $test_uid, $resolver, $manager,
 ));
 is_deeply($branding->{branding}, $provider_policy->branding_settings(),
     'return validated provider display settings through the authenticated account operation');

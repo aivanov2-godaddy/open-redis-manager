@@ -29,7 +29,16 @@ broker_fleet_inventory|src/Orm/Broker/FleetInventory.pm|/usr/local/cpanel/3rdpar
 broker_peer_credentials|src/Orm/Broker/PeerCredentials.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PeerCredentials.pm|644
 broker_protocol|src/Orm/Broker/Protocol.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Protocol.pm|644
 broker_server|src/Orm/Broker/Server.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Server.pm|644
+broker_provider_event_config|src/Orm/Broker/ProviderEventConfig.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventConfig.pm|644
+broker_provider_event_endpoint|src/Orm/Broker/ProviderEventEndpoint.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventEndpoint.pm|644
+broker_provider_event_emitter|src/Orm/Broker/ProviderEventEmitter.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventEmitter.pm|644
+broker_provider_event_queue|src/Orm/Broker/ProviderEventQueue.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventQueue.pm|644
+broker_provider_event_transport|src/Orm/Broker/ProviderEventTransport.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventTransport.pm|644
+broker_provider_events|src/Orm/Broker/ProviderEvents.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEvents.pm|644
+provider_events_worker|bin/orm-provider-events-worker.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl|755
 broker_unit|packaging/systemd/orm-broker.service|/etc/systemd/system/orm-broker.service|644
+provider_events_service|packaging/systemd/orm-provider-events.service|/etc/systemd/system/orm-provider-events.service|644
+provider_events_timer|packaging/systemd/orm-provider-events.timer|/etc/systemd/system/orm-provider-events.timer|644
 instance_unit|packaging/systemd/orm-instance@.service|/etc/systemd/system/orm-instance@.service|644
 metrics_service|packaging/systemd/orm-metrics-collect@.service|/etc/systemd/system/orm-metrics-collect@.service|644
 metrics_timer|packaging/systemd/orm-metrics-collect@.timer|/etc/systemd/system/orm-metrics-collect@.timer|644

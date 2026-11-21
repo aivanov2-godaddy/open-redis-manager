@@ -25,7 +25,7 @@ Step-by-step connection examples are collected in the [application guides](guide
 | Hosting package and reseller policy | Package eligibility, memory/retention ceilings, reseller quotas, user exposure | Root WHM can set package availability, memory ceilings, snapshot retention, per-OWNER instance and aggregate-memory quotas, policy mode, and cPanel exposure. |
 | Provider branding | Product name, PNG logo, HTTPS support link, four-color palettes and presets, footer visibility | Root WHM validates and previews branding; cPanel receives only those display fields through the account-authenticated broker. |
 | WHMCS | Billing lifecycle events | Future, optional adapter; must remain decoupled from core |
-| Provider hook events | Billing/automation reactions | Planned optional adapter; fixed event types, signed delivery, replay protection, bounded retries and explicit data minimization are required before release. See [issue #143](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143). |
+| Provider hook events | Billing/automation reactions | Optional signed event delivery is implemented in the repository and disabled by default. Receivers must verify HMAC signatures, enforce timestamps, and deduplicate event IDs. Disposable-host release validation remains required. See [the provider event guide](guides/provider-events.md) and [issue #143](https://github.com/aivanov2-godaddy/open-redis-manager/issues/143). |
 
 ## Credential rules
 

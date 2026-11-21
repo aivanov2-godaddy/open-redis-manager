@@ -29,6 +29,10 @@ final class BrokerClient
         'provider.exposure',
         'provider.branding',
         'provider.resellers',
+        'provider.events.status',
+        'provider.events.configure',
+        'provider.events.queue.status',
+        'provider.backend.selected',
     ];
     private const MEMORY_POLICIES = [
         'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru',
@@ -44,7 +48,7 @@ final class BrokerClient
     }
 
     /** @return array{success:bool,version:int,state?:string,preset?:string,exposure?:string,branding?:array{product_name:string,logo_png_base64:string,support_url:string,preset:string,primary_color:string,secondary_color:string,surface_color:string,text_color:string,footer_visible:bool},resellers?:list<array{owner:string,account_count:int,active_instances:int,memory_mib:int,max_instances:int,max_memory_mib:int}>,config?:array{memory_mib:int,maxmemory_policy:string,maxclients:int,timeout:int},backups?:list<array{id:string,created_at:int,size_bytes:int}>,backup?:array{id:string,created_at:int,size_bytes:int},backup_id?:string,safety_backup_id?:string,error?:string,memory_used_bytes?:int,memory_peak_bytes?:int,connected_clients?:int,uptime_seconds?:int,commands_per_second?:int,keyspace_hits?:int,keyspace_misses?:int,sampled_at?:int,stale?:bool,retained?:bool}|null */
-    public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null, ?string $range = null): ?array
+    public function request(string $operation, ?string $preset = null, ?array $config = null, ?string $backupId = null, ?string $range = null, ?string $backend = null): ?array
     {
         if (!in_array($operation, self::OPERATIONS, true)) {
             return null;
@@ -53,7 +57,9 @@ final class BrokerClient
             || !in_array($preset, ['wordpress', 'laravel', 'magento', 'session', 'generic'], true))) {
             return null;
         }
-        if ($config !== null && ($operation !== 'instance.configure' || $preset !== null || !self::validConfig($config))) {
+        if ($config !== null && ($preset !== null || ($operation === 'instance.configure'
+            ? !self::validConfig($config)
+            : ($operation !== 'provider.events.configure' || !self::validProviderEventConfig($config))))) {
             return null;
         }
         if ($operation === 'instance.configure' && $config === null) {
@@ -67,8 +73,22 @@ final class BrokerClient
             || ($range !== null && !in_array($range, ['24h', '7d'], true))) {
             return null;
         }
+        if (($operation === 'provider.backend.selected') !== ($backend !== null)
+            || ($backend !== null && !in_array($backend, ['redis', 'valkey'], true))) {
+            return null;
+        }
 
-        if ($config !== null) {
+        if ($operation === 'provider.backend.selected') {
+            $payload = ['backend' => $backend, 'operation' => $operation, 'version' => 1];
+        } elseif ($config !== null && $operation === 'provider.events.configure') {
+            $payload = [
+                'destination' => $config['destination'],
+                'enabled' => $config['enabled'],
+                'operation' => $operation,
+                'rotate_key' => $config['rotate_key'],
+                'version' => 1,
+            ];
+        } elseif ($config !== null) {
             $payload = [
                 'maxclients' => $config['maxclients'],
                 'maxmemory_policy' => $config['maxmemory_policy'],
@@ -116,6 +136,10 @@ final class BrokerClient
         $keys = array_keys($decoded);
         sort($keys);
         if ($decoded['success']) {
+            if ($operation === 'provider.backend.selected') {
+                return $keys === ['queued', 'success', 'version'] && is_bool($decoded['queued'])
+                    ? $decoded : null;
+            }
             if ($operation === 'instance.auth.status') {
                 return $keys === ['auth_configured', 'success', 'version']
                     && is_bool($decoded['auth_configured'] ?? null) ? $decoded : null;
@@ -226,6 +250,60 @@ final class BrokerClient
                     ];
                 }
                 return ['resellers' => $resellers, 'success' => true, 'version' => 1];
+            }
+            if ($operation === 'provider.events.status') {
+                if ($keys !== ['destination', 'enabled', 'key_configured', 'success', 'version']
+                    || !is_string($decoded['destination']) || !self::validProviderEventDestination($decoded['destination'])
+                    || !is_bool($decoded['enabled']) || !is_bool($decoded['key_configured'])) {
+                    return null;
+                }
+                return ['destination' => $decoded['destination'], 'enabled' => $decoded['enabled'],
+                    'key_configured' => $decoded['key_configured'], 'success' => true, 'version' => 1];
+            }
+            if ($operation === 'provider.events.configure') {
+                if ($keys !== ['destination', 'enabled', 'key_configured', 'key_rotated', 'success', 'version']
+                    || !is_string($decoded['destination']) || !self::validProviderEventDestination($decoded['destination'])
+                    || !is_bool($decoded['enabled']) || !is_bool($decoded['key_configured'])
+                    || !is_bool($decoded['key_rotated'])) {
+                    return null;
+                }
+                return ['destination' => $decoded['destination'], 'enabled' => $decoded['enabled'],
+                    'key_configured' => $decoded['key_configured'], 'key_rotated' => $decoded['key_rotated'],
+                    'success' => true, 'version' => 1];
+            }
+            if ($operation === 'provider.events.queue.status') {
+                if ($keys !== ['counts', 'records', 'success', 'version']
+                    || !is_array($decoded['counts']) || !is_array($decoded['records'])
+                    || !array_is_list($decoded['records']) || count($decoded['records']) > 256) {
+                    return null;
+                }
+                $countKeys = array_keys($decoded['counts']);
+                sort($countKeys);
+                if ($countKeys !== ['delivered', 'expired', 'failed', 'pending', 'sending']) {
+                    return null;
+                }
+                foreach ($decoded['counts'] as $count) {
+                    if (!is_int($count) || $count < 0 || $count > 256) { return null; }
+                }
+                $records = [];
+                foreach ($decoded['records'] as $record) {
+                    if (!is_array($record)) { return null; }
+                    $recordKeys = array_keys($record);
+                    sort($recordKeys);
+                    if (!in_array($recordKeys, [
+                        ['age_seconds', 'attempts', 'next_attempt_at', 'state'],
+                        ['age_seconds', 'attempts', 'next_attempt_at', 'outcome', 'state'],
+                    ], true) || !is_int($record['age_seconds']) || $record['age_seconds'] < 0 || $record['age_seconds'] > 172800
+                        || !is_int($record['attempts']) || $record['attempts'] < 0 || $record['attempts'] > 8
+                        || !is_int($record['next_attempt_at']) || $record['next_attempt_at'] < 0
+                        || !is_string($record['state']) || !in_array($record['state'], ['pending', 'sending', 'delivered', 'failed', 'expired'], true)
+                        || (isset($record['outcome']) && (!is_string($record['outcome'])
+                            || !in_array($record['outcome'], ['delivered', 'retryable', 'permanent'], true)))) {
+                        return null;
+                    }
+                    $records[] = $record;
+                }
+                return ['counts' => $decoded['counts'], 'records' => $records, 'success' => true, 'version' => 1];
             }
             if ($operation === 'instance.configure' && !array_key_exists('config', $decoded)) {
                 return null;
@@ -377,7 +455,7 @@ final class BrokerClient
         }
         if ($keys !== ['error', 'success', 'version']
             || !in_array($decoded['error'], [
-                'invalid_request', 'not_authorized', 'operation_failed', 'operation_in_progress', 'instance_unavailable',
+                'invalid_request', 'not_authorized', 'operation_failed', 'invalid_destination', 'operation_in_progress', 'instance_unavailable',
                 'instance_exists', 'storage_unavailable', 'backend_policy_required', 'backend_unavailable',
                 'provider_policy_denied', 'provider_policy_unavailable',
                 'service_failed', 'not_configured', 'not_running', 'metrics_unavailable', 'rate_limited',
@@ -409,6 +487,22 @@ final class BrokerClient
             && is_string($config['maxmemory_policy']) && in_array($config['maxmemory_policy'], self::MEMORY_POLICIES, true);
     }
 
+    private static function validProviderEventConfig(mixed $config): bool
+    {
+        if (!is_array($config)) { return false; }
+        $keys = array_keys($config);
+        sort($keys);
+        return $keys === ['destination', 'enabled', 'rotate_key']
+            && is_string($config['destination']) && self::validProviderEventDestination($config['destination'])
+            && is_bool($config['enabled']) && is_bool($config['rotate_key']);
+    }
+
+    private static function validProviderEventDestination(string $destination): bool
+    {
+        return $destination === '' || (strlen($destination) <= 2048
+            && preg_match('#\Ahttps://[A-Za-z0-9.-]+(?::443)?(?:/[A-Za-z0-9/._~!$&\'()*+,;=:@%-]*)?\z#i', $destination) === 1);
+    }
+
     /** @return array{auth_configured:bool,success:true,version:1,error?:string}|null */
     public function authStatus(): ?array
     {
@@ -425,6 +519,28 @@ final class BrokerClient
     public function disableAuth(): ?array
     {
         return $this->request('instance.auth.disable');
+    }
+
+    public function providerEventStatus(): ?array
+    {
+        return $this->request('provider.events.status');
+    }
+
+    public function providerBackendSelected(string $backend): ?array
+    {
+        return $this->request('provider.backend.selected', null, null, null, null, $backend);
+    }
+
+    public function providerEventQueueStatus(): ?array
+    {
+        return $this->request('provider.events.queue.status');
+    }
+
+    public function configureProviderEvents(string $destination, bool $enabled, bool $rotateKey): ?array
+    {
+        return $this->request('provider.events.configure', null, [
+            'destination' => $destination, 'enabled' => $enabled, 'rotate_key' => $rotateKey,
+        ]);
     }
 
     private static function isBrandHexColor(string $color): bool

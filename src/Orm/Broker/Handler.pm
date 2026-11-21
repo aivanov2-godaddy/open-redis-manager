@@ -9,13 +9,82 @@ sub _not_authorized {
     return { error => 'not_authorized', success => JSON::PP::false, version => 1 };
 }
 
+sub _emit_operation_event {
+    my ($emitter, $request, $response, $instance_manager, $account) = @_;
+    return if !ref($emitter) || !eval { $emitter->can('emit') }
+        || ref($request) ne 'HASH' || ref($response) ne 'HASH';
+    my %events = (
+        'instance.provision' => 'instance.provisioned',
+        'instance.start' => 'instance.started',
+        'instance.stop' => 'instance.stopped',
+        'instance.restart' => 'instance.restarted',
+    );
+    my $operation = $request->{operation} // '';
+    my $event = $events{$operation};
+    return if !defined($event);
+    if ($response->{success}) {
+        my $backend = $response->{backend} // '';
+        return if $backend !~ /\A(?:redis|valkey)\z/;
+        eval { $emitter->emit($event, { backend => $backend }); };
+        return;
+    }
+    return if ($response->{error} // '') ne 'service_failed';
+    my $state = eval { $instance_manager->status($account) };
+    return if ref($state) ne 'HASH' || ($state->{backend} // '') !~ /\A(?:redis|valkey)\z/;
+    eval { $emitter->emit('instance.failed', {
+        backend => $state->{backend}, operation => $operation, reason_code => 'service_failed',
+    }); };
+}
+
+sub _provider_event_admin_response {
+    my ($request, $config_store, $queue) = @_;
+    return { error => 'operation_failed', success => JSON::PP::false, version => 1 }
+        if !ref($config_store) || !ref($queue);
+    if ($request->{operation} eq 'provider.events.status') {
+        my ($config) = $config_store->load();
+        return { error => 'operation_failed', success => JSON::PP::false, version => 1 }
+            if ref($config) ne 'HASH';
+        my $public = $config_store->public_view($config);
+        return { %$public, success => JSON::PP::true, version => 1 } if ref($public) eq 'HASH';
+    } elsif ($request->{operation} eq 'provider.events.queue.status') {
+        my ($status) = $queue->status();
+        return { %$status, success => JSON::PP::true, version => 1 } if ref($status) eq 'HASH';
+    } elsif ($request->{operation} eq 'provider.events.configure') {
+        my ($saved) = $config_store->save(
+            $request->{destination}, $request->{enabled} ? '1' : '0', $request->{rotate_key} ? '1' : '0',
+        );
+        return { error => 'invalid_destination', success => JSON::PP::false, version => 1 }
+            if ref($saved) ne 'HASH';
+        my $public = $config_store->public_view($saved);
+        return { %$public, key_rotated => $saved->{key_rotated} ? JSON::PP::true : JSON::PP::false,
+            success => JSON::PP::true, version => 1 } if ref($public) eq 'HASH';
+    }
+    return { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+}
+
 sub handle_frame {
-    my ($class, $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory) = @_;
+    my ($class, $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory,
+        $provider_event_config, $provider_event_queue, $event_emitter) = @_;
     my $request = parse_request($frame);
     my $response;
     if (!$request) {
         $response = { error => 'invalid_request', success => JSON::PP::false, version => 1 };
     } else {
+        if ($request->{operation} eq 'provider.backend.selected') {
+            if ($peer_uid != 0) {
+                $response = _not_authorized();
+            } else {
+                my ($queued) = ref($event_emitter) && eval { $event_emitter->can('emit') }
+                    ? eval { $event_emitter->emit('backend.selected', { backend => $request->{backend} }) }
+                    : (0);
+                $response = { queued => $queued ? JSON::PP::true : JSON::PP::false,
+                    success => JSON::PP::true, version => 1 };
+            }
+        }
+        if ($request->{operation} =~ /\Aprovider\.events\./) {
+            $response = $peer_uid != 0 ? _not_authorized()
+                : _provider_event_admin_response($request, $provider_event_config, $provider_event_queue);
+        }
         if ($request->{operation} eq 'provider.resellers') {
             if ($peer_uid != 0) {
                 $response = _not_authorized();
@@ -168,6 +237,7 @@ sub handle_frame {
             };
             $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 }
                 if ref($response) ne 'HASH';
+            _emit_operation_event($event_emitter, $request, $response, $instance_manager, $account);
         } else {
             $response = { error => 'not_authorized', success => JSON::PP::false, version => 1 };
         }

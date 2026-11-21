@@ -31,7 +31,13 @@ ORM_INSTANCE_LAUNCHER="$ORM_3RDPARTY/bin/orm-instance-launcher"
 ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
 ORM_METRICS_SERVICE=/etc/systemd/system/orm-metrics-collect@.service
 ORM_METRICS_TIMER=/etc/systemd/system/orm-metrics-collect@.timer
+ORM_PROVIDER_EVENTS_CONFIG=/etc/orm-provider-events.json
+ORM_PROVIDER_EVENTS_ROOT=/var/lib/orm-events
+ORM_PROVIDER_EVENTS_OUTBOX="$ORM_PROVIDER_EVENTS_ROOT/outbox"
+ORM_PROVIDER_EVENTS_SERVICE=/etc/systemd/system/orm-provider-events.service
+ORM_PROVIDER_EVENTS_TIMER=/etc/systemd/system/orm-provider-events.timer
 ORM_CREATED_INSTANCE_ROOTS=()
+ORM_CREATED_PROVIDER_EVENT_PATHS=()
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
 
@@ -199,7 +205,16 @@ orm_package_file_map() {
         broker_peer_credentials "$ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm" "$ORM_BROKER_LIB/PeerCredentials.pm" 644 \
         broker_protocol "$ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm" "$ORM_BROKER_LIB/Protocol.pm" 644 \
         broker_server "$ORM_REPO_ROOT/src/Orm/Broker/Server.pm" "$ORM_BROKER_LIB/Server.pm" 644 \
+        broker_provider_event_config "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEventConfig.pm" "$ORM_BROKER_LIB/ProviderEventConfig.pm" 644 \
+        broker_provider_event_endpoint "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEventEndpoint.pm" "$ORM_BROKER_LIB/ProviderEventEndpoint.pm" 644 \
+        broker_provider_event_emitter "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEventEmitter.pm" "$ORM_BROKER_LIB/ProviderEventEmitter.pm" 644 \
+        broker_provider_event_queue "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEventQueue.pm" "$ORM_BROKER_LIB/ProviderEventQueue.pm" 644 \
+        broker_provider_event_transport "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEventTransport.pm" "$ORM_BROKER_LIB/ProviderEventTransport.pm" 644 \
+        broker_provider_events "$ORM_REPO_ROOT/src/Orm/Broker/ProviderEvents.pm" "$ORM_BROKER_LIB/ProviderEvents.pm" 644 \
+        provider_events_worker "$ORM_REPO_ROOT/bin/orm-provider-events-worker.pl" "$ORM_3RDPARTY/bin/orm-provider-events-worker.pl" 755 \
         broker_unit "$ORM_PACKAGE_ROOT/systemd/orm-broker.service" "$ORM_BROKER_UNIT" 644 \
+        provider_events_service "$ORM_PACKAGE_ROOT/systemd/orm-provider-events.service" "$ORM_PROVIDER_EVENTS_SERVICE" 644 \
+        provider_events_timer "$ORM_PACKAGE_ROOT/systemd/orm-provider-events.timer" "$ORM_PROVIDER_EVENTS_TIMER" 644 \
         instance_unit "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" "$ORM_INSTANCE_UNIT" 644 \
         metrics_service "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" "$ORM_METRICS_SERVICE" 644 \
         metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "$ORM_METRICS_TIMER" 644 \
@@ -637,6 +652,11 @@ orm_require_root_and_platform() {
     [[ -f "$ORM_CPANEL_ROOT/php/WHM.php" && -f "$ORM_CPANEL_ROOT/php/cpanel.php" ]] || orm_die 'expected cPanel PHP interface files were not found.'
 }
 
+orm_require_provider_event_tls() {
+    "$ORM_PERL" -MIO::Socket::SSL -e 1 >/dev/null 2>&1 \
+        || orm_die 'the provider event worker requires the IO::Socket::SSL Perl module.'
+}
+
 orm_make_cpanel_archive() {
     local destination="$1"
     local stage
@@ -727,6 +747,65 @@ orm_prepare_instance_directories() {
         chown root:root -- "$path" || orm_die "could not secure the ORM runtime directory: $path"
         chmod 0711 -- "$path" || orm_die "could not set private traversal permissions on: $path"
     done
+}
+
+orm_prepare_provider_event_storage() {
+    local path owner mode identity
+    ORM_CREATED_PROVIDER_EVENT_PATHS=()
+    for path in "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX"; do
+        if [[ ! -e "$path" && ! -L "$path" ]]; then
+            mkdir -m 0700 -- "$path" || orm_die "could not create the provider event directory: $path"
+            identity="$(stat -c '%d:%i' -- "$path")" || orm_die "could not identify the provider event directory: $path"
+            ORM_CREATED_PROVIDER_EVENT_PATHS+=("$path|$identity|directory")
+            chown root:root -- "$path" || orm_die "could not secure the provider event directory: $path"
+            chmod 0700 -- "$path" || orm_die "could not set provider event directory permissions: $path"
+        fi
+        [[ -d "$path" && ! -L "$path" ]] || orm_die "provider event storage path is unsafe: $path"
+        owner="$(stat -c '%u' -- "$path")" || orm_die "could not inspect provider event storage: $path"
+        mode="$(stat -c '%a' -- "$path")" || orm_die "could not inspect provider event storage mode: $path"
+        [[ "$owner" == 0 && "$mode" == 700 ]] || orm_die "provider event storage must be root-owned mode 0700: $path"
+    done
+    if [[ ! -e "$ORM_PROVIDER_EVENTS_CONFIG" && ! -L "$ORM_PROVIDER_EVENTS_CONFIG" ]]; then
+        local temporary
+        temporary="$(mktemp /etc/.orm-provider-events.XXXXXXXX)" \
+            || orm_die 'could not create the default provider event configuration.'
+        identity="$(stat -c '%d:%i' -- "$temporary")" || orm_die 'could not identify the temporary provider event configuration.'
+        ORM_CREATED_PROVIDER_EVENT_PATHS+=("$temporary|$identity|temporary")
+        chmod 0600 -- "$temporary" || orm_die 'could not secure the provider event configuration.'
+        printf '{"destination":"","enabled":false,"signing_key":"","version":1}\n' >"$temporary" \
+            || orm_die 'could not write the default provider event configuration.'
+        chown root:root -- "$temporary" || orm_die 'could not secure the provider event configuration owner.'
+        ln -- "$temporary" "$ORM_PROVIDER_EVENTS_CONFIG" || orm_die 'could not install the default provider event configuration.'
+        identity="$(stat -c '%d:%i' -- "$ORM_PROVIDER_EVENTS_CONFIG")" || orm_die 'could not identify the default provider event configuration.'
+        ORM_CREATED_PROVIDER_EVENT_PATHS+=("$ORM_PROVIDER_EVENTS_CONFIG|$identity|config")
+        rm -f -- "$temporary"
+    fi
+    [[ -f "$ORM_PROVIDER_EVENTS_CONFIG" && ! -L "$ORM_PROVIDER_EVENTS_CONFIG" \
+        && "$(stat -c '%u:%a' -- "$ORM_PROVIDER_EVENTS_CONFIG" 2>/dev/null)" == 0:600 ]] \
+        || orm_die 'provider event configuration exists with unsafe ownership or permissions.'
+}
+
+orm_remove_prepared_provider_event_storage() {
+    local entry path identity kind current_identity
+    for (( index=${#ORM_CREATED_PROVIDER_EVENT_PATHS[@]}-1; index>=0; index-- )); do
+        entry="${ORM_CREATED_PROVIDER_EVENT_PATHS[$index]}"
+        IFS='|' read -r path identity kind <<< "$entry"
+        [[ ! -e "$path" && ! -L "$path" ]] && continue
+        current_identity="$(stat -c '%d:%i' -- "$path" 2>/dev/null)" || return 1
+        [[ "$current_identity" == "$identity" ]] || return 1
+        if [[ "$kind" == config ]]; then
+            [[ -f "$path" && ! -L "$path" && "$(stat -c '%u:%a' -- "$path")" == 0:600 ]] || return 1
+            cmp -s -- "$path" <(printf '{"destination":"","enabled":false,"signing_key":"","version":1}\n') || return 1
+            rm -f -- "$path" || return 1
+        elif [[ "$kind" == temporary ]]; then
+            [[ -f "$path" && ! -L "$path" && "$(stat -c '%u:%a' -- "$path")" == 0:600 ]] || return 1
+            rm -f -- "$path" || return 1
+        else
+            [[ -d "$path" && ! -L "$path" && "$(stat -c '%u:%a' -- "$path")" == 0:700 ]] || return 1
+            rmdir -- "$path" || return 1
+        fi
+    done
+    ORM_CREATED_PROVIDER_EVENT_PATHS=()
 }
 
 orm_remove_prepared_instance_directories() {

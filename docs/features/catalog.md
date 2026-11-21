@@ -48,6 +48,10 @@ This catalog records the public product behavior observed on the reference site 
 
 See [integration matrix](../integrations.md) for PHP extensions, frameworks, control panels and provider billing events.
 
+| Feature | Expected behavior | Current implementation |
+|---|---|---|
+| Provider event delivery | Send minimal, signed events for backend selection, enforced policy denials, quotas and instance lifecycle changes. | Root WHM configures a fixed HTTPS receiver, enables or disables delivery, rotates a root-only HMAC key, and inspects bounded queue state. A separate networked worker delivers signed, allowlisted events from a bounded retry queue; the broker remains network-isolated. Delivery is disabled by default. Disposable-host validation remains required. See the [operator guide](../guides/provider-events.md). |
+
 ## Public roadmap themes captured from the reference
 
 The reference's versioned 2.7–3.0 roadmap is summarized in [Reference release and roadmap summary](../roadmap-reference.md). Those vendor plans are discovery inputs, not ORM commitments or implementation claims.

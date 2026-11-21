@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule Open Redis Manager provider event delivery
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+RandomizedDelaySec=5s
+Persistent=true
+Unit=orm-provider-events.service
+
+[Install]
+WantedBy=timers.target

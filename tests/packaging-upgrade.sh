@@ -131,12 +131,28 @@ set -e
 enabled_file="$TEST_SYSTEMCTL_STATE.enabled"
 active_file="$TEST_SYSTEMCTL_STATE.active"
 case "${1:-}" in
-    is-enabled) cat "$enabled_file" ;;
-    is-active) cat "$active_file" ;;
-    enable) printf 'enabled\n' >"$enabled_file" ;;
+    is-enabled)
+        if [[ "${2:-}" == orm-provider-events.timer ]]; then cat "$TEST_SYSTEMCTL_STATE.events-enabled"; else cat "$enabled_file"; fi
+        ;;
+    is-active)
+        if [[ "${2:-}" == orm-provider-events.timer || "${2:-}" == orm-provider-events.service ]]; then cat "$TEST_SYSTEMCTL_STATE.events-active"; else cat "$active_file"; fi
+        ;;
+    enable)
+        if [[ "${2:-}" == --now && "${3:-}" == orm-provider-events.timer ]]; then
+            printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+            printf 'active\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+        else
+            printf 'enabled\n' >"$enabled_file"
+        fi
+        ;;
     disable)
-        printf 'disabled\n' >"$enabled_file"
-        if [[ "${2:-}" == --now ]]; then
+        if [[ "${3:-}" == orm-provider-events.timer ]]; then
+            printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+            printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+        else
+            printf 'disabled\n' >"$enabled_file"
+        fi
+        if [[ "${2:-}" == --now && "${3:-}" != orm-provider-events.timer ]]; then
             printf 'inactive\n' >"$active_file"
             if [[ -f "$TEST_ROOT/socket.pid" ]]; then kill "$(cat "$TEST_ROOT/socket.pid")" 2>/dev/null || true; rm -f -- "$TEST_ROOT/socket.pid"; fi
             if [[ -f "$TEST_ROOT/initial-socket.pid" ]]; then kill "$(cat "$TEST_ROOT/initial-socket.pid")" 2>/dev/null || true; rm -f -- "$TEST_ROOT/initial-socket.pid"; fi
@@ -153,6 +169,10 @@ case "${1:-}" in
         ;;
     stop)
         printf 'stop\n' >>"$TEST_LOG"
+        if [[ "${2:-}" == orm-provider-events.service ]]; then
+            printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+            exit 0
+        fi
         [[ ! -e "$TEST_ROOT/busy-connection" ]] || exit 51
         printf 'inactive\n' >"$active_file"
         if [[ -f "$TEST_ROOT/socket.pid" ]]; then
@@ -247,12 +267,22 @@ MOCK
     ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
     ORM_METRICS_SERVICE="$test_root/etc/systemd/system/orm-metrics-collect@.service"
     ORM_METRICS_TIMER="$test_root/etc/systemd/system/orm-metrics-collect@.timer"
+    ORM_PROVIDER_EVENTS_CONFIG="$test_root/etc/orm-provider-events.json"
+    ORM_PROVIDER_EVENTS_ROOT="$test_root/var/lib/orm-events"
+    ORM_PROVIDER_EVENTS_OUTBOX="$ORM_PROVIDER_EVENTS_ROOT/outbox"
+    ORM_PROVIDER_EVENTS_SERVICE="$test_root/etc/systemd/system/orm-provider-events.service"
+    ORM_PROVIDER_EVENTS_TIMER="$test_root/etc/systemd/system/orm-provider-events.timer"
     ORM_BROKER_SOCKET="$TEST_SOCKET"
+    mkdir -p -- "$test_root/etc/systemd/system" "$test_root/var/lib"
+    printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+    printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
     export ORM_CPANEL_ROOT ORM_INSTALL_PLUGIN ORM_UNINSTALL_PLUGIN ORM_REGISTER_APPCONFIG ORM_UNREGISTER_APPCONFIG
     export ORM_IS_REGISTERED ORM_CPanel_LIVE ORM_WHM_CGI ORM_WHM_ICONS ORM_3RDPARTY ORM_INSTALL_MANIFEST ORM_APPCONFIG
     export ORM_LIFECYCLE_LOCK ORM_SYSTEMCTL ORM_BROKER_BIN ORM_BROKER_LIB ORM_BROKER_UNIT ORM_INSTANCE_ROOT
     export ORM_INSTANCE_DATA ORM_INSTANCE_UNIT ORM_INSTANCE_LAUNCHER ORM_METRICS_COLLECTOR ORM_METRICS_SERVICE
     export ORM_METRICS_TIMER ORM_BROKER_SOCKET
+    export ORM_PROVIDER_EVENTS_CONFIG ORM_PROVIDER_EVENTS_ROOT ORM_PROVIDER_EVENTS_OUTBOX
+    export ORM_PROVIDER_EVENTS_SERVICE ORM_PROVIDER_EVENTS_TIMER
     if [[ "$baseline" == managed ]]; then
         mkdir -p -- "$TEST_MANAGED_FIXTURE_ROOT"
         tar -xzf "$managed_v1_root/fixtures.tar.gz" -C "$TEST_MANAGED_FIXTURE_ROOT"
@@ -302,6 +332,10 @@ MOCK
         printf 'ORM_BROKER_UNIT=%q\nORM_INSTANCE_ROOT=%q\nORM_INSTANCE_DATA=%q\nORM_INSTANCE_UNIT=%q\n' "$ORM_BROKER_UNIT" "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" "$ORM_INSTANCE_UNIT"
         printf 'ORM_INSTANCE_LAUNCHER=%q\nORM_METRICS_COLLECTOR=%q\nORM_METRICS_SERVICE=%q\nORM_METRICS_TIMER=%q\n' "$ORM_INSTANCE_LAUNCHER" "$ORM_METRICS_COLLECTOR" "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER"
         printf 'ORM_BROKER_SOCKET=%q\n' "$ORM_BROKER_SOCKET"
+        printf 'ORM_PROVIDER_EVENTS_CONFIG=%q\nORM_PROVIDER_EVENTS_ROOT=%q\nORM_PROVIDER_EVENTS_OUTBOX=%q\n' \
+            "$ORM_PROVIDER_EVENTS_CONFIG" "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX"
+        printf 'ORM_PROVIDER_EVENTS_SERVICE=%q\nORM_PROVIDER_EVENTS_TIMER=%q\n' \
+            "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER"
         printf '# ORM_SCRIPT_BODY\n'
         tail -n +4 "$repo_root/packaging/upgrade.sh"
     } >"$runner"

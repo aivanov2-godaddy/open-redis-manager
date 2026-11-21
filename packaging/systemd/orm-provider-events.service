@@ -1,0 +1,29 @@
+[Unit]
+Description=Open Redis Manager provider event delivery
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/perl /usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl
+TimeoutStartSec=360s
+RuntimeMaxSec=360s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/orm-events
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+MemoryMax=64M
+CPUQuota=10%
+TasksMax=16
+LimitNOFILE=64

@@ -18,6 +18,7 @@ The installed fleet page reports verified account inventory and visible-page sta
 - **Branding:** preview the account-facing product name, logo, support URL and colors.
 - **Updates:** show the source version and release information; preserve existing instances and data.
 - **Audit:** root WHM can search retained ORM audit events by UTC date range (up to seven days), account, action, and result, and download normalized JSON. Actor UID, account, fixed action/result/state, timestamp, and the ORM source identifier are shown. Source coverage reports unavailable, timed-out, truncated, or unrecognized rows. It does not show cPanel provisioning, configuration, start, or stop events; host journal retention controls how far back records exist.
+- **Provider events:** root WHM can configure an optional signed HTTPS event destination, enable or disable delivery, rotate its secret, and inspect bounded queue status. Delivery is disabled by default and the key is never shown again after generation. Receivers must validate HMAC, timestamps, and duplicate IDs. See the [provider event guide](provider-events.md).
 
 ## Authorization
 

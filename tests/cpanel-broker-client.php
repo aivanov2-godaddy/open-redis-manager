@@ -81,6 +81,62 @@ $badExposure = new BrokerClient(static fn (string $request): string =>
     "{\"exposure\":\"secret\",\"success\":true,\"version\":1}\n"
 );
 $assert($badExposure->request('provider.exposure') === null, 'Reject an unknown exposure enum.');
+$eventStatusRequests = [];
+$eventStatusClient = new BrokerClient(static function (string $request) use (&$eventStatusRequests): string {
+    $eventStatusRequests[] = $request;
+    return "{\"destination\":\"https://hooks.example.net/orm\",\"enabled\":false,\"key_configured\":true,\"success\":true,\"version\":1}\n";
+});
+$assert($eventStatusClient->providerEventStatus() === [
+    'destination' => 'https://hooks.example.net/orm', 'enabled' => false,
+    'key_configured' => true, 'success' => true, 'version' => 1,
+], 'Read provider event settings without reading a signing key.');
+$assert($eventStatusRequests[0] === "{\"operation\":\"provider.events.status\",\"version\":1}\n",
+    'Provider event status sends only the fixed read operation.');
+$eventConfigureRequests = [];
+$eventConfigureClient = new BrokerClient(static function (string $request) use (&$eventConfigureRequests): string {
+    $eventConfigureRequests[] = $request;
+    return "{\"destination\":\"https://hooks.example.net/orm\",\"enabled\":true,\"key_configured\":true,\"key_rotated\":true,\"success\":true,\"version\":1}\n";
+});
+$assert($eventConfigureClient->configureProviderEvents('https://hooks.example.net/orm', true, true) === [
+    'destination' => 'https://hooks.example.net/orm', 'enabled' => true,
+    'key_configured' => true, 'key_rotated' => true, 'success' => true, 'version' => 1,
+], 'Accept only bounded provider event configuration state.');
+$assert($eventConfigureRequests[0] === "{\"destination\":\"https://hooks.example.net/orm\",\"enabled\":true,\"operation\":\"provider.events.configure\",\"rotate_key\":true,\"version\":1}\n",
+    'Provider event configuration sends destination and state but no key material.');
+$backendEventRequests = [];
+$backendEventClient = new BrokerClient(static function (string $request) use (&$backendEventRequests): string {
+    $backendEventRequests[] = $request;
+    return "{\"queued\":true,\"success\":true,\"version\":1}\n";
+});
+$assert($backendEventClient->providerBackendSelected('valkey') === [
+    'queued' => true, 'success' => true, 'version' => 1,
+], 'Accept a bounded backend-selected event result.');
+$assert($backendEventRequests[0] === "{\"backend\":\"valkey\",\"operation\":\"provider.backend.selected\",\"version\":1}\n",
+    'Backend telemetry sends only the fixed backend enum.');
+$unsafeBackendEventRequests = [];
+$unsafeBackendEventClient = new BrokerClient(static function (string $request) use (&$unsafeBackendEventRequests): string {
+    $unsafeBackendEventRequests[] = $request;
+    return "{\"queued\":true,\"success\":true,\"version\":1}\n";
+});
+$assert($unsafeBackendEventClient->providerBackendSelected('other') === null
+    && count($unsafeBackendEventRequests) === 0, 'Reject unlisted backends before broker I/O.');
+$eventQueueClient = new BrokerClient(static fn (string $request): string =>
+    "{\"counts\":{\"delivered\":1,\"expired\":0,\"failed\":0,\"pending\":1,\"sending\":0},\"records\":[{\"age_seconds\":30,\"attempts\":1,\"next_attempt_at\":1795220030,\"outcome\":\"retryable\",\"state\":\"pending\"}],\"success\":true,\"version\":1}\n"
+);
+$queueSummary = $eventQueueClient->providerEventQueueStatus();
+$assert(is_array($queueSummary) && $queueSummary['counts']['pending'] === 1
+    && $queueSummary['records'][0]['outcome'] === 'retryable', 'Read normalized event queue status without IDs or payloads.');
+$badEventStatus = new BrokerClient(static fn (string $request): string =>
+    "{\"destination\":\"\",\"enabled\":false,\"key\":\"leaked\",\"key_configured\":true,\"success\":true,\"version\":1}\n"
+);
+$assert($badEventStatus->providerEventStatus() === null, 'Reject a signing key field from event status.');
+$unsafeEventConfigRequests = [];
+$unsafeEventConfigClient = new BrokerClient(static function (string $request) use (&$unsafeEventConfigRequests): string {
+    $unsafeEventConfigRequests[] = $request;
+    return "{\"error\":\"invalid_request\",\"success\":false,\"version\":1}\n";
+});
+$assert($unsafeEventConfigClient->configureProviderEvents('https://hooks.example.net/?secret=x', true, false) === null
+    && count($unsafeEventConfigRequests) === 0, 'Reject destination query strings before broker I/O.');
 $branding = [
     'product_name' => 'Northstar Cache',
     'logo_png_base64' => base64_encode(file_get_contents(dirname(__DIR__) . '/packaging/whm/icons/orm-whm.png')),

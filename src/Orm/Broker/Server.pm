@@ -13,6 +13,10 @@ use Orm::Broker::Handler;
 use Orm::Broker::PeerCredentials;
 use Orm::Broker::InstanceManager;
 use Orm::Broker::FleetInventory;
+use Orm::Broker::ProviderPolicy;
+use Orm::Broker::ProviderEventConfig;
+use Orm::Broker::ProviderEventQueue;
+use Orm::Broker::ProviderEventEmitter;
 use Orm::Broker::Protocol qw(max_frame_bytes encode_response);
 
 my $MAX_CLIENTS = 64;
@@ -38,8 +42,15 @@ sub run {
     die "ORM broker socket path already exists\n" if lstat($socket_path);
 
     my $resolver = Orm::Broker::AccountResolver->new(account_root => $account_root);
+    my $event_config = Orm::Broker::ProviderEventConfig->new();
+    my $event_queue = Orm::Broker::ProviderEventQueue->new();
+    my $event_emitter = Orm::Broker::ProviderEventEmitter->new(
+        config_store => $event_config,
+        queue => $event_queue,
+    );
     my $instance_manager = Orm::Broker::InstanceManager->new(
         resolver => $resolver,
+        provider_policy => Orm::Broker::ProviderPolicy->new(event_emitter => $event_emitter),
         quota_lock_path => "$runtime_dir/reseller-quota.lock",
     );
     my $fleet_inventory = Orm::Broker::FleetInventory->new(
@@ -198,7 +209,8 @@ sub run {
                     $request->{rate_limited_targets} = \%rate_limited;
                 }
                 my $response = Orm::Broker::Handler->handle_frame(
-                    $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory
+                    $frame, $peer_uid, $resolver, $instance_manager, $fleet_inventory,
+                    $event_config, $event_queue, $event_emitter
                 );
                 _write_and_close_encoded($selector, \%clients, $fd, $response);
                 next;
