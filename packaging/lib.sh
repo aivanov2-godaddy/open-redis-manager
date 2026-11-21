@@ -534,15 +534,47 @@ orm_adopt_current_install_manifest() {
 }
 
 orm_installed_files_match_current_package() {
-    local key source target mode source_mode installed_mode owner
+    local key source target mode installed_mode owner
     while IFS='|' read -r key source target mode; do
         [[ -f "$source" && ! -L "$source" && -f "$target" && ! -L "$target" ]] || return 1
         owner="$(stat -c '%u' -- "$target")" || return 1
-        source_mode="$(stat -c '%a' -- "$source")" || return 1
         installed_mode="$(stat -c '%a' -- "$target")" || return 1
-        [[ "$owner" == 0 && "$source_mode" == "$mode" && "$installed_mode" == "$mode" ]] || return 1
+        [[ "$owner" == 0 && "$installed_mode" == "$mode" ]] || return 1
+        if [[ "$key" == whm_appconfig ]]; then
+            orm_appconfig_matches_package "$target" || return 1
+            continue
+        fi
         cmp -s -- "$source" "$target" || return 1
     done < <(orm_package_file_map)
+}
+
+orm_installation_matches_current_package() {
+    [[ -f "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" ]] || return 1
+    orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || return 1
+    orm_installed_files_match_current_package || return 1
+    orm_registration_state || return 1
+    local path owner mode
+    for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
+        [[ -d "$path" && ! -L "$path" ]] || return 1
+        owner="$(stat -c '%u' -- "$path")" || return 1
+        mode="$(stat -c '%a' -- "$path")" || return 1
+        [[ "$owner" == 0 && "$mode" == 711 ]] || return 1
+    done
+}
+
+orm_installation_is_absent() {
+    local key source target mode status
+    while IFS='|' read -r key source target mode; do
+        [[ ! -e "$target" && ! -L "$target" ]] || return 1
+    done < <(orm_package_file_map)
+    [[ ! -e "$ORM_INSTALL_MANIFEST" && ! -L "$ORM_INSTALL_MANIFEST" \
+        && ! -e "$ORM_APPCONFIG" && ! -L "$ORM_APPCONFIG" ]] || return 1
+    if orm_registration_state; then
+        return 1
+    else
+        status=$?
+        [[ "$status" -eq 1 ]] || return 1
+    fi
 }
 
 orm_validate_install_manifest() {

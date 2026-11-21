@@ -8,8 +8,12 @@ if [[ "${1:-}" == --help ]]; then
 fi
 [[ $# -eq 0 ]] || orm_die 'unexpected arguments.'
 orm_require_root_and_platform
-orm_require_provider_event_tls
 orm_acquire_lifecycle_lock "$0" "$@"
+if orm_installation_matches_current_package; then
+    printf 'Open Redis Manager already matches this package; no changes were made.\n'
+    exit 0
+fi
+orm_require_provider_event_tls
 orm_install_paths_are_clear
 
 archive="$(mktemp "${TMPDIR:-/tmp}/orm-cpanel-plugin.XXXXXXXX.tar.gz")"

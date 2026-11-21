@@ -519,6 +519,15 @@ bash "$test_root/uninstall-test.sh"
     || { printf 'successful uninstall left ORM files, registration, instance roots, or broker service behind.\n' >&2; exit 1; }
 [[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
     || { printf 'successful uninstall left transaction files behind.\n' >&2; exit 1; }
+bash "$test_root/uninstall-test.sh"
+[[ ! -e "$ORM_3RDPARTY" && ! -e "$ORM_BROKER_UNIT" && ! -e "$ORM_APPCONFIG" \
+    && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" \
+    && ! -e "$TEST_CPANEL_MARKER" && "$(cat "$TEST_APPCONFIG_STATE")" == 0 \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled \
+    && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive ]] \
+    || { printf 'repeated uninstall changed service or registration state.\n' >&2; exit 1; }
+[[ -z "$(find "$TMPDIR" -mindepth 1 -print -quit)" ]] \
+    || { printf 'repeated uninstall left temporary files behind.\n' >&2; exit 1; }
 cleanup_test_root
 trap - EXIT
 
