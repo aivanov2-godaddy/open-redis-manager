@@ -15,7 +15,7 @@ set -Eeuo pipefail
 case "${1:-}" in
     list)
         if [[ -f "$ORM_HOOK_REGISTRY" ]]; then
-            printf 'Whostmgr:\n   Accounts::Create:\n      stage: post\n      exectype: script\n      hook: %s\n' "$(<"$ORM_HOOK_REGISTRY")"
+            printf 'Whostmgr:\n   Accounts::Create:\n      stage: post\n      exectype: script\n      hook: %s --run\n' "$(<"$ORM_HOOK_REGISTRY")"
         else
             printf 'Whostmgr:\n'
         fi
