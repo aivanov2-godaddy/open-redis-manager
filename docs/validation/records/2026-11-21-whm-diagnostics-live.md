@@ -33,8 +33,10 @@ The reusable harness is [`tests/whm-live-diagnostics-form.php`](../../../tests/w
 
 This confirms the fixed read-only WHM diagnostics on one cPanel release and one disposable ORM-managed Redis instance. It does not establish the supported-host matrix or a production support decision; **ORM support remains NOT ESTABLISHED**.
 
-An actual WHM screenshot is still pending. No live screenshot is claimed by the existing synthetic preview [`screenshots/whm-fleet-diagnostics.png`](../../../screenshots/whm-fleet-diagnostics.png).
+The live WHM diagnostics table was captured after provisioning a temporary Valkey instance for the test account. The screenshot shows the diagnostic selector and controls only; the account label is redacted and other fleet rows are hidden. See [`whm-diagnostics-live.png`](../../../screenshots/validation/whm-diagnostics-live.png). The temporary service, account configuration/data/metrics, and backend selector were removed or restored after capture, and the existing EA Podman container was confirmed present.
+
+The existing synthetic preview [`screenshots/whm-fleet-diagnostics.png`](../../../screenshots/whm-fleet-diagnostics.png) remains a separate design artifact and is not used as live evidence.
 
 ## Sanitization review
 
-This record omits hostnames, IP addresses, domains, account names, credentials, SSO URLs/cookies, Redis values, raw response bodies, and raw operational logs. The temporary signing private key was never copied to the server or repository. The test public key and temporary server-side validation files were removed after restoring the saved update staging.
+This record omits hostnames, IP addresses, domains, account names, credentials, SSO URLs/cookies, Redis values, raw response bodies, and raw operational logs. The screenshot contains one test row with its account label redacted; it exposes no host, domain, address, or session data. The temporary signing private key was never copied to the server or repository. The test public key and temporary server-side validation files were removed after restoring the saved update staging.
