@@ -1218,6 +1218,7 @@ my $valkey_metrics_manifest;
         'valkey_version:8.1.3', 'used_memory:3145728', 'used_memory_peak:4194304', 'connected_clients:3',
         'uptime_in_seconds:7200', 'instantaneous_ops_per_sec:24', 'keyspace_hits:180', 'keyspace_misses:20',
         'evicted_keys:12', 'total_commands_processed:72000', 'acl_access_denied_auth:9', '');
+    unlink($security_metrics_path) or die "reset security metrics fixture for Valkey baseline: $!";
     my $valkey_metrics = $manager->dispatch('instance.metrics', $account);
     ok($valkey_metrics->{success} && $valkey_metrics->{memory_used_bytes} == 3145728,
         'collect bounded account metrics from the selected Valkey backend');
