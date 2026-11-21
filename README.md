@@ -2,7 +2,7 @@
 
 <p align="center"><img src="assets/orm-mark.svg" width="180" alt="Open Redis Manager red tile logo with a white cache cube"></p>
 
-An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages direct Redis/Valkey instances and can discover and control the lifecycle of existing cPanel EA Podman Redis/Valkey containers owned by the current account. WHM includes root-only fleet operations, bounded snapshot batches, audit history, and guarded Redis-to-Valkey migration. Production readiness still requires the complete supported-host validation matrix.
+An open-source Redis and Valkey control panel for cPanel and WHM. ORM manages direct Redis/Valkey instances and can discover and control the lifecycle of existing cPanel EA Podman Redis/Valkey containers owned by the current account. WHM includes root-only fleet operations, bounded snapshot batches, scan-guided service and safe configuration recovery, audit history, and guarded Redis-to-Valkey migration. Production readiness still requires the complete supported-host validation matrix.
 
 > **Status:** early development. The standalone demo screens use sample data. The authenticated cPanel page and WHM backend selector use a closed broker for ORM-managed direct instances. The cPanel page also detects current-account cPanel EA Podman Redis/Valkey sockets and generates connection settings without taking over their lifecycle. Root WHM provides on-demand fleet aggregates and create/restore batches capped at two visible accounts. Validate against a disposable cPanel host before production use.
 
