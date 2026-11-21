@@ -1116,7 +1116,7 @@ final class BrokerClient
                 || ($decoded['action'] ?? null) !== 'recovery.scan'
                 || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null)
                 || !in_array($decoded['finding'] ?? null, [
-                    'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
+                    'config_drift', 'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
                     'service_stopped', 'service_transitioning',
                 ], true)
                 || !in_array($decoded['state'] ?? null, [
@@ -1124,10 +1124,15 @@ final class BrokerClient
                 ], true)) {
                 return null;
             }
+            if ($decoded['finding'] === 'config_drift'
+                && !in_array($decoded['state'], ['running', 'starting', 'stopping', 'stopped', 'failed'], true)) {
+                return null;
+            }
             $expected = match ($decoded['finding']) {
                 'service_stopped' => ['stopped', 'start'],
                 'service_failed' => ['failed', 'start'],
                 'service_transitioning' => [in_array($decoded['state'], ['starting', 'stopping'], true) ? $decoded['state'] : '', null],
+                'config_drift' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'config_rebuild' : null],
                 'service_healthy', 'health_probe_failed' => ['running', null],
                 'not_configured' => ['not_configured', null],
             };
@@ -1166,11 +1171,13 @@ final class BrokerClient
     /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,state?:string,error?:string}|null */
     public function repairFleetAccount(string $username, string $repair): ?array
     {
-        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1 || $repair !== 'start') {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
+            || !in_array($repair, ['start', 'config_rebuild'], true)) {
             return null;
         }
+        $action = $repair === 'start' ? 'recovery.start' : 'recovery.config_rebuild';
         $request = json_encode(
-            ['repair' => $repair, 'operation' => 'fleet.recovery.repair', 'username' => $username, 'version' => 1],
+            ['operation' => 'fleet.recovery.repair', 'repair' => $repair, 'username' => $username, 'version' => 1],
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
         ) . "\n";
         $response = $this->exchange === null
@@ -1183,10 +1190,11 @@ final class BrokerClient
         $keys = array_keys($decoded);
         sort($keys);
         if ($decoded['success']) {
+            $states = $repair === 'start' ? ['running', 'starting'] : ['stopped', 'failed'];
             if ($keys !== ['action', 'audit_logged', 'state', 'success', 'username', 'version']
-                || ($decoded['action'] ?? null) !== 'recovery.start' || ($decoded['username'] ?? null) !== $username
+                || ($decoded['action'] ?? null) !== $action || ($decoded['username'] ?? null) !== $username
                 || !is_bool($decoded['audit_logged'] ?? null)
-                || !in_array($decoded['state'] ?? null, ['running', 'starting'], true)) {
+                || !in_array($decoded['state'] ?? null, $states, true)) {
                 return null;
             }
             return $decoded;
@@ -1197,12 +1205,12 @@ final class BrokerClient
         ];
         if (!in_array($keys, $allowedKeySets, true)
             || !in_array($decoded['error'] ?? null, [
-                'account_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'not_configured',
+                'account_unavailable', 'configuration_storage_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'not_configured',
                 'operation_in_progress', 'rate_limited', 'repair_not_applicable', 'scan_failed', 'service_failed',
             ], true)) {
             return null;
         }
-        if (isset($decoded['action']) && ($decoded['action'] !== 'recovery.start'
+        if (isset($decoded['action']) && ($decoded['action'] !== $action
             || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null))) {
             return null;
         }
@@ -1211,7 +1219,7 @@ final class BrokerClient
             'error' => $decoded['error'],
             'version' => 1,
             ...(isset($decoded['action']) ? [
-                'action' => 'recovery.start',
+                'action' => $action,
                 'username' => $username,
                 'audit_logged' => $decoded['audit_logged'],
             ] : []),

@@ -38,6 +38,9 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our @RECOVERY_HEALTH_CALLS;
     our @RECOVERY_CALLS;
     our %RECOVERY_ERRORS;
+    our %RECOVERY_CONFIG_DRIFT;
+    our @RECOVERY_CONFIG_SCAN_CALLS;
+    our @RECOVERY_CONFIG_REBUILD_CALLS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -62,6 +65,24 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
             if $state ne 'stopped' && $state ne 'failed';
         $CONTROL_STATES{$account->{name}} = 'starting';
         return { success => 1, state => 'starting' };
+    }
+    sub recovery_config_scan {
+        my ($self, $account) = @_;
+        push @RECOVERY_CONFIG_SCAN_CALLS, $account->{name};
+        return undef if !$RECOVERY_CONFIG_DRIFT{$account->{name}};
+        my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+        my $result = { success => 1, finding => 'config_drift', state => $state };
+        $result->{repair} = 'config_rebuild' if $state eq 'stopped' || $state eq 'failed'
+            || $account->{name} eq 'acct08';
+        return $result;
+    }
+    sub recovery_rebuild_config {
+        my ($self, $account) = @_;
+        push @RECOVERY_CONFIG_REBUILD_CALLS, $account->{name};
+        my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+        return { success => 0, error => 'repair_not_applicable' }
+            if $state ne 'stopped' && $state ne 'failed';
+        return { success => 1, state => $state };
     }
     sub backups {
         my ($self, $account) = @_;
@@ -269,13 +290,16 @@ is_deeply($audit[-1], [0, 'acct01', 'diagnostics.dbsize', 'rate_limited', 'unava
     'audit rate-limited requests under the selected command class');
 
 my $recoveryScanRequest = '{"operation":"fleet.recovery.scan","username":"acct02","version":1}' . "\n";
+my $recoveryConfigScanRequest = '{"operation":"fleet.recovery.scan","username":"acct07","version":1}' . "\n";
 my $recoveryRepairRequest = '{"operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n";
+my $recoveryConfigRepairRequest = '{"operation":"fleet.recovery.repair","repair":"config_rebuild","username":"acct07","version":1}' . "\n";
 is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
 is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
+is(parse_request($recoveryConfigRepairRequest)->{repair}, 'config_rebuild', 'parse the fixed configuration rebuild repair');
 ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n"),
     'reject arbitrary commands from recovery requests');
 ok(!parse_request('{"operation":"fleet.recovery.repair","repair":"chmod","username":"acct02","version":1}' . "\n"),
-    'reject recovery actions outside the fixed start repair');
+    'reject recovery actions outside the fixed repair allowlist');
 my $control_calls_before_recovery_scan = scalar @Local::FleetManager::CONTROL_CALLS;
 my $stoppedScan = $inventory->recovery_scan('acct02');
 ok($stoppedScan->{success} && $stoppedScan->{finding} eq 'service_stopped'
@@ -306,6 +330,22 @@ is($inventory->recovery_scan('acct32')->{finding}, 'not_configured',
     'report an account without a verified instance as not configured');
 is($inventory->recovery_scan('acct31')->{error}, 'instance_unavailable',
     'collapse broken manifest or ownership state into a safe recovery error');
+$Local::FleetManager::RECOVERY_CONFIG_DRIFT{acct07} = 1;
+$Local::FleetManager::CONTROL_STATES{acct07} = 'stopped';
+my $configDriftScan = $inventory->recovery_scan('acct07');
+ok($configDriftScan->{success} && $configDriftScan->{finding} eq 'config_drift'
+    && $configDriftScan->{repair} eq 'config_rebuild' && $configDriftScan->{state} eq 'stopped',
+    'offer config rebuild only for a stopped instance with a verified drift finding');
+my $configRebuildResult = $inventory->recovery_repair('acct07', 'config_rebuild');
+ok($configRebuildResult->{success} && $configRebuildResult->{action} eq 'recovery.config_rebuild'
+    && $configRebuildResult->{state} eq 'stopped', 'rebuild only the selected stopped account config');
+is_deeply($Local::FleetManager::RECOVERY_CONFIG_REBUILD_CALLS[-1], 'acct07',
+    'scope config rebuild to the account selected by WHM');
+$Local::FleetManager::CONTROL_STATES{acct08} = 'running';
+$Local::FleetManager::RECOVERY_CONFIG_DRIFT{acct08} = 1;
+my $runningConfigDriftScan = $inventory->recovery_scan('acct08');
+ok($runningConfigDriftScan->{success} && $runningConfigDriftScan->{state} eq 'running'
+    && !exists($runningConfigDriftScan->{repair}), 'never offer a config rebuild while a service is running');
 $Local::FleetManager::CONTROL_STATES{acct05} = { unexpected => 'state' };
 is($inventory->recovery_scan('acct05')->{error}, 'instance_unavailable',
     'reject non-scalar service states from the status provider');
@@ -340,6 +380,11 @@ my $rootRecoveryScan = Orm::Broker::Handler->handle_frame($recoveryScanRequest, 
 like($rootRecoveryScan, qr/"finding":"service_stopped"/, 'allow root peers to scan one selected account');
 my $rootRecoveryRepair = Orm::Broker::Handler->handle_frame($recoveryRepairRequest, 0, undef, undef, $inventory);
 like($rootRecoveryRepair, qr/"action":"recovery.start"/, 'allow root peers to invoke the fixed recovery repair');
+$Local::FleetManager::CONTROL_STATES{acct07} = 'stopped';
+my $rootConfigRecoveryScan = Orm::Broker::Handler->handle_frame($recoveryConfigScanRequest, 0, undef, undef, $inventory);
+like($rootConfigRecoveryScan, qr/"finding":"config_drift"/, 'allow root to scan config drift without exposing file contents');
+my $rootConfigRecoveryRepair = Orm::Broker::Handler->handle_frame($recoveryConfigRepairRequest, 0, undef, undef, $inventory);
+like($rootConfigRecoveryRepair, qr/"action":"recovery\.config_rebuild"/, 'allow root peers to invoke the fixed config rebuild');
 
 my $controlRequest = '{"action":"start","operation":"fleet.control","username":"acct01","version":1}' . "\n";
 is(parse_request($controlRequest)->{operation}, 'fleet.control', 'accept the fixed root fleet-control request');

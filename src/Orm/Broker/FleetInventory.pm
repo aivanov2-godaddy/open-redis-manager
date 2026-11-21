@@ -256,6 +256,18 @@ sub recovery_scan {
         return _fleet_failure('account_unavailable', $username, $action, $audited);
     }
 
+    my $config_scan = eval { $self->{instance_manager}->recovery_config_scan($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('recovery_config_scan') };
+    if (ref($config_scan) eq 'HASH' && $config_scan->{success}
+        && ($config_scan->{finding} // '') eq 'config_drift'
+        && defined($config_scan->{state}) && $config_scan->{state} =~ /\A(?:running|starting|stopping|stopped|failed)\z/) {
+        my $repair = $config_scan->{repair};
+        $repair = undef if !defined($repair) || ref($repair) || $repair ne 'config_rebuild';
+        $repair = undef if $config_scan->{state} ne 'stopped' && $config_scan->{state} ne 'failed';
+        my $audited = _audit_event($self, 0, $username, $action, 'success', $config_scan->{state});
+        return _recovery_scan_response($username, 'config_drift', $repair, $config_scan->{state}, $audited);
+    }
+
     my $status = eval { $self->{instance_manager}->status($account) }
         if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('status') };
     if (ref($status) ne 'HASH' || !$status->{success}) {
@@ -298,17 +310,18 @@ sub recovery_scan {
 
 sub recovery_repair {
     my ($self, $username, $repair) = @_;
-    my $action = 'recovery.start';
+    my $action = defined($repair) && !ref($repair) && $repair eq 'config_rebuild'
+        ? 'recovery.config_rebuild' : 'recovery.start';
     return _fleet_failure('invalid_request', $username, $action, 0)
         if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/
-        || !defined($repair) || ref($repair) || $repair ne 'start';
+        || !defined($repair) || ref($repair) || $repair !~ /\A(?:start|config_rebuild)\z/;
 
     my $scan = $self->recovery_scan($username);
     if (ref($scan) ne 'HASH' || !$scan->{success}) {
         my $audited = _audit_event($self, 0, $username, $action, 'scan_failed', 'unavailable');
         return _fleet_failure('instance_unavailable', $username, $action, $audited);
     }
-    if (($scan->{repair} // '') ne 'start') {
+    if (($scan->{repair} // '') ne $repair) {
         my $audited = _audit_event($self, 0, $username, $action, 'repair_not_applicable', $scan->{state});
         return _fleet_failure('repair_not_applicable', $username, $action, $audited);
     }
@@ -318,10 +331,16 @@ sub recovery_repair {
         my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
         return _fleet_failure('account_unavailable', $username, $action, $audited);
     }
-    my $result = eval { $self->{instance_manager}->recovery_start_if_stopped($account) }
-        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('recovery_start_if_stopped') };
-    if (ref($result) eq 'HASH' && $result->{success}
-        && defined($result->{state}) && $result->{state} =~ /\A(?:starting|running)\z/) {
+    my $result = eval {
+        $repair eq 'start'
+            ? $self->{instance_manager}->recovery_start_if_stopped($account)
+            : $self->{instance_manager}->recovery_rebuild_config($account)
+    } if defined($self->{instance_manager}) && eval {
+        $self->{instance_manager}->can($repair eq 'start' ? 'recovery_start_if_stopped' : 'recovery_rebuild_config')
+    };
+    my $state_valid = ref($result) eq 'HASH' && defined($result->{state})
+        && ($repair eq 'start' ? $result->{state} =~ /\A(?:starting|running)\z/ : $result->{state} =~ /\A(?:stopped|failed)\z/);
+    if (ref($result) eq 'HASH' && $result->{success} && $state_valid) {
         my $audited = _audit_event($self, 0, $username, $action, 'success', $result->{state});
         return {
             action => $action,
@@ -333,7 +352,7 @@ sub recovery_repair {
         };
     }
     my %allowed_errors = map { $_ => 1 } qw(
-        instance_unavailable not_configured operation_in_progress repair_not_applicable service_failed
+        configuration_storage_unavailable instance_unavailable not_configured operation_in_progress repair_not_applicable service_failed
     );
     my $error = ref($result) eq 'HASH' && defined($result->{error}) && $allowed_errors{$result->{error}}
         ? $result->{error} : 'instance_unavailable';
@@ -651,7 +670,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start)\z/;
+        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -660,7 +679,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start)\z/;
+        || $action !~ /\A(?:diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 

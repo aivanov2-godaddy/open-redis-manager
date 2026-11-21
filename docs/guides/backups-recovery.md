@@ -14,4 +14,6 @@ If the RDB checker is unavailable, validation fails, or rollback cannot be verif
 
 ## Recovery behavior
 
-Run a read-only scan first. Show exact account-level findings and suggested repair. Apply only the selected repair: service restart, config rebuild from trusted metadata, credential rotation or narrow ownership repair. Record actor, target, status and result while excluding secrets. Never use a global permissions reset as a routine recovery shortcut.
+Run a read-only scan first. Show exact account-level findings and suggested repair. WHM can start a verified stopped or failed service. It can also rebuild a noncanonical config only when the root-owned manifest, account paths, config ownership and permissions, database count, bounded core settings, and optional AUTH directive remain valid. The config file must still exist as a safe regular file: ORM cannot recover settings or an AUTH secret that are missing or malformed. Rebuild requires a second confirmation, replaces unrecognized additions with the canonical ORM config, preserves the validated settings and AUTH value, verifies the result, and does not start the service. A fresh scan is required before starting it.
+
+Credential rotation from WHM, missing-config recovery, malformed core settings, and narrow ownership repair are not implemented. Record actor, target, status and result while excluding secrets. Never use a global permissions reset as a routine recovery shortcut.

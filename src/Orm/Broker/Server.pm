@@ -194,7 +194,8 @@ sub run {
                     } elsif ($request->{operation} eq 'fleet.recovery.scan'
                         || $request->{operation} eq 'fleet.recovery.repair') {
                         my $action = $request->{operation} eq 'fleet.recovery.scan'
-                            ? 'recovery.scan' : 'recovery.start';
+                            ? 'recovery.scan'
+                            : $request->{repair} eq 'config_rebuild' ? 'recovery.config_rebuild' : 'recovery.start';
                         eval { $fleet_inventory->audit_rate_limited($peer_uid, $request->{username}, $action) }
                             if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_rate_limited') };
                     }

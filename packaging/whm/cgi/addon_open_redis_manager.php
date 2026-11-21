@@ -197,28 +197,34 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         $findingMessages = [
             'health_probe_failed' => 'The service reports running, but fixed health probes could not verify it. No automatic repair is available.',
             'not_configured' => 'The selected cPanel account does not have an ORM instance.',
+            'config_drift' => 'The root-owned config contains valid bounded ORM settings plus noncanonical directives. A rebuild can remove the unrecognized additions while preserving those settings and AUTH. It is available only while the service is stopped or failed.',
             'service_failed' => 'The service is failed. ORM verified the instance manifest; the fixed Start service repair is available.',
             'service_healthy' => 'The service is running and passed the fixed read-only health probes.',
             'service_stopped' => 'The service is stopped. ORM verified the instance manifest; the fixed Start service repair is available.',
             'service_transitioning' => 'The service is changing state. Wait for it to settle, then scan again.',
         ];
         $fleetRecoveryMessage = [
-            'type' => in_array($recovery['finding'], ['service_healthy', 'service_stopped', 'service_failed'], true) ? 'success' : 'error',
+            'type' => in_array($recovery['finding'], ['config_drift', 'service_healthy', 'service_stopped', 'service_failed'], true) ? 'success' : 'error',
             'text' => 'Recovery scan for ' . $recovery['username'] . ': '
                 . ($findingMessages[$recovery['finding']] ?? 'The scan returned an unknown finding.')
                 . ($recovery['audit_logged'] ? ' The scan was recorded in the system authentication log.'
                     : ' Warning: the scan completed, but its audit record could not be confirmed.'),
         ];
     } elseif ($recovery['success']) {
+        $isConfigRebuild = ($recovery['action'] ?? null) === 'recovery.config_rebuild';
         $fleetRecoveryMessage = [
             'type' => 'success',
-            'text' => 'Start requested for ' . $recovery['username'] . '. Current state: ' . $recovery['state'] . '.'
+            'text' => ($isConfigRebuild ? 'Configuration rebuilt and verified for ' : 'Start requested for ')
+                . $recovery['username'] . '. Current state: ' . $recovery['state'] . '.'
+                . ($isConfigRebuild ? ' The service was not started.' : '')
                 . ($recovery['audit_logged'] ? ' The repair was recorded in the system authentication log.'
-                    : ' Warning: the service may have started, but its audit record could not be confirmed.'),
+                    : ($isConfigRebuild ? ' Warning: the config was verified, but its audit record could not be confirmed.'
+                        : ' Warning: the service may have started, but its audit record could not be confirmed.')),
         ];
     } else {
         $recoveryErrors = [
             'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'configuration_storage_unavailable' => 'The configuration could not be safely rebuilt and verified.',
             'instance_unavailable' => 'The instance manifest, ownership, or service state could not be verified; no repair was attempted.',
             'operation_in_progress' => 'Another operation is active for this account. Wait for it to finish, then scan again.',
             'rate_limited' => 'Wait before sending another recovery request for this account.',
@@ -1018,12 +1024,16 @@ WHM::header('Open Redis Manager', 0, 0);
                     <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                     <button type="submit">Read-only scan</button>
                   </form>
-                  <?php if ($fleetRecoveryResult !== null && $fleetRecoveryResult['username'] === $entry['username'] && ($fleetRecoveryResult['repair'] ?? null) === 'start'): ?>
+                  <?php if ($fleetRecoveryResult !== null && $fleetRecoveryResult['username'] === $entry['username'] && in_array($fleetRecoveryResult['repair'] ?? null, ['start', 'config_rebuild'], true)): ?>
                     <form method="post" class="orm-fleet-actions">
                       <input type="hidden" name="orm_action" value="fleet.recovery.repair">
                       <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
-                      <input type="hidden" name="repair" value="start">
-                      <button type="submit" onclick="return confirm('Start the verified stopped or failed ORM service for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>?')">Start service</button>
+                      <input type="hidden" name="repair" value="<?= htmlspecialchars($fleetRecoveryResult['repair'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                      <?php if ($fleetRecoveryResult['repair'] === 'config_rebuild'): ?>
+                        <button type="submit" onclick="return confirm('Replace the noncanonical config for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> with ORM’s canonical config, preserving the validated settings and AUTH secret? ORM will not start the service.')">Rebuild config</button>
+                      <?php else: ?>
+                        <button type="submit" onclick="return confirm('Start the verified stopped or failed ORM service for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>?')">Start service</button>
+                      <?php endif; ?>
                     </form>
                   <?php endif; ?>
                 </td>
@@ -1500,7 +1510,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
