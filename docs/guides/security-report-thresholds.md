@@ -14,7 +14,9 @@ All thresholds default to zero, which disables threshold classification. Thresho
 
 ## EA Podman coverage
 
-The WHM report includes a separate EA Podman Redis/Valkey coverage finding from the root-owned scheduled snapshot. It shows discovered, sampled, unmeasured, and skipped counts and does not combine these containers with ORM-managed account totals. A missing, stale, invalid, or partial snapshot is reported as unknown. The six allowlisted Podman counters are currently aggregate-state evidence only; Podman counter deltas and thresholds are not implemented. This coverage finding does not establish abuse or trigger remediation.
+The WHM report includes a separate EA Podman Redis/Valkey coverage finding from the root-owned scheduled snapshot. It shows discovered, sampled, unmeasured, and skipped counts and does not combine these containers with ORM-managed account totals. A missing, stale, invalid, or partial snapshot is reported as unknown. A separate `podman_counter_rates_unknown` finding is always shown: the six allowlisted Podman counters are a single anonymous aggregate snapshot, which cannot establish that the same Redis/Valkey server processes were present across samples. Podman eviction, operation-rate, and authentication-failure deltas and thresholds are not evaluated. The report records this gap under `ea_podman_counter_rates`; it never interprets cumulative totals as rates.
+
+Computing trustworthy Podman deltas would require retaining cross-sample process-continuity data. Any such baseline would be linkable pseudonymous state even if it withheld account and container names, so it needs a separate privacy and security review before implementation. The current report does not retain per-process identities or counters.
 
 These measurements are anonymous fleet aggregates. They do not identify which account or client produced the maximum, distinguish mistakes from attacks, or prove abuse. A threshold warning is a review prompt, not an incident finding. Do not treat missing or stale evidence as zero.
 

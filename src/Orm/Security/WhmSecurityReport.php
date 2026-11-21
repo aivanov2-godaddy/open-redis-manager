@@ -192,6 +192,17 @@ final class WhmSecurityReport
                 $podmanSampledAt, $podmanSampledAt, $podmanSampledAt);
         }
 
+        $podmanCounterEvidence = $podmanMetricsValid
+            ? 'The root sampler retains one anonymous aggregate snapshot. It cannot prove the same Redis/Valkey server processes were present in a prior sample, so Podman eviction, operation, and authentication-failure counter windows and thresholds were not evaluated.'
+            : 'No continuity-verified Podman counter window is available. Podman eviction, operation, and authentication-failure thresholds were not evaluated.';
+        $podmanCounterRecommendation = 'Treat Podman counter rates as unknown. Aggregate totals cannot distinguish process restarts or container replacement from counter changes; review current coverage and runtime state without interpreting totals as rates.';
+        $podmanCounterSample = $podmanMetricsValid
+            ? gmdate('Y-m-d\\TH:i:s\\Z', $podmanMetrics['sampled_at'])
+            : null;
+        $findings[] = self::finding('podman_counter_rates_unknown', 'unknown', null,
+            $podmanCounterEvidence, $podmanCounterRecommendation,
+            $podmanCounterSample);
+
         if ($fleetValid) {
             $sampledAt = $metrics['latest_sampled_at'];
             self::appendMetricFinding($findings, 'memory_pressure', $metrics['high_memory_accounts'], 'warning',
@@ -310,6 +321,7 @@ final class WhmSecurityReport
 
         $unmeasured = [
             'credential_strength' => 'Weak or reused passwords are not inspected.',
+            'ea_podman_counter_rates' => 'Anonymous aggregate snapshots do not establish process continuity; Podman counter deltas and thresholds are not evaluated.',
         ];
         if (!$podmanMetricsValid) {
             $unmeasured['ea_podman_metrics'] = 'No fresh, verified root-owned EA Podman snapshot was available.';

@@ -1,5 +1,7 @@
 # Unreleased development notes
 
+- WHM security reports now show an explicit unknown finding for EA Podman counter rates and thresholds. Aggregate snapshots remain coverage evidence only because they do not prove process continuity across samples; the report does not interpret cumulative totals as rates.
+
 **Updated:** 2026-11-21
 **Release:** `0.1.0-rc.8` is a validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
 
