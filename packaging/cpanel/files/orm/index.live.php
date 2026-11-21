@@ -342,6 +342,12 @@ try {
         .orm-health-item strong { display: block; }
         .orm-health-item p { margin: 6px 0 0; }
         .orm-health-severity { display: inline-block; margin-right: 6px; color: #59677c; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+        .orm-health-score { display: grid; grid-template-columns: minmax(88px, auto) 1fr; align-items: center; gap: 4px 16px; margin-top: 12px; padding: 16px; border: 1px solid #dce3ed; border-radius: 10px; background: var(--orm-surface); }
+        .orm-health-score-value { grid-row: span 2; color: #172235; white-space: nowrap; }
+        .orm-health-score-value strong { font-size: 34px; line-height: 1; }
+        .orm-health-score-value span { color: #59677c; font-size: 14px; }
+        .orm-health-score-label { margin: 0; font-weight: 700; }
+        .orm-health-score-note { margin: 0; color: #59677c; font-size: 13px; }
         .orm-health-note { color: #59677c; font-size: 13px; }
         .orm-history { margin: 22px 0 18px; }
         .orm-history-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
@@ -399,6 +405,7 @@ try {
         .orm-copy-status:empty { display: none; }
         .orm-copy-status { color: #176b3a; }
         @media (max-width: 600px) { .orm-connection dl, .orm-config-grid { grid-template-columns: 1fr; gap: 8px; } .orm-diagnostics-head { display: block; } .orm-diagnostics-privacy { margin-top: 12px; } }
+        @media (max-width: 600px) { .orm-health-score { grid-template-columns: 68px minmax(0, 1fr); gap: 6px 12px; } .orm-health-score-value strong { font-size: 30px; } .orm-health-score-label, .orm-health-score-note { min-width: 0; overflow-wrap: anywhere; } }
       </style>
       <h1 id="orm-title"><?php if ($providerBranding['logo_png_base64'] !== ''): ?><img class="orm-brand-icon" src="data:image/png;base64,<?= $providerBranding['logo_png_base64'] ?>" alt=""><?php else: ?><svg class="orm-brand-icon" viewBox="0 0 256 256" aria-hidden="true"><title>Open Redis Manager cache cube</title>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/><rect x="5" y="5" width="246" height="246" rx="57" fill="none" stroke="#FFF" stroke-opacity=".18" stroke-width="2"/>
@@ -530,7 +537,21 @@ try {
               </section>
             <?php endif; ?>
             <section class="orm-health" aria-labelledby="orm-health-title" aria-live="polite">
-              <h3 id="orm-health-title">Health guidance <span class="orm-health-severity">Advisory</span></h3>
+              <h3 id="orm-health-title">Cache health <span class="orm-health-severity">Advisory score</span></h3>
+              <div class="orm-health-score">
+                <div class="orm-health-score-value" aria-label="<?= is_int($healthGuidance['score']['value']) ? 'Score ' . $healthGuidance['score']['value'] . ' out of 100' : 'Score unavailable' ?>">
+                  <?php if (is_int($healthGuidance['score']['value'])): ?>
+                    <strong><?= $healthGuidance['score']['value'] ?></strong><span> / 100</span>
+                  <?php else: ?>
+                    <span>—</span>
+                  <?php endif; ?>
+                </div>
+                <p class="orm-health-score-label"><?= htmlspecialchars($healthGuidance['score']['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+                <p class="orm-health-score-note">
+                  <?= $healthGuidance['score']['evaluated_checks'] ?> of <?= $healthGuidance['score']['total_checks'] ?> checks evaluated (<?= $healthGuidance['score']['coverage_percent'] ?>% evidence coverage). Unknown checks are not counted as passes.
+                </p>
+              </div>
+              <p class="orm-health-note">The score uses only current, account-scoped broker data. It does not verify application connectivity, language extensions, or guarantee performance.</p>
               <ul class="orm-health-list">
                 <?php foreach ($healthGuidance['findings'] as $finding): ?>
                   <li class="orm-health-item is-<?= htmlspecialchars($finding['severity'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">

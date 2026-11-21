@@ -23,45 +23,75 @@ $metrics = ['success' => true, 'stale' => false, 'memory_used_bytes' => 8 * 1024
 $clear = HealthGuidance::build($status, $metrics);
 $assert($clear['state'] === 'clear' && count($clear['findings']) === 1,
     'return a bounded clear advisory when current data stays below thresholds');
+$assert($clear['score']['value'] === 100 && $clear['score']['coverage_percent'] === 100
+    && $clear['score']['evaluated_checks'] === 4,
+    'score all four current signals when service, memory, clients, and hit ratio are verifiable');
 $assert(str_contains($clear['findings'][0]['title'], 'No current advisory thresholds'),
     'describe threshold status without declaring the service healthy');
 
 $memoryPressure = HealthGuidance::build($status, array_replace($metrics, ['memory_used_bytes' => (int) (16 * 1024 * 1024 * 0.9)]));
 $assert($memoryPressure['state'] === 'review' && $memoryPressure['findings'][0]['severity'] === 'warning'
     && str_contains($memoryPressure['findings'][0]['detail'], '90%'), 'warn when memory reaches 85% of its configured ceiling');
+$assert($memoryPressure['score']['value'] === 75 && $memoryPressure['score']['label'] === 'Review suggested',
+    'deduct one equal-weight check and label a 75 score for review');
 $memoryBoundary = HealthGuidance::build($status, array_replace($metrics, [
     'memory_used_bytes' => (int) ceil(16 * 1024 * 1024 * 0.85),
 ]));
 $assert(str_contains($memoryBoundary['findings'][0]['title'], 'Memory use is approaching'),
     'include the 85% configured-memory boundary in the advisory');
+$assert($memoryBoundary['score']['value'] === 75, 'treat the exact memory boundary as a failed score check');
 
 $clientPressure = HealthGuidance::build($status, array_replace($metrics, ['connected_clients' => 34]));
 $assert(str_contains($clientPressure['findings'][0]['title'], 'clients are near'),
     'warn when connected clients reach 85% of the configured limit');
+$assert($clientPressure['score']['value'] === 75, 'deduct one equal-weight check when client pressure crosses its advisory threshold');
 
 $lowHitRatio = HealthGuidance::build($status, array_replace($metrics, ['keyspace_hits' => 40, 'keyspace_misses' => 60]));
 $assert(str_contains($lowHitRatio['findings'][0]['title'], 'below 50%'),
     'report cumulative hit ratio below 50% after at least 100 lookups');
+$assert($lowHitRatio['score']['value'] === 75, 'deduct one equal-weight check when a sufficiently sampled hit ratio is low');
+$allPressure = HealthGuidance::build($status, array_replace($metrics, [
+    'memory_used_bytes' => (int) (16 * 1024 * 1024 * 0.9), 'connected_clients' => 34,
+    'keyspace_hits' => 40, 'keyspace_misses' => 60,
+]));
+$assert($allPressure['score']['value'] === 25 && $allPressure['score']['label'] === 'Needs attention',
+    'show a low score when each current pressure threshold is crossed');
 $halfHitRatio = HealthGuidance::build($status, array_replace($metrics, ['keyspace_hits' => 50, 'keyspace_misses' => 50]));
 $assert(!array_filter($halfHitRatio['findings'], static fn (array $finding): bool => str_contains($finding['title'], 'hit ratio')),
     'do not report a low-ratio finding at exactly 50%');
+$assert($halfHitRatio['score']['value'] === 100, 'pass the hit-ratio score check at exactly 50%');
 $fewLookups = HealthGuidance::build($status, array_replace($metrics, ['keyspace_hits' => 4, 'keyspace_misses' => 6]));
 $assert(!array_filter($fewLookups['findings'], static fn (array $finding): bool => str_contains($finding['title'], 'hit ratio')),
     'do not assess hit ratio before 100 lookups');
+$assert($fewLookups['score']['value'] === 100 && $fewLookups['score']['evaluated_checks'] === 3
+    && $fewLookups['score']['coverage_percent'] === 75,
+    'exclude an insufficient hit-ratio sample and show reduced score coverage');
+$insufficient = HealthGuidance::build($status, array_replace($metrics, [
+    'memory_used_bytes' => null, 'connected_clients' => null, 'keyspace_hits' => 4, 'keyspace_misses' => 6,
+]));
+$assert($insufficient['state'] === 'unavailable' && $insufficient['score']['value'] === null
+    && str_contains($insufficient['findings'][0]['title'], 'not enough current data'),
+    'explain the unavailable score instead of implying missing signals crossed no thresholds');
 
 $stale = HealthGuidance::build($status, array_replace($metrics, ['stale' => true, 'memory_used_bytes' => 16 * 1024 * 1024]));
 $assert($stale['state'] === 'stale' && count($stale['findings']) === 1
     && str_contains($stale['findings'][0]['title'], 'paused for stale'),
     'suppress metric thresholds when only retained stale metrics are available');
+$assert($stale['score']['value'] === null && $stale['score']['evaluated_checks'] === 0,
+    'withhold a score when current metrics are stale');
 $missing = HealthGuidance::build($status, ['success' => false]);
 $assert($missing['state'] === 'unavailable', 'show missing metrics as unavailable instead of evaluating thresholds');
+$assert($missing['score']['value'] === null, 'withhold a score when current metrics are unavailable');
 $unknownStatus = HealthGuidance::build(null, $metrics);
 $assert($unknownStatus['state'] === 'unavailable', 'fail closed when the instance status is unknown');
+$assert($unknownStatus['score']['value'] === null, 'do not score an unverified service state');
 $stopped = HealthGuidance::build(['success' => true, 'state' => 'stopped'], $metrics);
 $assert($stopped['state'] === 'attention' && count($stopped['findings']) === 1,
     'avoid performance findings for a stopped instance');
+$assert($stopped['score']['value'] === null, 'withhold a score when a stopped service cannot supply current metric checks');
 $unconfigured = HealthGuidance::build(['success' => true, 'state' => 'not_configured'], null);
 $assert($unconfigured['state'] === 'setup', 'guide an unconfigured account to initialize an instance');
+$assert($unconfigured['score']['value'] === null, 'withhold a score until an account cache is configured');
 
 $page = file_get_contents(dirname(__DIR__) . '/packaging/cpanel/files/orm/index.live.php');
 $packageMap = file_get_contents(dirname(__DIR__) . '/packaging/lib.sh');
@@ -73,5 +103,8 @@ $assert(is_string($packageMap) && str_contains($packageMap,
     'include the health guidance class in the exact installed package manifest');
 $assert(is_string($page) && str_contains($page, 'does not test application connectivity or guarantee cache performance'),
     'explain that advisory guidance does not verify application connectivity or guarantee performance');
+$assert(is_string($page) && str_contains($page, 'orm-health-score')
+    && str_contains($page, 'Unknown checks are not counted as passes'),
+    'render the score with explicit evidence coverage and an unknown-state caveat');
 
 fwrite(STDOUT, "cPanel health guidance checks passed: {$checks}\n");
