@@ -5,7 +5,7 @@ use Fcntl qw(O_RDONLY O_NOFOLLOW :mode);
 use FindBin;
 use lib "$FindBin::Bin/../lib";
 use JSON::PP ();
-use Orm::Broker::InstanceManifest qw(validate_instance_manifest);
+use Orm::Broker::InstanceManager ();
 
 my $username = shift @ARGV;
 die "invalid ORM instance\n" if @ARGV || !defined($username)
@@ -25,7 +25,7 @@ _traversable_directory('/etc/orm-instances');
 _traversable_directory('/var/lib/orm-instances');
 _trusted_account_directory($config_dir, $gid);
 my $manifest = _read_manifest($manifest_path, $gid);
-die "invalid ORM instance\n" if !validate_instance_manifest(
+die "invalid ORM instance\n" if !Orm::Broker::InstanceManager::validate_instance_manifest(
     $manifest, $username, $uid, $gid, '/etc/orm-instances', '/var/lib/orm-instances'
 );
 
