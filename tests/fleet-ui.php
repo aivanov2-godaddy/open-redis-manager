@@ -85,6 +85,11 @@ $assert(str_contains($cpanel, 'Live usage') && str_contains($cpanel, 'memory_use
     && str_contains($cpanel, 'metrics_sampled_at') && str_contains($cpanel, 'not retained')
     && str_contains($cpanel, 'PodmanCacheDiscovery::currentAccountInventory'),
     'show ephemeral allowlisted live metrics separately for verified current-account Podman sockets');
+$assert(str_contains($cpanel, "extension_loaded('redis')")
+    && str_contains($cpanel, "class_exists('Redis', false)")
+    && str_contains($cpanel, 'PhpRedis in this cPanel page runtime')
+    && str_contains($cpanel, 'does not report the PHP version or extensions selected for your domains'),
+    'show truthful PhpRedis availability for only the cPanel page runtime and preserve domain-runtime uncertainty');
 $assert(str_contains($cpanel, 'ea-podman install <?= htmlspecialchars($packageInfo[\'package\']')
     && str_contains($cpanel, 'will not run a host package manager')
     && str_contains($cpanel, 'could not safely verify this account’s cPanel container inventory'),

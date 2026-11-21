@@ -18,7 +18,7 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM security | Firewall guidance, local binding and credential rotation. |
 | WHM package and reseller policy | Root-only package service availability, memory/retention ceilings, report/warn/enforce mode, exposure tier, reseller usage and quota controls. |
 | cPanel exposure tiers | Side-by-side Simple, Developer and Advanced visibility previews; broker authorization remains unchanged. |
-| [ORM application preflight](../../screenshots/cpanel-application-discovery.png) | Sample-data cPanel view of service setup checks and possible application matches; connection state is clearly unverified. |
+| [ORM application preflight](../../screenshots/cpanel-application-discovery.png) | Sample-data cPanel view of service setup checks, current-page PhpRedis availability, and possible application matches; domain runtime and connection state remain unverified. |
 | [cPanel EA Podman live metrics](../../screenshots/cpanel-podman-live-metrics.png) | Synthetic account-owned Redis container view with ephemeral allowlisted memory, client, uptime, operation-rate, and cache-hit values. |
 | [WHM branding](../../screenshots/whm-provider-branding.png) | Provider identity, four honestly labelled theme colors, brand palettes, and a synthetic cPanel preview. |
 | [ORM fleet inventory](../../screenshots/whm-fleet.png) | Synthetic root-only account table with service controls and per-account snapshot/restore UI. |

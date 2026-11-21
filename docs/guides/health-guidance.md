@@ -13,7 +13,7 @@ The cPanel page presents advisory findings from the authenticated account status
 
 The 85% and 50% values are ORM heuristics, not Redis/Valkey limits or vendor recommendations. They are deliberately described as review thresholds. The page suppresses metric findings when metrics are unavailable or marked stale; saved values remain visible in the metrics area with their sample timestamp. Too few lookups produce no hit-ratio finding.
 
-The page reports the service state and metric sample independently. It does not infer a successful application connection from an initialized/running cache, helper text, or a detected application marker. It does not currently detect disabled language extensions or score trends from hourly history.
+The page reports the service state and metric sample independently. It does not infer a successful application connection from an initialized/running cache, helper text, or a detected application marker. The setup preflight separately reports whether PhpRedis is loaded in the PHP runtime serving the cPanel ORM page. That check does not identify domain PHP handlers or confirm extensions for an application, and it does not score extension availability or trends from hourly history.
 
 ## Advisory health score
 
@@ -26,7 +26,7 @@ For a running instance with a fresh broker sample, the page shows an advisory sc
 
 The score is the percentage of passed checks among the checks that could be evaluated. The page also shows evidence coverage (the number of evaluated checks out of four). An insufficient hit sample, invalid/missing setting, or missing metric is unknown and is excluded from both the result and coverage; it is never silently treated as a pass. A number is shown only when at least three checks are verifiable. A stopped, changing, unconfigured, stale, or unavailable service state has no numeric score.
 
-`Strong signals` means 90–100, `Review suggested` means 70–89, and `Needs attention` means below 70. These labels describe only the listed checks. Uptime is shown as context and is not scored because a long process lifetime does not prove good cache behavior. AUTH remains optional for ORM's account-private Unix socket and is not treated as a health failure when disabled. Application connectivity, PHP extensions, trends, latency, and performance are not verified or scored. The score is a transparent heuristic, not a vendor health guarantee.
+`Strong signals` means 90–100, `Review suggested` means 70–89, and `Needs attention` means below 70. These labels describe only the listed checks. Uptime is shown as context and is not scored because a long process lifetime does not prove good cache behavior. AUTH remains optional for ORM's account-private Unix socket and is not treated as a health failure when disabled. Application connectivity, domain PHP extension state, trends, latency, and performance are not verified or scored. The score is a transparent heuristic, not a vendor health guarantee.
 
 ## Implementation and verification
 
