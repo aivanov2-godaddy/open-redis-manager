@@ -118,6 +118,19 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.auto_provision') {
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, 'auto_provision') }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $provision_response = eval { $fleet_inventory->auto_provision($request->{username}) };
+                $response = ref($provision_response) eq 'HASH' ? $provision_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
         if ($request->{operation} eq 'fleet.diagnostics') {
             my $action = 'diagnostics.' . $request->{command_class};
             if ($peer_uid != 0) {

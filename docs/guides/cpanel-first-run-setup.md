@@ -8,9 +8,9 @@ Static previews: [backend choice](../../screenshots/cpanel-backend-setup.png) an
 
 ### Native service
 
-The native path uses an installed host Redis or Valkey server binary to provision an ORM-managed, account-scoped service. The wizard checks the fixed standard binary paths and reports recognized server versions. No matching binary means only that ORM did not find one in those locations; it does not prove that Redis is absent from the host.
+The native path uses an installed host Redis or Valkey server and matching CLI binaries to provision an ORM-managed, account-scoped service. The wizard checks fixed standard binary paths and reports recognized server versions. It distinguishes a complete pair from a server-only or CLI-only installation. No matching pair means only that ORM did not find both binaries in those locations; it does not prove that Redis is absent from the host.
 
-The hosting administrator must install a supported native server package and select the default backend in WHM before provisioning. The cPanel account cannot install host packages or change WHM policy. Provisioning remains subject to provider package enablement, resource limits, and reseller policy in the root-owned broker.
+When native binaries are missing or incomplete, the wizard gives the account owner a short administrator checklist: install the server and matching CLI from a trusted operating-system repository, select the detected backend in WHM, allow the cPanel package in provider policy, and return to recheck. The hosting administrator must install the supported native package and select the default backend in WHM before provisioning. The cPanel account cannot install host packages or change WHM policy. Provisioning remains subject to provider package enablement, resource limits, and reseller policy in the root-owned broker.
 
 ### cPanel EA Podman
 

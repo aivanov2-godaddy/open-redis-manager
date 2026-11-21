@@ -257,6 +257,9 @@ MOCK
     chmod 0600 "$test_root/var/cpanel/apps/open_redis_manager.conf"
 
     ORM_CPANEL_ROOT="$test_root/cpanel"
+    ORM_MANAGE_HOOKS="$ORM_CPANEL_ROOT/bin/manage_hooks"
+    ORM_ACCOUNT_CREATE_HOOK="$ORM_CPANEL_ROOT/3rdparty/bin/orm-account-create-hook.php"
+    TEST_HOOK_REGISTRY="$test_root/manage-hooks.state"
     ORM_INSTALL_PLUGIN="$test_root/bin/install_plugin"
     ORM_UNINSTALL_PLUGIN="$test_root/bin/uninstall_plugin"
     ORM_REGISTER_APPCONFIG="$test_root/bin/register_appconfig"
@@ -294,7 +297,31 @@ MOCK
     printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
     printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.podman-enabled"
     printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.podman-active"
-    export ORM_CPANEL_ROOT ORM_INSTALL_PLUGIN ORM_UNINSTALL_PLUGIN ORM_REGISTER_APPCONFIG ORM_UNREGISTER_APPCONFIG
+    cat >"$ORM_MANAGE_HOOKS" <<'MOCK'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "${1:-}" in
+    list)
+        if [[ -f "$TEST_HOOK_REGISTRY" ]]; then
+            printf 'Whostmgr:\n   Accounts::Create:\n      stage: post\n      exectype: script\n      hook: %s\n' "$(<"$TEST_HOOK_REGISTRY")"
+        else
+            printf 'Whostmgr:\n'
+        fi
+        ;;
+    add)
+        [[ "$2" == script && "$3" == "$ORM_ACCOUNT_CREATE_HOOK" ]]
+        printf '%s\n' "$ORM_ACCOUNT_CREATE_HOOK" >"$TEST_HOOK_REGISTRY"
+        ;;
+    delete)
+        [[ "$2" == script && "$3" == "$ORM_ACCOUNT_CREATE_HOOK" ]]
+        rm -f -- "$TEST_HOOK_REGISTRY"
+        ;;
+    *) exit 2 ;;
+esac
+MOCK
+    chmod 0755 "$ORM_MANAGE_HOOKS"
+    export ORM_CPANEL_ROOT ORM_MANAGE_HOOKS ORM_ACCOUNT_CREATE_HOOK TEST_HOOK_REGISTRY
+    export ORM_INSTALL_PLUGIN ORM_UNINSTALL_PLUGIN ORM_REGISTER_APPCONFIG ORM_UNREGISTER_APPCONFIG
     export ORM_IS_REGISTERED ORM_CPanel_LIVE ORM_WHM_CGI ORM_WHM_ICONS ORM_3RDPARTY ORM_INSTALL_MANIFEST ORM_APPCONFIG
     export ORM_LIFECYCLE_LOCK ORM_SYSTEMCTL ORM_BROKER_BIN ORM_BROKER_LIB ORM_BROKER_UNIT ORM_INSTANCE_ROOT
     export ORM_INSTANCE_DATA ORM_INSTANCE_UNIT ORM_INSTANCE_LAUNCHER ORM_METRICS_COLLECTOR ORM_METRICS_SERVICE
@@ -343,6 +370,8 @@ MOCK
         printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
         printf 'source %q\n' "$ORM_PACKAGE_ROOT/lib.sh"
         printf 'ORM_CPANEL_ROOT=%q\n' "$ORM_CPANEL_ROOT"
+        printf 'ORM_MANAGE_HOOKS=%q\nORM_ACCOUNT_CREATE_HOOK=%q\nTEST_HOOK_REGISTRY=%q\n' \
+            "$ORM_MANAGE_HOOKS" "$ORM_ACCOUNT_CREATE_HOOK" "$TEST_HOOK_REGISTRY"
         printf 'ORM_INSTALL_PLUGIN=%q\nORM_UNINSTALL_PLUGIN=%q\n' "$ORM_INSTALL_PLUGIN" "$ORM_UNINSTALL_PLUGIN"
         printf 'ORM_REGISTER_APPCONFIG=%q\nORM_UNREGISTER_APPCONFIG=%q\nORM_IS_REGISTERED=%q\n' "$ORM_REGISTER_APPCONFIG" "$ORM_UNREGISTER_APPCONFIG" "$ORM_IS_REGISTERED"
         printf 'ORM_CPanel_LIVE=%q\nORM_WHM_CGI=%q\nORM_WHM_ICONS=%q\n' "$ORM_CPanel_LIVE" "$ORM_WHM_CGI" "$ORM_WHM_ICONS"

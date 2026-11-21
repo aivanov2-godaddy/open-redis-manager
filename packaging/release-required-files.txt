@@ -24,6 +24,8 @@ src/Orm/Security/WhmAuditEventWriter.php
 src/Orm/Security/WhmSecurityReport.php
 src/Orm/Security/WhmSecurityReportPolicyStore.php
 src/Orm/Cpanel/AuthenticatedAccountContext.php
+src/Orm/Cpanel/AccountCreateHook.php
+bin/orm-account-create-hook.php
 src/Orm/Cpanel/BrokerIdentityVerifier.php
 src/Orm/Cpanel/BrokerClient.php
 src/Orm/Cpanel/ConnectionDetails.php

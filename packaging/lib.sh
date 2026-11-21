@@ -11,6 +11,8 @@ ORM_UNINSTALL_PLUGIN="$ORM_CPANEL_ROOT/scripts/uninstall_plugin"
 ORM_REGISTER_APPCONFIG="$ORM_CPANEL_ROOT/bin/register_appconfig"
 ORM_UNREGISTER_APPCONFIG="$ORM_CPANEL_ROOT/bin/unregister_appconfig"
 ORM_IS_REGISTERED="$ORM_CPANEL_ROOT/bin/is_registered_with_appconfig"
+ORM_MANAGE_HOOKS="$ORM_CPANEL_ROOT/bin/manage_hooks"
+ORM_ACCOUNT_CREATE_HOOK="$ORM_CPANEL_ROOT/3rdparty/bin/orm-account-create-hook.php"
 ORM_CPanel_LIVE="$ORM_CPANEL_ROOT/base/frontend/$ORM_CPanel_THEME/orm"
 ORM_WHM_CGI="$ORM_CPANEL_ROOT/whostmgr/docroot/cgi"
 ORM_WHM_ICONS="$ORM_CPANEL_ROOT/whostmgr/docroot/addon_plugins"
@@ -42,6 +44,82 @@ ORM_CREATED_INSTANCE_ROOTS=()
 ORM_CREATED_PROVIDER_EVENT_PATHS=()
 
 orm_die() { printf 'ORM installer: %s\n' "$*" >&2; exit 1; }
+
+# manage_hooks exposes a human-readable registry. Match only ORM's exact script
+# path under Whostmgr::Accounts::Create; refuse ambiguous duplicate registrations.
+orm_account_create_hook_state() {
+    local listing
+    [[ -x "$ORM_MANAGE_HOOKS" ]] || return 3
+    listing="$("$ORM_MANAGE_HOOKS" list 2>/dev/null)" || return 3
+    printf '%s\n' "$listing" | awk -v expected="$ORM_ACCOUNT_CREATE_HOOK" '
+        /^[^[:space:]].*:[[:space:]]*$/ { category=$1; sub(/:$/, "", category); event=""; next }
+        /^[[:space:]]+[[:alnum:]_:]+:[[:space:]]*$/ {
+            candidate=$1; sub(/:$/, "", candidate)
+            if (index(candidate, "::") > 0) event=candidate
+            next
+        }
+        /^[[:space:]]+hook:[[:space:]]*/ {
+            value=$0; sub(/^[[:space:]]+hook:[[:space:]]*/, "", value)
+            if (value == expected) {
+                appearances++
+                if (category == "Whostmgr" && event == "Accounts::Create") matches++
+            }
+        }
+        END {
+            if (appearances == 0) exit 1
+            if (appearances == 1 && matches == 1) exit 0
+            exit 2
+        }
+    '
+}
+
+ORM_ACCOUNT_HOOK_ADDED=0
+orm_ensure_account_create_hook() {
+    local state=0 add_status=0
+    orm_account_create_hook_state || state=$?
+    case "$state" in
+        0) return 0 ;;
+        1) ;;
+        *) printf 'ORM installer: the account-create hook registry is unavailable or ambiguous.\n' >&2; return 1 ;;
+    esac
+    [[ -x "$ORM_ACCOUNT_CREATE_HOOK" ]] || {
+        printf 'ORM installer: the account-create hook executable is missing or not executable.\n' >&2
+        return 1
+    }
+    "$ORM_MANAGE_HOOKS" add script "$ORM_ACCOUNT_CREATE_HOOK" --manual \
+        --category Whostmgr --event 'Accounts::Create' --stage post --action=--run \
+        >/dev/null || add_status=$?
+    state=0
+    orm_account_create_hook_state || state=$?
+    if [[ "$state" -eq 0 ]]; then
+        ORM_ACCOUNT_HOOK_ADDED=1
+        [[ "$add_status" -eq 0 ]] || return 1
+        return 0
+    fi
+    return 1
+}
+
+orm_remove_account_create_hook() {
+    local state=0
+    orm_account_create_hook_state || state=$?
+    case "$state" in
+        1) return 0 ;;
+        0) ;;
+        *) printf 'ORM uninstaller: the account-create hook registry is unavailable or ambiguous.\n' >&2; return 1 ;;
+    esac
+    "$ORM_MANAGE_HOOKS" delete script "$ORM_ACCOUNT_CREATE_HOOK" --manual \
+        --category Whostmgr --event 'Accounts::Create' --stage post --action=--run \
+        >/dev/null || true
+    local remaining=0
+    orm_account_create_hook_state || remaining=$?
+    if [[ "$remaining" -eq 1 ]]; then
+        ORM_ACCOUNT_HOOK_REMOVED=1
+        return 0
+    fi
+    return 1
+}
+
+ORM_ACCOUNT_HOOK_REMOVED=0
 
 orm_refresh_cpanel_icon_sprite_cache_key() {
     local icon_root="$ORM_CPANEL_ROOT/base/frontend/$ORM_CPanel_THEME/assets/application_icons"
@@ -187,6 +265,8 @@ orm_package_file_map() {
         whm_security_report "$ORM_REPO_ROOT/src/Orm/Security/WhmSecurityReport.php" "$ORM_3RDPARTY/src/Orm/Security/WhmSecurityReport.php" 644 \
         whm_security_report_policy "$ORM_REPO_ROOT/src/Orm/Security/WhmSecurityReportPolicyStore.php" "$ORM_3RDPARTY/src/Orm/Security/WhmSecurityReportPolicyStore.php" 644 \
         account_context "$ORM_REPO_ROOT/src/Orm/Cpanel/AuthenticatedAccountContext.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AuthenticatedAccountContext.php" 644 \
+        account_create_hook "$ORM_REPO_ROOT/src/Orm/Cpanel/AccountCreateHook.php" "$ORM_3RDPARTY/src/Orm/Cpanel/AccountCreateHook.php" 644 \
+        account_create_hook_bin "$ORM_REPO_ROOT/bin/orm-account-create-hook.php" "$ORM_CPANEL_ROOT/3rdparty/bin/orm-account-create-hook.php" 755 \
         broker_identity "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerIdentityVerifier.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerIdentityVerifier.php" 644 \
         broker_client "$ORM_REPO_ROOT/src/Orm/Cpanel/BrokerClient.php" "$ORM_3RDPARTY/src/Orm/Cpanel/BrokerClient.php" 644 \
         connection_details "$ORM_REPO_ROOT/src/Orm/Cpanel/ConnectionDetails.php" "$ORM_3RDPARTY/src/Orm/Cpanel/ConnectionDetails.php" 644 \

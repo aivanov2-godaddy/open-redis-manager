@@ -81,6 +81,44 @@ sub control {
     };
 }
 
+sub auto_provision {
+    my ($self, $username) = @_;
+    return _fleet_failure('invalid_request', 'invalid', 'auto_provision', 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || ($account->{name} // '') ne $username) {
+        my $audited = _audit_event($self, 0, $username, 'auto_provision', 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, 'auto_provision', $audited);
+    }
+    my $result = eval { $self->{instance_manager}->auto_provision($account) }
+        if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('auto_provision') };
+    if (ref($result) ne 'HASH') {
+        my $audited = _audit_event($self, 0, $username, 'auto_provision', 'operation_failed', 'unavailable');
+        return _fleet_failure('operation_failed', $username, 'auto_provision', $audited);
+    }
+    my $state = defined($result->{state}) && !ref($result->{state})
+        && $result->{state} =~ /\A(?:not_configured|stopped|starting|running|stopping|failed)\z/
+        ? $result->{state} : 'unavailable';
+    my $outcome = $result->{success} ? 'success'
+        : defined($result->{error}) && !ref($result->{error})
+            && $result->{error} =~ /\A(?:provider_policy_denied|provider_policy_unavailable|backend_policy_required|backend_unavailable|storage_unavailable|service_failed|instance_unavailable)\z/
+            ? $result->{error} : 'operation_failed';
+    my $audited = _audit_event($self, 0, $username, 'auto_provision', $outcome, $state);
+    my %response = (
+        action => 'auto_provision',
+        audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+        outcome => defined($result->{outcome}) && !ref($result->{outcome})
+            && $result->{outcome} =~ /\A(?:disabled|already_present|provisioned|failed)\z/
+            ? $result->{outcome} : 'failed',
+        state => $state,
+        success => $result->{success} ? JSON::PP::true : JSON::PP::false,
+        username => $username,
+        version => 1,
+    );
+    $response{error} = $outcome if !$result->{success};
+    return \%response;
+}
+
 sub backup {
     my ($self, $username, $action, $backup_id) = @_;
     return _failure('invalid_request') if !defined($username) || ref($username)
@@ -656,7 +694,7 @@ sub _audit_event {
     my ($self, $peer_uid, $username, $action, $outcome, $state) = @_;
     $peer_uid = 0 if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $state = 'unavailable' if !defined($state) || ref($state)
-        || $state !~ /\A(?:stopped|starting|running|stopping|failed|unavailable)\z/;
+        || $state !~ /\A(?:not_configured|stopped|starting|running|stopping|failed|unavailable)\z/;
     if (ref($self->{audit}) eq 'CODE') {
         my $recorded = eval { $self->{audit}->($peer_uid, $username, $action, $outcome, $state) };
         return $recorded ? 1 : 0;
@@ -677,7 +715,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
+        || $action !~ /\A(?:start|stop|restart|auto_provision|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 

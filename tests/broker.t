@@ -13,6 +13,7 @@ use Orm::Broker::Handler;
 use Orm::Broker::BackendPolicy;
 use Orm::Broker::ProviderPolicy;
 use Orm::Broker::InstanceManager;
+use Orm::Broker::FleetInventory;
 use Orm::Broker::PeerCredentials;
 use Orm::Broker::Server;
 use Orm::Broker::Protocol qw(parse_request encode_response max_frame_bytes);
@@ -25,6 +26,13 @@ is(parse_request($frame)->{operation}, $operation, "accept fixed operation $oper
 }
 is(parse_request('{"operation":"fleet.summary","version":1}' . "\n")->{operation},
     'fleet.summary', 'accept the fixed root fleet summary request');
+my $auto_provision_frame = '{"operation":"fleet.auto_provision","username":"ormauto","version":1}' . "\n";
+is(parse_request($auto_provision_frame)->{username}, 'ormauto',
+    'accept the canonical root account-create provisioning frame');
+ok(!parse_request('{"operation":"fleet.auto_provision","username":"../root","version":1}' . "\n")
+    && !parse_request('{"operation":"fleet.auto_provision","username":"ormauto","plan":"starter","version":1}' . "\n")
+    && !parse_request('{"username":"ormauto","operation":"fleet.auto_provision","version":1}' . "\n"),
+    'reject unsafe, caller-selected package, and noncanonical automatic-provisioning frames');
 is(parse_request('{"operation":"provider.events.status","version":1}' . "\n")->{operation},
     'provider.events.status', 'accept root provider event configuration status');
 is(parse_request('{"operation":"provider.events.queue.status","version":1}' . "\n")->{operation},
@@ -133,6 +141,7 @@ if ($test_uid == 0) {
     die "root-run broker tests require the system nobody account" if @unprivileged < 4;
     ($test_uid, $test_gid) = @unprivileged[2, 3];
 }
+my $resolving_auto_account = 0;
 make_path($account_root);
 chmod(0755, $account_root) or die "chmod account root: $!";
 my $account_file = "$account_root/ormtest";
@@ -145,8 +154,14 @@ my $resolver = Orm::Broker::AccountResolver->new(
     account_root => $account_root,
     expected_owner_uid => $<,
     restore_state_timeout => 1,
-    lookup => sub { return { name => 'ormtest', uid => $_[0], gid => $test_gid }; },
-    lookup_name => sub { return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest'; return undef; },
+    lookup => sub {
+        return { name => $resolving_auto_account ? 'ormauto' : 'ormtest', uid => $_[0], gid => $test_gid };
+    },
+    lookup_name => sub {
+        return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest';
+        return { name => $_[0], uid => $test_uid, gid => $test_gid } if $_[0] eq 'ormauto';
+        return undef;
+    },
 );
 is($resolver->resolve_uid(43210), 'ormtest', 'resolve a mapped UID through a trusted account record');
 is_deeply($resolver->resolve_account(43210), { name => 'ormtest', uid => 43210, gid => $test_gid, plan => 'starter', owner => 'reseller1' }, 'resolve trusted UID, primary GID, package and owner');
@@ -379,6 +394,21 @@ chmod(0600, $provider_policy_path) or die "chmod client warning policy: $!";
 my $warn_clients = $provider_policy->memory_decision($policy_account, 64, 50, 40);
 ok($warn_clients->{allowed} && $warn_clients->{violations}->[0] eq 'client_limit_exceeded',
     'allow an over-cap client change with a fixed warning in warn mode');
+$enforced_package_policy->{version} = 6;
+$enforced_package_policy->{packages}->{starter}->{auto_provision} = JSON::PP::true;
+$enforced_package_policy->{packages}->{blocked}->{auto_provision} = JSON::PP::false;
+open($provider_policy_file, '>', $provider_policy_path) or die "write auto-provision policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
+close($provider_policy_file) or die "close auto-provision policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod auto-provision policy: $!";
+is($provider_policy->auto_provision_enabled($policy_account), 1,
+    'enable automatic provisioning only for an explicitly opted-in trusted package');
+is($provider_policy->auto_provision_enabled({%{$policy_account}, plan => 'blocked'}), 0,
+    'keep automatic provisioning disabled for a package whose opt-in is false');
+is($provider_policy->auto_provision_enabled({%{$policy_account}, plan => 'default'}), 0,
+    'never automatically provision the implicit default package');
+is($provider_policy->auto_provision_enabled({%{$policy_account}, plan => '../starter'}), 0,
+    'reject unsafe package names before automatic provisioning lookup');
 $enforced_package_policy->{packages}->{starter}->{max_memory_mib} = 65;
 open($provider_policy_file, '>', $provider_policy_path) or die "rewrite invalid provider policy: $!";
 print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($enforced_package_policy) . "\n";
@@ -1786,6 +1816,13 @@ ok(Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60,
     'rate-limit long migrations per account rather than blocking other accounts');
 ok(!Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60, 'fleet.migrate:acct01'),
     'rate-limit repeated migration attempts for the same account');
+my %auto_provision_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%auto_provision_rates, 0, 100, 1, 1, 60, 'fleet.auto_provision:ormauto'),
+    'allow one account-create provisioning event in its per-account rate bucket');
+ok(Orm::Broker::Server::_rate_allowed(\%auto_provision_rates, 0, 100, 1, 1, 60, 'fleet.auto_provision:otheracct'),
+    'keep automatic provisioning rate limits isolated per account');
+ok(!Orm::Broker::Server::_rate_allowed(\%auto_provision_rates, 0, 101, 1, 1, 60, 'fleet.auto_provision:ormauto'),
+    'rate-limit duplicate automatic provisioning events for one account');
 my $manifest_path = "$etc_instances/ormtest/manifest.json";
 ok(-f $manifest_path, 'provisioning writes a trusted manifest');
 my @manifest_stat = stat($manifest_path);
@@ -1830,6 +1867,80 @@ my $no_policy_manager = Orm::Broker::InstanceManager->new(
 );
 is($no_policy_manager->dispatch('instance.provision', { name => 'newacct', uid => $test_uid, gid => $account->{gid} })->{error},
     'backend_policy_required', 'provisioning requires an explicit provider backend policy');
+
+my $auto_policy = {
+    version => 6, mode => 'report-only', exposure => 'simple',
+    default => {
+        enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3,
+        max_clients => 100, max_databases => 16,
+    },
+    instance_defaults => {
+        memory_mib => 64, maxmemory_policy => 'allkeys-lru', databases => 16,
+        metrics_history_retention_days => 30,
+    },
+    packages => {
+        starter => {
+            enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3,
+            max_clients => 100, max_databases => 16, auto_provision => JSON::PP::true,
+        },
+        blocked => {
+            enabled => JSON::PP::true, max_memory_mib => 64, backup_retention => 3,
+            max_clients => 100, max_databases => 16, auto_provision => JSON::PP::false,
+        },
+    },
+    resellers => {},
+    branding => {
+        product_name => 'Open Redis Manager', logo_png_base64 => '', support_url => '', preset => 'orm',
+        primary_color => '#C92319', secondary_color => '#A91F18', surface_color => '#FFFFFF',
+        text_color => '#172536', footer_visible => JSON::PP::true,
+    },
+};
+open($provider_policy_file, '>', $provider_policy_path) or die "write automatic provisioning policy: $!";
+print {$provider_policy_file} JSON::PP->new->canonical(1)->encode($auto_policy) . "\n";
+close($provider_policy_file) or die "close automatic provisioning policy: $!";
+chmod(0600, $provider_policy_path) or die "chmod automatic provisioning policy: $!";
+$manager->{provider_policy} = $provider_policy;
+my $disabled_auto = $manager->auto_provision({
+    name => 'ormblock', uid => 43212, gid => $test_gid, plan => 'blocked', owner => 'root',
+});
+ok($disabled_auto->{success} && $disabled_auto->{outcome} eq 'disabled'
+    && !-e "$etc_instances/ormblock/manifest.json",
+    'do not provision a package whose auto-provision option remains off');
+
+my $auto_account_file = "$account_root/ormauto";
+open(my $auto_account_fh, '>', $auto_account_file) or die "create automatic account fixture: $!";
+print {$auto_account_fh} "SHELL=/bin/bash\nPLAN=starter\nOWNER=reseller1\n";
+close($auto_account_fh) or die "close automatic account fixture: $!";
+chmod(0644, $auto_account_file) or die "chmod automatic account fixture: $!";
+$resolving_auto_account = 1;
+is_deeply($resolver->resolve_name('ormauto'), {
+    name => 'ormauto', uid => $test_uid, gid => $test_gid, plan => 'starter', owner => 'reseller1',
+}, 'resolve the new account package only from trusted cPanel account metadata');
+my @auto_audit;
+my $fleet_inventory = Orm::Broker::FleetInventory->new(
+    resolver => $resolver, instance_manager => $manager, expected_owner_uid => $<,
+    audit => sub { push @auto_audit, [@_]; return 1; },
+);
+my $auto_frame = JSON::PP->new->canonical(1)->encode({
+    operation => 'fleet.auto_provision', username => 'ormauto', version => 1,
+}) . "\n";
+my $auto_response = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $auto_frame, 0, $resolver, $manager, $fleet_inventory,
+));
+ok($auto_response->{success} && $auto_response->{outcome} eq 'provisioned'
+    && $auto_response->{state} eq 'running',
+    'provision a newly created account through the root-only trusted fleet path');
+my $auto_repeat = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $auto_frame, 0, $resolver, $manager, $fleet_inventory,
+));
+ok($auto_repeat->{success} && $auto_repeat->{outcome} eq 'already_present',
+    'treat duplicate create-account events as an idempotent no-op');
+my $auto_denied = JSON::PP->new->decode(Orm::Broker::Handler->handle_frame(
+    $auto_frame, 43210, $resolver, $manager, $fleet_inventory,
+));
+ok(!$auto_denied->{success} && $auto_denied->{error} eq 'not_authorized'
+    && $auto_audit[-1]->[2] eq 'auto_provision',
+    'deny non-root hook peers and record a normalized denial');
 
 socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 is(Orm::Broker::PeerCredentials->uid_from_socket($left), $<, 'read peer UID from Linux socket credentials');

@@ -21,6 +21,9 @@ configure_case() {
     TEST_SYSTEMCTL_STATE="$test_root/systemctl-state"
     TEST_PACKAGE_APPCONFIG="$repo_root/packaging/whm/open_redis_manager.conf"
     ORM_CPANEL_ROOT="$test_root/cpanel"
+    ORM_MANAGE_HOOKS="$ORM_CPANEL_ROOT/bin/manage_hooks"
+    ORM_ACCOUNT_CREATE_HOOK="$ORM_CPANEL_ROOT/3rdparty/bin/orm-account-create-hook.php"
+    TEST_HOOK_REGISTRY="$test_root/manage-hooks.state"
     ORM_INSTALL_PLUGIN="$test_root/bin/install_plugin"
     ORM_UNINSTALL_PLUGIN="$test_root/bin/uninstall_plugin"
     ORM_REGISTER_APPCONFIG="$test_root/bin/register_appconfig"
@@ -55,7 +58,8 @@ configure_case() {
     ORM_BROKER_SOCKET="$test_root/run/orm/broker.sock"
     TMPDIR="$TEST_TMPDIR"
     PATH="$test_root/bin:$base_path"
-    export TEST_ROOT TEST_TMPDIR TEST_PLUGIN_STATE TEST_APPCONFIG_STATE TEST_SYSTEMCTL_STATE TEST_PACKAGE_APPCONFIG TMPDIR PATH
+    export TEST_ROOT TEST_TMPDIR TEST_PLUGIN_STATE TEST_APPCONFIG_STATE TEST_SYSTEMCTL_STATE TEST_PACKAGE_APPCONFIG
+    export TEST_HOOK_REGISTRY TMPDIR PATH ORM_MANAGE_HOOKS ORM_ACCOUNT_CREATE_HOOK
     export ORM_CPANEL_ROOT ORM_INSTALL_PLUGIN ORM_UNINSTALL_PLUGIN ORM_REGISTER_APPCONFIG ORM_UNREGISTER_APPCONFIG
     export ORM_IS_REGISTERED ORM_CPanel_THEME ORM_CPanel_LIVE ORM_WHM_CGI ORM_WHM_ICONS ORM_3RDPARTY
     export ORM_INSTALL_MANIFEST ORM_APPCONFIG ORM_LIFECYCLE_LOCK ORM_SYSTEMCTL ORM_BROKER_BIN ORM_BROKER_LIB
@@ -65,7 +69,7 @@ configure_case() {
     export ORM_PROVIDER_EVENTS_SERVICE ORM_PROVIDER_EVENTS_TIMER
     export ORM_PODMAN_METRICS_SERVICE ORM_PODMAN_METRICS_TIMER
 
-    mkdir -p "$test_root/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
+    mkdir -p "$test_root/bin" "$ORM_CPANEL_ROOT/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
         "$test_root/etc/systemd/system" "$test_root/var/lib" "$test_root/run" "$TEST_TMPDIR"
     : >"$test_root/cpanel/php/WHM.php"
     : >"$test_root/cpanel/php/cpanel.php"
@@ -114,6 +118,31 @@ set -Eeuo pipefail
 rm -f -- "$ORM_APPCONFIG"
 printf '0\n' >"$TEST_APPCONFIG_STATE"
 MOCK
+    cat >"$ORM_MANAGE_HOOKS" <<'MOCK'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+case "${1:-}" in
+    list)
+        if [[ -f "$TEST_HOOK_REGISTRY" ]]; then
+            printf 'Whostmgr:\n   Accounts::Create:\n      stage: post\n      exectype: script\n      hook: %s\n' "$(<"$TEST_HOOK_REGISTRY")"
+        else
+            printf 'Whostmgr:\n'
+        fi
+        ;;
+    add)
+        [[ "$2" == script && "$3" == "$ORM_ACCOUNT_CREATE_HOOK" && -x "$3" ]]
+        [[ " $* " == *' --category Whostmgr '* && " $* " == *' --event Accounts::Create '* \
+            && " $* " == *' --stage post '* && " $* " == *' --action=--run '* ]]
+        printf '%s\n' "$ORM_ACCOUNT_CREATE_HOOK" >"$TEST_HOOK_REGISTRY"
+        ;;
+    delete)
+        [[ "$2" == script && "$3" == "$ORM_ACCOUNT_CREATE_HOOK" ]]
+        rm -f -- "$TEST_HOOK_REGISTRY"
+        ;;
+    *) exit 2 ;;
+esac
+MOCK
+    chmod 0755 "$ORM_MANAGE_HOOKS"
     cat >"$ORM_SYSTEMCTL" <<'MOCK'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -175,6 +204,8 @@ write_installer_runner() {
         printf 'export TMPDIR=%q\nexport PATH=%q\n' "$TMPDIR" "$PATH"
         printf 'export ORM_CPANEL_ROOT=%q\nexport ORM_INSTALL_PLUGIN=%q\nexport ORM_UNINSTALL_PLUGIN=%q\n' \
             "$ORM_CPANEL_ROOT" "$ORM_INSTALL_PLUGIN" "$ORM_UNINSTALL_PLUGIN"
+        printf 'export ORM_MANAGE_HOOKS=%q\nexport ORM_ACCOUNT_CREATE_HOOK=%q\nexport TEST_HOOK_REGISTRY=%q\n' \
+            "$ORM_MANAGE_HOOKS" "$ORM_ACCOUNT_CREATE_HOOK" "$TEST_HOOK_REGISTRY"
         printf 'export ORM_REGISTER_APPCONFIG=%q\nexport ORM_UNREGISTER_APPCONFIG=%q\nexport ORM_IS_REGISTERED=%q\n' \
             "$ORM_REGISTER_APPCONFIG" "$ORM_UNREGISTER_APPCONFIG" "$ORM_IS_REGISTERED"
         printf 'export ORM_CPanel_THEME=%q\nexport ORM_CPanel_LIVE=%q\nexport ORM_WHM_CGI=%q\nexport ORM_WHM_ICONS=%q\nexport ORM_3RDPARTY=%q\n' \
@@ -199,7 +230,8 @@ write_installer_runner() {
 orm_require_root_and_platform() {
     [[ "$(id -u)" -eq 0 ]] || orm_die 'test runner must be root.'
     local path key source target mode
-    for path in "$ORM_CPANEL_ROOT" "$ORM_INSTALL_PLUGIN" "$ORM_UNINSTALL_PLUGIN" "$ORM_REGISTER_APPCONFIG" \
+    for path in "$ORM_CPANEL_ROOT" "$ORM_MANAGE_HOOKS" "$ORM_ACCOUNT_CREATE_HOOK" \
+        "$ORM_INSTALL_PLUGIN" "$ORM_UNINSTALL_PLUGIN" "$ORM_REGISTER_APPCONFIG" \
         "$ORM_UNREGISTER_APPCONFIG" "$ORM_IS_REGISTERED" "$ORM_APPCONFIG" "$ORM_INSTALL_MANIFEST" \
         "$ORM_LIFECYCLE_LOCK" "$ORM_SYSTEMCTL" "$ORM_BROKER_SOCKET" \
         "$ORM_BROKER_UNIT" "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" "$ORM_INSTANCE_UNIT" \
@@ -252,6 +284,8 @@ orm_validate_install_manifest "$ORM_INSTALL_MANIFEST" || { printf 'fresh install
     || { printf 'fresh install manifest did not record the package version.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_PLUGIN_STATE")" == installed && "$(cat "$TEST_APPCONFIG_STATE")" == 1 ]] \
     || { printf 'fresh install did not register cPanel and WHM entries.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_HOOK_REGISTRY")" == "$ORM_ACCOUNT_CREATE_HOOK" && -x "$ORM_ACCOUNT_CREATE_HOOK" ]] \
+    || { printf 'fresh install did not register its account-create hook.\n' >&2; exit 1; }
 orm_appconfig_matches_package "$ORM_APPCONFIG" || { printf 'fresh install AppConfig does not match the package.\n' >&2; exit 1; }
 source_package_root="$ORM_PACKAGE_ROOT"
 ORM_PACKAGE_ROOT="$TEST_ROOT/package-without-template"

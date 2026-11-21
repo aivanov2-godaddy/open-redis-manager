@@ -103,6 +103,9 @@ rollback_uninstall() {
         orm_registration_state || rollback_failed=1
         orm_appconfig_matches_package "$ORM_APPCONFIG" || rollback_failed=1
     fi
+    if [[ "$ORM_ACCOUNT_HOOK_REMOVED" -eq 1 ]]; then
+        orm_ensure_account_create_hook || rollback_failed=1
+    fi
     if [[ "$instance_roots_removed" -eq 1 ]]; then
         orm_restore_empty_instance_directories || rollback_failed=1
     fi
@@ -177,6 +180,8 @@ while IFS='|' read -r key source target mode; do
 done < <(orm_package_file_map)
 if [[ -e "$ORM_INSTALL_MANIFEST" ]]; then cp -a -- "$ORM_INSTALL_MANIFEST" "$backup_root/install_manifest"; fi
 transaction_started=1
+
+orm_remove_account_create_hook || orm_die 'could not safely remove the non-blocking account-create hook; no package files were removed.'
 
 if [[ -f "$ORM_BROKER_UNIT" ]]; then
     stop_status=0
