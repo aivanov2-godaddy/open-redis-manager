@@ -141,6 +141,7 @@ if ($test_uid == 0) {
     die "root-run broker tests require the system nobody account" if @unprivileged < 4;
     ($test_uid, $test_gid) = @unprivileged[2, 3];
 }
+my $resolving_auto_account = 0;
 make_path($account_root);
 chmod(0755, $account_root) or die "chmod account root: $!";
 my $account_file = "$account_root/ormtest";
@@ -154,8 +155,7 @@ my $resolver = Orm::Broker::AccountResolver->new(
     expected_owner_uid => $<,
     restore_state_timeout => 1,
     lookup => sub {
-        return { name => 'ormauto', uid => $_[0], gid => $test_gid } if $_[0] == $test_uid;
-        return { name => 'ormtest', uid => $_[0], gid => $test_gid };
+        return { name => $resolving_auto_account ? 'ormauto' : 'ormtest', uid => $_[0], gid => $test_gid };
     },
     lookup_name => sub {
         return { name => $_[0], uid => 43210, gid => $test_gid } if $_[0] eq 'ormtest';
@@ -1912,6 +1912,7 @@ open(my $auto_account_fh, '>', $auto_account_file) or die "create automatic acco
 print {$auto_account_fh} "SHELL=/bin/bash\nPLAN=starter\nOWNER=reseller1\n";
 close($auto_account_fh) or die "close automatic account fixture: $!";
 chmod(0644, $auto_account_file) or die "chmod automatic account fixture: $!";
+$resolving_auto_account = 1;
 is_deeply($resolver->resolve_name('ormauto'), {
     name => 'ormauto', uid => $test_uid, gid => $test_gid, plan => 'starter', owner => 'reseller1',
 }, 'resolve the new account package only from trusted cPanel account metadata');
