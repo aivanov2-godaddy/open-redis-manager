@@ -549,13 +549,31 @@ $badRecoveryClient = new BrokerClient(static fn (string $request): string =>
 );
 $assert($badRecoveryClient->scanFleetRecovery('demo') === null,
     'Reject unexpected raw output in recovery scan responses.');
+$configRecoveryScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_drift\",\"repair\":\"config_rebuild\",\"state\":\"failed\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$configRecoveryScan = $configRecoveryScanClient->scanFleetRecovery('demo');
+$assert(($configRecoveryScan['finding'] ?? null) === 'config_drift'
+    && ($configRecoveryScan['repair'] ?? null) === 'config_rebuild' && ($configRecoveryScan['state'] ?? null) === 'failed',
+    'Accept the fixed scan-guided config rebuild finding for a failed instance.');
+$invalidConfigRecoveryScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_drift\",\"repair\":null,\"state\":\"not_configured\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($invalidConfigRecoveryScanClient->scanFleetRecovery('demo') === null,
+    'Reject config drift when the service has no verified configured state.');
+$runningConfigRecoveryScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_drift\",\"state\":\"running\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$runningConfigRecoveryScan = $runningConfigRecoveryScanClient->scanFleetRecovery('demo');
+$assert(($runningConfigRecoveryScan['repair'] ?? null) === null,
+    'Accept a config drift finding without repair when the service is running.');
 $repairRequests = [];
 $repairClient = new BrokerClient(static function (string $request) use (&$repairRequests): string {
     $repairRequests[] = $request;
     return "{\"action\":\"recovery.start\",\"audit_logged\":true,\"state\":\"starting\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
 });
 $repairResult = $repairClient->repairFleetAccount('demo', 'start');
-$assert($repairRequests[0] === "{\"repair\":\"start\",\"operation\":\"fleet.recovery.repair\",\"username\":\"demo\",\"version\":1}\n"
+$assert($repairRequests[0] === "{\"operation\":\"fleet.recovery.repair\",\"repair\":\"start\",\"username\":\"demo\",\"version\":1}\n"
     && ($repairResult['state'] ?? null) === 'starting',
     'Send only the fixed start recovery repair.');
 $assert($repairClient->repairFleetAccount('demo', 'restart') === null && count($repairRequests) === 1,
@@ -570,6 +588,21 @@ $removedInstanceRepairClient = new BrokerClient(static fn (string $request): str
 );
 $assert(($removedInstanceRepairClient->repairFleetAccount('demo', 'start')['error'] ?? null) === 'not_configured',
     'Parse a safe result when the instance disappears before the locked repair check.');
+$configRebuildRequests = [];
+$configRebuildClient = new BrokerClient(static function (string $request) use (&$configRebuildRequests): string {
+    $configRebuildRequests[] = $request;
+    return "{\"action\":\"recovery.config_rebuild\",\"audit_logged\":true,\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$configRebuildResult = $configRebuildClient->repairFleetAccount('demo', 'config_rebuild');
+$assert($configRebuildRequests[0] === "{\"operation\":\"fleet.recovery.repair\",\"repair\":\"config_rebuild\",\"username\":\"demo\",\"version\":1}\n"
+    && ($configRebuildResult['action'] ?? null) === 'recovery.config_rebuild'
+    && ($configRebuildResult['state'] ?? null) === 'stopped',
+    'Send and parse only the fixed scan-guided configuration rebuild repair.');
+$badConfigRebuildStateClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.config_rebuild\",\"audit_logged\":true,\"state\":\"running\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($badConfigRebuildStateClient->repairFleetAccount('demo', 'config_rebuild') === null,
+    'Reject a configuration rebuild receipt that claims the service was running.');
 $controlFailure = new BrokerClient(static fn (string $request): string =>
     "{\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"version\":1}\n"
 );

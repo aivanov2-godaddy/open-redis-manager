@@ -600,6 +600,88 @@ ok($recovered_start->{success} && $recovered_start->{state} eq 'running',
     'start a verified stopped instance through the fixed recovery repair');
 ok((grep { $_->[0] eq 'start' && $_->[1] eq '--no-block' && $_->[2] eq 'orm-instance@ormtest.service' } @systemctl_calls),
     'recovery repair uses only the server-generated unit and fixed start invocation');
+my $stopped_for_config_recovery = $manager->stop($account);
+ok($stopped_for_config_recovery->{success}, 'stop the instance before testing configuration recovery');
+my $recovery_config_path = "$etc_instances/ormtest/redis.conf";
+my $recovery_manifest = $manager->_read_manifest($account);
+my $recovery_secret = 'A' x 43;
+my $auth_config = Orm::Broker::InstanceManager::_redis_config(
+    $recovery_manifest->{data}, $recovery_manifest->{socket}, $recovery_manifest->{settings},
+    $recovery_secret, Orm::Broker::InstanceManager::_manifest_database_count($recovery_manifest));
+open(my $drift_config, '>', $recovery_config_path) or die "write bounded AUTH recovery fixture: $!";
+print {$drift_config} $auth_config, "# noncanonical recovery fixture\n";
+close($drift_config) or die "close recovery fixture: $!";
+my $config_drift_scan = $manager->recovery_config_scan($account);
+ok($config_drift_scan->{success} && $config_drift_scan->{finding} eq 'config_drift'
+    && $config_drift_scan->{state} eq 'stopped' && $config_drift_scan->{repair} eq 'config_rebuild',
+    'offer canonical config rebuild for a stopped service with valid bounded directives and noncanonical additions');
+$unit_state = 'active';
+my $running_config_drift = $manager->recovery_config_scan($account);
+ok($running_config_drift->{success} && $running_config_drift->{state} eq 'running'
+    && !exists($running_config_drift->{repair}), 'do not offer config rebuild while the service is running');
+is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
+    'refuse config replacement while the service is running');
+open($drift_config, '<', $recovery_config_path) or die "read running config fixture: $!";
+my $drift_content = do { local $/; <$drift_config> };
+close($drift_config) or die "close running config fixture: $!";
+like($drift_content, qr/noncanonical recovery fixture/, 'leave a running service config untouched');
+$unit_state = 'inactive';
+my $rebuilt_config = $manager->recovery_rebuild_config($account);
+ok($rebuilt_config->{success} && $rebuilt_config->{state} eq 'stopped',
+    'atomically rebuild and verify a safely readable stopped service config');
+unlike(join('', map { defined($_) ? $_ : '' } values %{$rebuilt_config}), qr/\Q$recovery_secret\E/,
+    'never return the AUTH secret in the recovery receipt');
+open($drift_config, '<', $recovery_config_path) or die "read rebuilt config: $!";
+$drift_content = do { local $/; <$drift_config> };
+close($drift_config) or die "close rebuilt config: $!";
+like($drift_content, qr/^requirepass \Q$recovery_secret\E$/m, 'preserve the validated AUTH secret during rebuild');
+unlike($drift_content, qr/noncanonical recovery fixture/, 'remove noncanonical config additions during rebuild');
+my $malformed_auth_config = $auth_config;
+$malformed_auth_config =~ s/^requirepass [A-Za-z0-9_-]{43}$/requirepass malformed secret/m;
+my @unsafe_recovery_configs = (
+    ['duplicate core directive', $auth_config . "maxmemory 8388608\n"],
+    ['malformed AUTH directive', $malformed_auth_config],
+    ['duplicate AUTH directive', $auth_config . "requirepass $recovery_secret\n"],
+);
+for my $unsafe_case (@unsafe_recovery_configs) {
+    open($drift_config, '>', $recovery_config_path) or die "write unsafe recovery fixture: $!";
+    print {$drift_config} $unsafe_case->[1];
+    close($drift_config) or die "close unsafe recovery fixture: $!";
+    is($manager->recovery_config_scan($account), undef,
+        "do not offer config recovery for $unsafe_case->[0]");
+    is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
+        "refuse config replacement for $unsafe_case->[0]");
+    open($drift_config, '<', $recovery_config_path) or die "read unsafe recovery fixture: $!";
+    $drift_content = do { local $/; <$drift_config> };
+    close($drift_config) or die "close unsafe recovery fixture: $!";
+    is($drift_content, $unsafe_case->[1], "leave $unsafe_case->[0] unchanged");
+}
+ok(unlink($recovery_config_path), 'remove config for missing-file recovery test');
+is($manager->recovery_config_scan($account), undef, 'do not offer config recovery when the config file is missing');
+is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
+    'refuse to synthesize config after the existing file is lost');
+ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
+    'restore the validated config before unsafe-path checks');
+ok(chmod(0660, $recovery_config_path), 'make config group-writable for the unsafe-mode recovery test');
+is($manager->recovery_config_scan($account), undef, 'do not offer config recovery for an unsafe config mode');
+is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
+    'refuse to replace config with unsafe permissions');
+ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
+    'restore safe ownership and mode before symlink checks');
+my $recovery_config_target = "$recovery_config_path.recovery-target";
+ok(rename($recovery_config_path, $recovery_config_target), 'move config aside for symlink recovery test');
+ok(symlink($recovery_config_target, $recovery_config_path), 'replace config path with a symlink');
+is($manager->recovery_config_scan($account), undef, 'do not offer config recovery through a symlink');
+is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
+    'refuse to replace a symlinked config path');
+ok(unlink($recovery_config_path), 'remove config symlink after rejection');
+ok(rename($recovery_config_target, $recovery_config_path), 'restore the regular config after symlink checks');
+my $original_config = Orm::Broker::InstanceManager::_redis_config(
+    $recovery_manifest->{data}, $recovery_manifest->{socket}, $recovery_manifest->{settings}, undef,
+    Orm::Broker::InstanceManager::_manifest_database_count($recovery_manifest));
+ok($manager->_atomic_write($recovery_config_path, $original_config, 0640, $test_uid, $test_gid),
+    'restore the original no-AUTH fixture for subsequent broker tests');
+ok($manager->start($account)->{success}, 'start the instance again after config recovery checks');
 {
     my @diagnostics_commands;
     local $manager->{redis_cli_call} = sub {

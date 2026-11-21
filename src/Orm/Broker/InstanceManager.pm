@@ -955,6 +955,60 @@ sub recovery_start_if_stopped {
     return $response;
 }
 
+sub recovery_config_scan {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $manifest = $self->_read_manifest($account, 1);
+    return undef if ref($manifest) ne 'HASH' || $manifest->{_recovery_config_canonical};
+    my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    my $normalized_state = $active || $state eq 'active' ? 'running'
+        : $state eq 'activating' ? 'starting'
+        : $state eq 'deactivating' ? 'stopping'
+        : $state eq 'failed' ? 'failed'
+        : $state eq 'inactive' ? 'stopped' : undef;
+    return undef if !defined($normalized_state);
+    my $response = {
+        finding => 'config_drift',
+        state => $normalized_state,
+        success => JSON::PP::true,
+        version => 1,
+    };
+    $response->{repair} = 'config_rebuild' if $normalized_state eq 'stopped' || $normalized_state eq 'failed';
+    return $response;
+}
+
+sub recovery_rebuild_config {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $manifest = $self->_read_manifest($account, 1);
+    my $response;
+    if (ref($manifest) ne 'HASH' || $manifest->{_recovery_config_canonical}) {
+        $response = _failure('repair_not_applicable');
+    } else {
+        my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+        if ($active || $state eq 'active' || $state eq 'activating' || $state eq 'deactivating') {
+            $response = _failure('repair_not_applicable');
+        } elsif ($state ne 'inactive' && $state ne 'failed') {
+            $response = _failure('instance_unavailable');
+        } else {
+            my $secret = $manifest->{_recovery_auth_secret};
+            my $config = _redis_config($manifest->{data}, $manifest->{socket}, $manifest->{settings},
+                $secret, _manifest_database_count($manifest));
+            my $saved = defined($config) && $self->_atomic_write(
+                $manifest->{config}, $config, 0640, $self->{expected_owner_uid}, $account->{gid}
+            );
+            my $verified = $saved ? $self->_read_manifest($account) : undef;
+            $response = ref($verified) eq 'HASH'
+                ? { state => $state eq 'failed' ? 'failed' : 'stopped', success => JSON::PP::true, version => 1 }
+                : _failure('configuration_storage_unavailable');
+        }
+    }
+    close($lock);
+    return $response;
+}
+
 sub _start_locked {
     my ($self, $account) = @_;
     my $manifest = $self->_read_manifest($account);
@@ -2538,7 +2592,7 @@ sub _redis_info {
 }
 
 sub _read_manifest {
-    my ($self, $account) = @_;
+    my ($self, $account, $allow_config_drift) = @_;
     return undef if !$self->_trusted_directory($self->{etc_root});
     my $directory = $self->_account_config_dir($account->{name});
     my @dir_stat = lstat($directory);
@@ -2587,14 +2641,18 @@ sub _read_manifest {
     return undef if $manifest->{data} ne $expected_data
         || $manifest->{config} ne $expected_config || $manifest->{socket} ne $expected_socket;
     return undef if !defined($self->_available_binary($manifest->{backend}));
-    my ($settings, $auth_secret) = $self->_valid_config($account, $manifest);
+    my ($settings, $auth_secret, $canonical) = $self->_valid_config($account, $manifest, $allow_config_drift);
     return undef if !$settings;
     $manifest->{settings} = $settings;
+    if ($allow_config_drift) {
+        $manifest->{_recovery_config_canonical} = $canonical ? 1 : 0;
+        $manifest->{_recovery_auth_secret} = $auth_secret;
+    }
     return $manifest;
 }
 
 sub _valid_config {
-    my ($self, $account, $manifest) = @_;
+    my ($self, $account, $manifest, $allow_config_drift) = @_;
     my $path = $manifest->{config};
     return undef if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
     my @stat = stat($handle);
@@ -2641,8 +2699,9 @@ sub _valid_config {
     return undef if $database_count < 1 || $database_count > 16
         || $database_count != _manifest_database_count($manifest);
     my $auth_secret = @auth_secrets ? $auth_secrets[0] : undef;
-    return undef if $content ne _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret, 0 + $database_count);
-    return wantarray ? ($settings, $auth_secret) : $settings;
+    my $canonical = $content eq _redis_config($manifest->{data}, $manifest->{socket}, $settings, $auth_secret, 0 + $database_count);
+    return undef if !$canonical && !$allow_config_drift;
+    return wantarray ? ($settings, $auth_secret, $canonical) : $settings;
 }
 
 sub _available_binary {

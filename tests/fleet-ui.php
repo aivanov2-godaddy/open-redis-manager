@@ -63,6 +63,10 @@ $assert(str_contains($whm, 'Usage from snapshot') && str_contains($whm, "\$entry
     && str_contains($whm, 'memory_used_bytes') && str_contains($whm, 'connected_clients')
     && str_contains($whm, 'No valid metrics snapshot is available.'),
     'show per-account memory and client usage with explicit snapshot freshness and unknown values');
+$assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_rebuild'")
+    && str_contains($whm, 'Rebuild config') && str_contains($whm, 'ORM will not start the service')
+    && str_contains($whm, 'recovery.config_rebuild'),
+    'show scan-gated canonical config recovery with explicit confirmation and audit action');
 $assert(str_contains($whm, "\$finding['window_start_utc']")
     && str_contains($whm, "\$finding['window_end_utc']") && str_contains($whm, 'Evidence window:'),
     'render escaped UTC evidence bounds on each WHM security report finding');
