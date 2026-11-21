@@ -16,6 +16,22 @@ grep -Fxq 'Wants=orm-metrics-collect@%i.timer' "$ORM_PACKAGE_ROOT/systemd/orm-in
     printf 'instance service must activate its account-scoped metrics timer.\n' >&2
     exit 1
 }
+grep -Fxq 'StartLimitIntervalSec=5min' "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" || {
+    printf 'instance service must use an explicit restart-rate window.\n' >&2
+    exit 1
+}
+grep -Fxq 'StartLimitBurst=5' "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" || {
+    printf 'instance service must cap starts within its restart-rate window.\n' >&2
+    exit 1
+}
+grep -Fxq 'Restart=on-failure' "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" || {
+    printf 'instance service must restart failures but not intentional stops.\n' >&2
+    exit 1
+}
+grep -Fxq 'RestartSec=10s' "$ORM_PACKAGE_ROOT/systemd/orm-instance@.service" || {
+    printf 'instance service must use the documented retry delay.\n' >&2
+    exit 1
+}
 grep -Fxq 'User=%i' "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.service" || {
     printf 'metrics collection must run as its cPanel account.\n' >&2
     exit 1

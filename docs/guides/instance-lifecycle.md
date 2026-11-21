@@ -12,6 +12,20 @@ For every configured instance, the page requests a read-only metric sample throu
 
 Each instance's systemd lifecycle starts a separate hourly metrics timer, which is bound to the instance and runs its fixed collector as that cPanel account. The collector uses only the local Unix socket. The root broker validates and stores one sample per hour in an atomic, root-owned `0600` history file. New instances use their manifest-recorded provider retention of 7–90 days, with a hard cap of 2,160 samples and 1 MiB; legacy instances retain 30-day pruning. The cPanel charts offer 24-hour and 7-day ranges for memory used, connected clients, and hit ratio. A live page request also refreshes the latest sample; within the same hour it updates that hour's history point. History is account-scoped and contains only numeric counters and timestamps.
 
+## Failure retries
+
+The per-account systemd unit restarts a service after an unexpected failure, waiting 10 seconds between starts. It permits at most five starts in a rolling five-minute window, including manual starts. An intentional `stop` does not trigger a restart. When the limit is reached, the service remains failed instead of retrying indefinitely; cPanel and WHM show the failed service state.
+
+Before retrying, an administrator should inspect the unit journal and correct the cause, such as an invalid backend package or service configuration. Then clear the systemd failure counter for that account and use the normal WHM start action:
+
+```sh
+systemctl status orm-instance@CPANEL_USER.service
+journalctl -u orm-instance@CPANEL_USER.service --since '10 minutes ago'
+systemctl reset-failed orm-instance@CPANEL_USER.service
+```
+
+Replace `CPANEL_USER` with the verified account name. The package update reloads the unit definition but does not restart a running cache process; the retry policy applies to subsequent starts and failures.
+
 ## Security and preservation
 
 - Instance identity and paths come from the broker's `SO_PEERCRED` account mapping; form fields cannot select another account.

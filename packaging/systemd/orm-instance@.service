@@ -4,6 +4,8 @@ After=local-fs.target
 Wants=orm-metrics-collect@%i.timer
 ConditionPathIsDirectory=/var/lib/orm-instances/%i
 ConditionPathExists=/etc/orm-instances/%i/manifest.json
+StartLimitIntervalSec=5min
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -11,7 +13,7 @@ User=%i
 Group=%i
 ExecStart=/usr/local/cpanel/3rdparty/orm/bin/orm-instance-launcher %i
 Restart=on-failure
-RestartSec=2s
+RestartSec=10s
 TimeoutStartSec=30s
 TimeoutStopSec=10s
 PrivateTmp=true
