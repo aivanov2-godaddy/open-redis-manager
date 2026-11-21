@@ -36,4 +36,23 @@ $assert(str_contains($source, '$rootAuthorized = $authorized && $authenticatedUs
 $assert(str_contains($source, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)'),
     'require root authorization and a valid WHM request guard for mutation controls');
 
+$liveHarness = file_get_contents(__DIR__ . '/whm-live-acl-smoke.py');
+$assert(is_string($liveHarness), 'read the live WHM ACL smoke harness');
+$restrictPosition = is_string($liveHarness) ? strpos($liveHarness, '"acl-all="') : false;
+$sessionPosition = is_string($liveHarness) ? strpos($liveHarness, '"create_user_session"') : false;
+$assert($restrictPosition !== false && $sessionPosition !== false && $restrictPosition < $sessionPosition,
+    'remove the temporary reseller all ACL before opening its WHM SSO session');
+$assert(str_contains($liveHarness, 'status in {401, 403}')
+    && str_contains($liveHarness, 'Live backend discovery from the authenticated WHM session.')
+    && str_contains($liveHarness, 'Generate report-only review'),
+    'require an HTTP denial response without root-only WHM content');
+$assert(str_contains($liveHarness, 'finally:') && str_contains($liveHarness, '"removeacct"')
+    && str_contains($liveHarness, 'current_users == original_users')
+    && str_contains($liveHarness, 'original_resellers'),
+    'always remove the temporary reseller and verify account and reseller ACL cleanup');
+$assert(str_contains($liveHarness, 'showpass=n')
+    && str_contains($liveHarness, 'SSO URLs, cookies, API output, and response bodies stay in')
+    && !str_contains($liveHarness, 'print(username)'),
+    'suppress generated credentials, session data, and temporary account identifiers');
+
 fwrite(STDOUT, "WHM ACL checks passed: {$checks}\n");
