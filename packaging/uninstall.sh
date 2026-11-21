@@ -26,6 +26,7 @@ files_touched=0
 whm_registered=0
 broker_stopped=0
 instance_roots_removed=0
+provider_events_timer_stopped=0
 
 restore_uninstalled_files() {
     local key source target mode saved rollback_failed=0
@@ -93,6 +94,9 @@ rollback_uninstall() {
     fi
     if [[ "$files_touched" -eq 1 ]]; then
         "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || rollback_failed=1
+    fi
+    if [[ "$provider_events_timer_stopped" -eq 1 ]]; then
+        "$ORM_SYSTEMCTL" enable --now orm-provider-events.timer >/dev/null 2>&1 || rollback_failed=1
     fi
     if [[ "$rollback_failed" -eq 0 ]]; then
         if [[ "$broker_stopped" -eq 1 ]] || ! orm_broker_state_matches_initial; then
@@ -167,6 +171,18 @@ if [[ -f "$ORM_BROKER_UNIT" ]]; then
     broker_stopped=1
     [[ "$stopped_enabled" == disabled && ( "$stopped_active" == inactive || "$stopped_active" == failed ) ]] \
         || orm_die 'could not stop and disable the broker; no package files were removed.'
+fi
+
+if [[ -f "$ORM_PROVIDER_EVENTS_TIMER" ]]; then
+    timer_enabled="$("$ORM_SYSTEMCTL" is-enabled orm-provider-events.timer 2>/dev/null || true)"
+    timer_active="$("$ORM_SYSTEMCTL" is-active orm-provider-events.timer 2>/dev/null || true)"
+    case "$timer_enabled" in enabled|disabled|enabled-runtime) ;; *) orm_die 'could not determine provider event timer state; refusing uninstall.' ;; esac
+    case "$timer_active" in active|inactive|failed) ;; *) orm_die 'could not determine provider event timer activity; refusing uninstall.' ;; esac
+    if [[ "$timer_enabled" == enabled || "$timer_enabled" == enabled-runtime || "$timer_active" == active ]]; then
+        "$ORM_SYSTEMCTL" disable --now orm-provider-events.timer || orm_die 'could not stop the provider event timer; no files were removed.'
+        "$ORM_SYSTEMCTL" stop orm-provider-events.service >/dev/null 2>&1 || true
+        provider_events_timer_stopped=1
+    fi
 fi
 
 if orm_instances_exist; then

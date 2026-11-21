@@ -106,6 +106,7 @@ socket_quarantined=0
 instance_roots_prepared=0
 files_touched=0
 upgrade_succeeded=0
+provider_events_timer_started=0
 keep_backup=0
 quarantine_path=''
 
@@ -125,6 +126,11 @@ rollback_upgrade() {
         chmod 0666 -- "$quarantine_path" || rollback_failed=1
         mv -- "$quarantine_path" "$ORM_BROKER_SOCKET" || rollback_failed=1
         socket_quarantined=0
+    fi
+    if [[ "$provider_events_timer_started" -eq 1 ]]; then
+        "$ORM_SYSTEMCTL" disable --now orm-provider-events.timer >/dev/null 2>&1 || rollback_failed=1
+        "$ORM_SYSTEMCTL" stop orm-provider-events.service >/dev/null 2>&1 || rollback_failed=1
+        provider_events_timer_started=0
     fi
     if [[ "$files_touched" -eq 1 ]]; then
         if [[ -n "${temporary:-}" ]]; then
@@ -205,6 +211,7 @@ rollback_upgrade() {
     if [[ "$rollback_failed" -eq 0 && "$instance_roots_prepared" -eq 1 ]]; then
         orm_remove_prepared_instance_directories || rollback_failed=1
     fi
+    orm_remove_prepared_provider_event_storage || rollback_failed=1
     if [[ "$rollback_failed" -ne 0 ]]; then
         printf 'ORM upgrader: rollback was incomplete; keep any instance roots and recovery data untouched while inspecting cPanel registration and ORM package files.\n' >&2
         return 1
@@ -264,6 +271,7 @@ if [[ "$legacy_install_kind" == managed ]]; then
 else
     orm_prepare_instance_directories
 fi
+orm_prepare_provider_event_storage
 
 if [[ "$ORM_BROKER_ACTIVE_BEFORE" == active ]]; then
     broker_pid="$("$ORM_SYSTEMCTL" show -p MainPID --value orm-broker.service 2>/dev/null)"
@@ -361,6 +369,8 @@ if ! orm_broker_state_matches_initial; then
     active_after="$("$ORM_SYSTEMCTL" is-active orm-broker.service 2>/dev/null || true)"
     orm_die "broker state changed (expected enabled=$ORM_BROKER_ENABLED_BEFORE, active=$ORM_BROKER_ACTIVE_BEFORE; observed enabled=$enabled_after, active=$active_after)."
 fi
+provider_events_timer_started=1
+"$ORM_SYSTEMCTL" enable --now orm-provider-events.timer
 upgrade_succeeded=1
 if [[ "$legacy_install_kind" == managed ]]; then
     printf 'Open Redis Manager managed v1 installation upgraded. Broker state, existing instance data, and cPanel-managed containers were preserved.\n'

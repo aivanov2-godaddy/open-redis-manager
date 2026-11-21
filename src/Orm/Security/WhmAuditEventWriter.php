@@ -30,6 +30,13 @@ final class WhmAuditEventWriter
             . ($success ? 'success' : 'failure') . ' state=' . $backend);
     }
 
+    public static function providerEventsChanged(bool $success, bool $enabled, bool $keyRotated): bool
+    {
+        $state = $success ? ($enabled ? 'enabled' : 'disabled') . ($keyRotated ? ',key_rotated' : '') : 'rejected';
+        return self::write('provider_events actor_uid=0 account=global action=provider.events.configure result='
+            . ($success ? 'success' : 'failure') . ' state=' . $state);
+    }
+
     public static function securityReportGenerated(): bool
     {
         return self::write('security_report actor_uid=0 account=global action=security.report result=success state=generated');

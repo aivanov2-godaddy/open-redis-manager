@@ -34,6 +34,7 @@ $brokerLines = [
     json_encode(['SYSLOG_IDENTIFIER' => 'other-service', 'MESSAGE' => 'fleet_operation actor_uid=0 account=acct01 action=start result=success state=running', '__REALTIME_TIMESTAMP' => (string) ($now * 1_000_000)], JSON_THROW_ON_ERROR),
 ];
 $whmLines = [
+    $journal('orm-whm', 'provider_events actor_uid=0 account=global action=provider.events.configure result=success state=enabled,key_rotated', $now - 1),
     $journal('orm-whm', 'backend_policy actor_uid=0 account=global action=backend.select result=success state=valkey', $now - 15),
     $journal('orm-whm', 'provider_policy actor_uid=0 account=global action=provider.package.save result=success state=updated', $now - 5),
     $journal('orm-whm', 'security_report actor_uid=0 account=global action=security.report result=success state=generated', $now - 2),
@@ -43,13 +44,14 @@ $reader = new WhmAuditLog(static fn (string $identifier): array => [
     'status' => 'ok', 'lines' => $identifier === 'orm-broker' ? $brokerLines : $whmLines,
 ]);
 $result = $reader->read($now - 3600, $now, []);
-$assert($result['success'] && $result['record_count'] === 9, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
-$assert($result['records'][0]['action'] === 'security.report' && $result['records'][0]['account'] === 'global', 'Recognize fixed metadata-only security report events.');
-$assert($result['records'][8]['action'] === 'security.thresholds.update' && $result['records'][8]['result'] === 'success',
+$assert($result['success'] && $result['record_count'] === 10, 'Parse known records and omit unknown, malformed-source, and unrelated journal rows.');
+$assert($result['records'][0]['action'] === 'provider.events.configure' && $result['records'][0]['account'] === 'global'
+    && $result['records'][0]['state'] === 'enabled,key_rotated', 'Recognize fixed metadata-only provider event configuration audits.');
+$assert($result['records'][9]['action'] === 'security.thresholds.update' && $result['records'][9]['result'] === 'success',
     'Recognize fixed metadata-only security threshold policy updates.');
-$assert($result['records'][1]['action'] === 'provider.package.save' && $result['records'][1]['source'] === 'orm-whm', 'Sort newest first and normalize WHM policy events.');
-$assert($result['records'][3]['action'] === 'policy.violation' && $result['records'][3]['actor'] === '43210', 'Normalize broker provider policy events using their trusted account actor.');
-$assert($result['records'][6]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
+$assert($result['records'][2]['action'] === 'provider.package.save' && $result['records'][2]['source'] === 'orm-whm', 'Sort newest first and normalize WHM policy events.');
+$assert($result['records'][4]['action'] === 'policy.violation' && $result['records'][4]['actor'] === '43210', 'Normalize broker provider policy events using their trusted account actor.');
+$assert($result['records'][7]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
 $assert($result['sources'][0]['status'] === 'partial' && $result['sources'][0]['unrecognized_rows'] === 3, 'Mark sources partial when rows cannot be safely recognized.');
 $filtered = $reader->read($now - 3600, $now, ['account' => 'acct01', 'action' => 'auth.rotate', 'result' => 'success']);
 $assert($filtered['record_count'] === 1 && $filtered['records'][0]['actor'] === '1000', 'Filter normalized records by account, action, and result.');

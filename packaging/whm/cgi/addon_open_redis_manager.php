@@ -30,6 +30,9 @@ $fleetOffset = filter_var($_GET['offset'] ?? 0, FILTER_VALIDATE_INT, ['options' 
 $fleetOffset = $fleetOffset === false ? 0 : $fleetOffset;
 $fleetClient = new \Orm\Cpanel\BrokerClient();
 $fleetPage = $rootAuthorized ? $fleetClient->requestFleetPage($fleetOffset) : null;
+$providerEventStatus = $rootAuthorized ? $fleetClient->providerEventStatus() : null;
+$providerEventQueue = $rootAuthorized ? $fleetClient->providerEventQueueStatus() : null;
+$providerEventMessage = null;
 $fleetSummary = null;
 $fleetSummaryMessage = null;
 if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
@@ -459,6 +462,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         : [];
     if ($available && $policyStore->select($submittedBackend)) {
         $policy = $submittedBackend;
+        $fleetClient->providerBackendSelected($submittedBackend);
         $policyMessage = 'The default backend for new ORM instances has been updated.';
         $auditLogged = \Orm\Security\WhmAuditEventWriter::backendSelection($submittedBackend, true);
         if (!$auditLogged) {
@@ -470,6 +474,39 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
             is_string($submittedBackend) && in_array($submittedBackend, ['redis', 'valkey'], true) ? $submittedBackend : 'unavailable',
             false
         );
+    }
+}
+if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'provider.events.configure') {
+    header('Cache-Control: private, no-store, max-age=0');
+    header('X-Content-Type-Options: nosniff');
+    $destination = $_POST['provider_event_destination'] ?? null;
+    $enabledRaw = $_POST['provider_event_enabled'] ?? null;
+    $rotateRaw = $_POST['provider_event_rotate_key'] ?? '0';
+    $validInput = is_string($destination) && strlen($destination) <= 2048
+        && is_string($enabledRaw) && in_array($enabledRaw, ['0', '1'], true)
+        && is_string($rotateRaw) && in_array($rotateRaw, ['0', '1'], true);
+    $saved = $validInput
+        ? $fleetClient->configureProviderEvents($destination, $enabledRaw === '1', $rotateRaw === '1')
+        : null;
+    $success = is_array($saved) && ($saved['success'] ?? false) === true;
+    $enabled = $success && ($saved['enabled'] ?? false) === true;
+    $rotated = $success && ($saved['key_rotated'] ?? false) === true;
+    $auditLogged = \Orm\Security\WhmAuditEventWriter::providerEventsChanged($success, $enabled, $rotated);
+    if ($success) {
+        $providerEventStatus = $fleetClient->providerEventStatus();
+        $providerEventQueue = $fleetClient->providerEventQueueStatus();
+        $providerEventMessage = $enabled
+            ? 'Provider event delivery is enabled. The endpoint is revalidated before every HTTPS delivery.'
+            : 'Provider event delivery is disabled.';
+        if ($rotated) {
+            $providerEventMessage .= ' The signing key was rotated; update the receiver with the new secret, which ORM will not display.';
+        }
+        if (!$auditLogged) {
+            $providerEventMessage .= ' Warning: the change succeeded, but its audit record could not be confirmed.';
+        }
+    } else {
+        $providerEventMessage = 'Provider event settings could not be saved or audited. Check the HTTPS URL and root-owned configuration.';
     }
 }
 $providerPolicyMessage = null;
@@ -1061,6 +1098,55 @@ WHM::header('Open Redis Manager', 0, 0);
       </table>
       <p>Discovery checks common fixed paths and systemd units. A missing match does not prove that a backend is absent.</p>
       <p>Discovery queries fixed binary version output and systemd service state. It does not change services or read account data, Redis configuration, credentials, or Redis data.</p>
+    </section>
+    <section aria-labelledby="orm-provider-events-title">
+      <h2 id="orm-provider-events-title">Provider event delivery</h2>
+      <?php if (!$rootAuthorized): ?>
+        <p role="status">Only the root WHM administrator can configure provider event delivery.</p>
+      <?php else: ?>
+        <?php if ($providerEventMessage !== null): ?><p role="status"><?= htmlspecialchars($providerEventMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+        <?php if (!is_array($providerEventStatus) || ($providerEventStatus['success'] ?? false) !== true): ?>
+          <p role="status">Provider event configuration could not be verified. No changes are available until the broker and root-owned settings pass validation.</p>
+        <?php else: ?>
+          <dl>
+            <dt>Delivery</dt><dd><?= $providerEventStatus['enabled'] ? 'Enabled' : 'Disabled' ?></dd>
+            <dt>Signing key</dt><dd><?= $providerEventStatus['key_configured'] ? 'Configured; secret hidden' : 'Not configured' ?></dd>
+          </dl>
+          <form method="post">
+            <input type="hidden" name="orm_action" value="provider.events.configure">
+            <label for="orm-provider-event-destination">HTTPS endpoint (port 443)</label>
+            <input id="orm-provider-event-destination" name="provider_event_destination" type="url" maxlength="2048"
+              value="<?= htmlspecialchars($providerEventStatus['destination'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"
+              placeholder="https://hooks.example.net/orm" autocomplete="url">
+            <label for="orm-provider-event-enabled">Event delivery</label>
+            <select id="orm-provider-event-enabled" name="provider_event_enabled" required>
+              <option value="0"<?= !$providerEventStatus['enabled'] ? ' selected' : '' ?>>Disabled</option>
+              <option value="1"<?= $providerEventStatus['enabled'] ? ' selected' : '' ?>>Enabled</option>
+            </select>
+            <label><input type="checkbox" name="provider_event_rotate_key" value="1"> Rotate signing key</label>
+            <button type="submit">Save provider event settings</button>
+          </form>
+          <p>ORM sends only fixed event types and allowlisted metadata. The endpoint must use HTTPS on port 443; every delivery re-resolves and pins public DNS answers. ORM never sends a test POST. Rotating the key invalidates the receiver’s previous key, and the new key is not displayed.</p>
+        <?php endif; ?>
+        <?php if (is_array($providerEventQueue) && ($providerEventQueue['success'] ?? false) === true): ?>
+          <h3>Delivery queue</h3>
+          <ul>
+            <?php foreach (['pending', 'sending', 'delivered', 'failed', 'expired'] as $eventState): ?>
+              <li><?= htmlspecialchars(ucfirst($eventState), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>: <?= (int) $providerEventQueue['counts'][$eventState] ?></li>
+            <?php endforeach; ?>
+          </ul>
+          <?php if ($providerEventQueue['records'] !== []): ?>
+            <h4>Recent event outcomes</h4>
+            <ul>
+              <?php foreach ($providerEventQueue['records'] as $eventRecord): ?>
+                <li><?= htmlspecialchars(ucfirst($eventRecord['state']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>, <?= (int) $eventRecord['age_seconds'] ?> seconds old, <?= (int) $eventRecord['attempts'] ?> attempts<?= isset($eventRecord['outcome']) ? ', last outcome ' . htmlspecialchars($eventRecord['outcome'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?></li>
+              <?php endforeach; ?>
+            </ul>
+          <?php endif; ?>
+        <?php else: ?>
+          <p role="status">Delivery queue status is unavailable.</p>
+        <?php endif; ?>
+      <?php endif; ?>
     </section>
     <section aria-labelledby="orm-policy-title">
       <h2 id="orm-policy-title">Default backend for new instances</h2>

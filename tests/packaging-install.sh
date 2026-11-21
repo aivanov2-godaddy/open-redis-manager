@@ -45,6 +45,11 @@ configure_case() {
     ORM_METRICS_COLLECTOR="$ORM_3RDPARTY/bin/orm-metrics-collect.pl"
     ORM_METRICS_SERVICE="$test_root/etc/systemd/system/orm-metrics-collect@.service"
     ORM_METRICS_TIMER="$test_root/etc/systemd/system/orm-metrics-collect@.timer"
+    ORM_PROVIDER_EVENTS_CONFIG="$test_root/etc/orm-provider-events.json"
+    ORM_PROVIDER_EVENTS_ROOT="$test_root/var/lib/orm-events"
+    ORM_PROVIDER_EVENTS_OUTBOX="$ORM_PROVIDER_EVENTS_ROOT/outbox"
+    ORM_PROVIDER_EVENTS_SERVICE="$test_root/etc/systemd/system/orm-provider-events.service"
+    ORM_PROVIDER_EVENTS_TIMER="$test_root/etc/systemd/system/orm-provider-events.timer"
     ORM_BROKER_SOCKET="$test_root/run/orm/broker.sock"
     TMPDIR="$TEST_TMPDIR"
     PATH="$test_root/bin:$base_path"
@@ -54,6 +59,8 @@ configure_case() {
     export ORM_INSTALL_MANIFEST ORM_APPCONFIG ORM_LIFECYCLE_LOCK ORM_SYSTEMCTL ORM_BROKER_BIN ORM_BROKER_LIB
     export ORM_BROKER_UNIT ORM_INSTANCE_ROOT ORM_INSTANCE_DATA ORM_INSTANCE_UNIT ORM_INSTANCE_LAUNCHER
     export ORM_METRICS_COLLECTOR ORM_METRICS_SERVICE ORM_METRICS_TIMER ORM_BROKER_SOCKET
+    export ORM_PROVIDER_EVENTS_CONFIG ORM_PROVIDER_EVENTS_ROOT ORM_PROVIDER_EVENTS_OUTBOX
+    export ORM_PROVIDER_EVENTS_SERVICE ORM_PROVIDER_EVENTS_TIMER
 
     mkdir -p "$test_root/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
         "$test_root/etc/systemd/system" "$test_root/var/lib" "$test_root/run" "$TEST_TMPDIR"
@@ -62,6 +69,8 @@ configure_case() {
     printf '0\n' >"$TEST_APPCONFIG_STATE"
     printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
     printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
+    printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+    printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
 
     cat >"$ORM_INSTALL_PLUGIN" <<'MOCK'
 #!/usr/bin/env bash
@@ -107,14 +116,35 @@ case "$1" in
     list-unit-files) exit 0 ;;
     daemon-reload) exit 0 ;;
     enable)
-        [[ "$2" == --now && "$3" == orm-broker.service ]] || exit 65
-        printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
-        printf 'active\n' >"$TEST_SYSTEMCTL_STATE.active"
+        [[ "$2" == --now ]] || exit 65
+        case "$3" in
+            orm-broker.service)
+                printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
+                printf 'active\n' >"$TEST_SYSTEMCTL_STATE.active"
+                ;;
+            orm-provider-events.timer)
+                printf 'enabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+                printf 'active\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+                ;;
+            *) exit 65 ;;
+        esac
         ;;
     disable)
-        [[ "$2" == --now && "$3" == orm-broker.service ]] || exit 66
-        printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
-        printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
+        [[ "$2" == --now ]] || exit 66
+        case "$3" in
+            orm-broker.service)
+                printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.enabled"
+                printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.active"
+                ;;
+            orm-provider-events.timer)
+                printf 'disabled\n' >"$TEST_SYSTEMCTL_STATE.events-enabled"
+                printf 'inactive\n' >"$TEST_SYSTEMCTL_STATE.events-active"
+                ;;
+            *) exit 66 ;;
+        esac
+        ;;
+    stop)
+        [[ "$2" == orm-provider-events.service ]] || exit 66
         ;;
     *) exit 67 ;;
 esac
@@ -145,6 +175,10 @@ write_installer_runner() {
         printf 'export ORM_INSTANCE_LAUNCHER=%q\nexport ORM_METRICS_COLLECTOR=%q\nexport ORM_METRICS_SERVICE=%q\n' \
             "$ORM_INSTANCE_LAUNCHER" "$ORM_METRICS_COLLECTOR" "$ORM_METRICS_SERVICE"
         printf 'export ORM_METRICS_TIMER=%q\nexport ORM_BROKER_SOCKET=%q\n' "$ORM_METRICS_TIMER" "$ORM_BROKER_SOCKET"
+        printf 'export ORM_PROVIDER_EVENTS_CONFIG=%q\nexport ORM_PROVIDER_EVENTS_ROOT=%q\nexport ORM_PROVIDER_EVENTS_OUTBOX=%q\n' \
+            "$ORM_PROVIDER_EVENTS_CONFIG" "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX"
+        printf 'export ORM_PROVIDER_EVENTS_SERVICE=%q\nexport ORM_PROVIDER_EVENTS_TIMER=%q\n' \
+            "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER"
         printf 'export TEST_FAIL_REGISTER=%q\n' "$TEST_FAIL_REGISTER"
         cat <<'MOCK'
 orm_require_root_and_platform() {
@@ -154,7 +188,8 @@ orm_require_root_and_platform() {
         "$ORM_UNREGISTER_APPCONFIG" "$ORM_IS_REGISTERED" "$ORM_APPCONFIG" "$ORM_INSTALL_MANIFEST" \
         "$ORM_LIFECYCLE_LOCK" "$ORM_SYSTEMCTL" "$ORM_BROKER_SOCKET" \
         "$ORM_BROKER_UNIT" "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA" "$ORM_INSTANCE_UNIT" \
-        "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER"; do
+        "$ORM_METRICS_SERVICE" "$ORM_METRICS_TIMER" "$ORM_PROVIDER_EVENTS_CONFIG" \
+        "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX" "$ORM_PROVIDER_EVENTS_SERVICE" "$ORM_PROVIDER_EVENTS_TIMER"; do
         [[ "$path" == "$TEST_ROOT/"* ]] || orm_die "test target escaped its isolated root: $path"
     done
     while IFS='|' read -r key source target mode; do
@@ -216,6 +251,16 @@ mv -f -- "$TEST_ROOT/appconfig-before-tamper" "$ORM_APPCONFIG"
 ORM_PACKAGE_ROOT="$source_package_root"
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == active ]] \
     || { printf 'fresh install did not enable and start the broker.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == enabled && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == active ]] \
+    || { printf 'fresh install did not enable provider event delivery timer.\n' >&2; exit 1; }
+[[ -f "$ORM_PROVIDER_EVENTS_CONFIG" && ! -L "$ORM_PROVIDER_EVENTS_CONFIG" \
+    && "$(stat -c '%u:%a' "$ORM_PROVIDER_EVENTS_CONFIG")" == 0:600 \
+    && "$(cat "$ORM_PROVIDER_EVENTS_CONFIG")" == '{"destination":"","enabled":false,"signing_key":"","version":1}' ]] \
+    || { printf 'fresh install did not create the disabled root-only provider event configuration.\n' >&2; exit 1; }
+for path in "$ORM_PROVIDER_EVENTS_ROOT" "$ORM_PROVIDER_EVENTS_OUTBOX"; do
+    [[ -d "$path" && ! -L "$path" && "$(stat -c '%u:%a' "$path")" == 0:700 ]] \
+        || { printf 'fresh install did not prepare private provider event storage: %s\n' "$path" >&2; exit 1; }
+done
 for path in "$ORM_INSTANCE_ROOT" "$ORM_INSTANCE_DATA"; do
     [[ -d "$path" && ! -L "$path" && "$(stat -c '%u:%a' "$path")" == 0:711 ]] \
         || { printf 'fresh install did not prepare a private root: %s\n' "$path" >&2; exit 1; }
@@ -234,8 +279,12 @@ fi
     || { printf 'installer rollback left cPanel or WHM registration behind.\n' >&2; exit 1; }
 [[ "$(cat "$TEST_SYSTEMCTL_STATE.enabled")" == disabled && "$(cat "$TEST_SYSTEMCTL_STATE.active")" == inactive ]] \
     || { printf 'installer rollback did not stop and disable the broker.\n' >&2; exit 1; }
+[[ "$(cat "$TEST_SYSTEMCTL_STATE.events-enabled")" == disabled && "$(cat "$TEST_SYSTEMCTL_STATE.events-active")" == inactive ]] \
+    || { printf 'installer rollback did not stop and disable provider event delivery.\n' >&2; exit 1; }
 [[ ! -e "$ORM_INSTALL_MANIFEST" && ! -e "$ORM_INSTANCE_ROOT" && ! -e "$ORM_INSTANCE_DATA" ]] \
     || { printf 'installer rollback left a manifest or runtime root behind.\n' >&2; exit 1; }
+[[ ! -e "$ORM_PROVIDER_EVENTS_CONFIG" && ! -e "$ORM_PROVIDER_EVENTS_ROOT" ]] \
+    || { printf 'installer rollback left newly created provider event state behind.\n' >&2; exit 1; }
 while IFS='|' read -r key source target mode; do
     [[ ! -e "$target" && ! -L "$target" ]] || { printf 'installer rollback left %s behind.\n' "$key" >&2; exit 1; }
 done < <(orm_package_file_map)

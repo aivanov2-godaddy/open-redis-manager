@@ -16,11 +16,16 @@ registered_cpanel=0
 registered_whm=0
 installed_files=0
 broker_started=0
+provider_events_timer_started=0
 cleanup_on_error() {
     local status=$?
     if [[ "$status" -ne 0 ]]; then
         if [[ "$broker_started" -eq 1 ]]; then
             "$ORM_SYSTEMCTL" disable --now orm-broker.service >/dev/null 2>&1 || true
+        fi
+        if [[ "$provider_events_timer_started" -eq 1 ]]; then
+            "$ORM_SYSTEMCTL" disable --now orm-provider-events.timer >/dev/null 2>&1 || true
+            "$ORM_SYSTEMCTL" stop orm-provider-events.service >/dev/null 2>&1 || true
         fi
         if [[ "$registered_whm" -eq 1 ]]; then
             "$ORM_UNREGISTER_APPCONFIG" open_redis_manager >/dev/null 2>&1 || true
@@ -44,6 +49,7 @@ cleanup_on_error() {
             [[ ! -f "$ORM_INSTALL_MANIFEST" || -L "$ORM_INSTALL_MANIFEST" ]] || rm -f -- "$ORM_INSTALL_MANIFEST"
             "$ORM_SYSTEMCTL" daemon-reload >/dev/null 2>&1 || true
             orm_remove_prepared_instance_directories || true
+            orm_remove_prepared_provider_event_storage || true
             orm_remove_empty_owned_directories
         fi
     fi
@@ -60,6 +66,7 @@ orm_refresh_cpanel_icon_sprite_cache_key
 umask 022
 installed_files=1
 orm_prepare_instance_directories
+orm_prepare_provider_event_storage
 while IFS='|' read -r key source target mode; do
     if [[ "$key" == whm_appconfig ]]; then continue; fi
     [[ -f "$source" ]] || orm_die "package file is missing: $source"
@@ -69,6 +76,8 @@ done < <(orm_package_file_map)
 "$ORM_SYSTEMCTL" daemon-reload
 broker_started=1
 "$ORM_SYSTEMCTL" enable --now orm-broker.service
+provider_events_timer_started=1
+"$ORM_SYSTEMCTL" enable --now orm-provider-events.timer
 registered_whm=1
 "$ORM_REGISTER_APPCONFIG" "$ORM_PACKAGE_ROOT/whm/open_redis_manager.conf"
 orm_write_install_manifest "$ORM_INSTALL_MANIFEST"

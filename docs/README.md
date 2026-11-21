@@ -25,6 +25,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Offline release bundle signing](guides/release-signing.md)
 - [Interrupted update recovery](guides/update-recovery.md)
 - [Provider package policy](guides/provider-package-policy.md)
+- [Provider event delivery](guides/provider-events.md)
 - [cPanel user guide](guides/cpanel.md)
 - [Account instance lifecycle](guides/instance-lifecycle.md)
 - [WHM administrator guide](guides/whm.md)

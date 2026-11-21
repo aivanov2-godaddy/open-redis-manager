@@ -25,6 +25,22 @@ is(parse_request($frame)->{operation}, $operation, "accept fixed operation $oper
 }
 is(parse_request('{"operation":"fleet.summary","version":1}' . "\n")->{operation},
     'fleet.summary', 'accept the fixed root fleet summary request');
+is(parse_request('{"operation":"provider.events.status","version":1}' . "\n")->{operation},
+    'provider.events.status', 'accept root provider event configuration status');
+is(parse_request('{"operation":"provider.events.queue.status","version":1}' . "\n")->{operation},
+    'provider.events.queue.status', 'accept root provider event queue status');
+is(parse_request('{"backend":"redis","operation":"provider.backend.selected","version":1}' . "\n")->{backend},
+    'redis', 'accept fixed backend selection telemetry');
+ok(!parse_request('{"backend":"other","operation":"provider.backend.selected","version":1}' . "\n"),
+    'reject unsupported backend telemetry values');
+my $event_config_request = '{"destination":"https://hooks.example.net/orm","enabled":true,"operation":"provider.events.configure","rotate_key":false,"version":1}' . "\n";
+my $parsed_event_config = parse_request($event_config_request);
+ok($parsed_event_config && $parsed_event_config->{enabled} && !$parsed_event_config->{rotate_key}
+    && $parsed_event_config->{destination} eq 'https://hooks.example.net/orm',
+    'accept the fixed-shape root event configuration request');
+ok(!parse_request('{"destination":"https://hooks.example.net/orm?token=x","enabled":true,"operation":"provider.events.configure","rotate_key":false,"version":1}' . "\n")
+    && !parse_request('{"destination":"https://hooks.example.net/orm","enabled":true,"operation":"provider.events.configure","rotate_key":false,"signing_key":"secret","version":1}' . "\n"),
+    'reject query strings and caller-supplied signing key material');
 my $batch_create = parse_request('{"operation":"fleet.backup.batch.create","targets":["acct01","acct02"],"version":1}' . "\n");
 ok($batch_create && $batch_create->{operation} eq 'fleet.backup.batch.create'
     && $batch_create->{targets}[1]->{username} eq 'acct02', 'accept a bounded batch snapshot request');
@@ -106,6 +122,12 @@ my $tmp = tempdir(CLEANUP => 1);
 my $account_root = "$tmp/accounts";
 my @test_groups = split /\s+/, $);
 my $test_gid = 0 + ($test_groups[0] // $<);
+my $test_uid = 0 + $<;
+if ($test_uid == 0) {
+    my @unprivileged = getpwnam('nobody');
+    die "root-run broker tests require the system nobody account" if @unprivileged < 4;
+    ($test_uid, $test_gid) = @unprivileged[2, 3];
+}
 make_path($account_root);
 chmod(0755, $account_root) or die "chmod account root: $!";
 my $account_file = "$account_root/ormtest";
@@ -499,9 +521,9 @@ is_deeply([map { [@{$_}[2 .. $#$_]] } @config_get_cli_calls], [
     ['CONFIG', 'GET', 'maxmemory'], ['CONFIG', 'GET', 'maxmemory-policy'],
     ['CONFIG', 'GET', 'maxclients'], ['CONFIG', 'GET', 'timeout'],
 ], 'use one CONFIG GET pattern per command for pre-7.0 compatibility');
-my $account = { name => 'ormtest', uid => $<, gid => $test_gid };
+my $account = { name => 'ormtest', uid => $test_uid, gid => $test_gid };
 is($manager->dispatch('instance.status', $account)->{state}, 'not_configured', 'status is scoped to an unconfigured account');
-my $diskfull_account = { name => 'ormdiskfull', uid => $<, gid => $test_gid };
+my $diskfull_account = { name => 'ormdiskfull', uid => $test_uid, gid => $test_gid };
 my $write_calls_before_diskfull = scalar @systemctl_calls;
 $manager->{atomic_write_call} = sub {
     my ($handle, $content, $path) = @_;
@@ -713,7 +735,7 @@ open(my $custom_defaults_file, '>', $custom_defaults_path) or die "write custom 
 print {$custom_defaults_file} JSON::PP->new->canonical(1)->encode($custom_defaults_policy) . "\n";
 close($custom_defaults_file) or die "close custom defaults policy: $!";
 chmod(0600, $custom_defaults_path) or die "chmod custom defaults policy: $!";
-my $defaults_account = { name => 'ormdefaults', uid => $<, gid => $test_gid, plan => 'starter' };
+my $defaults_account = { name => 'ormdefaults', uid => $test_uid, gid => $test_gid, plan => 'starter' };
 my $defaults_provisioned = $manager->provision($defaults_account, 'generic');
 ok($defaults_provisioned->{success} && $defaults_provisioned->{config}->{memory_mib} == 24
     && $defaults_provisioned->{config}->{maxmemory_policy} eq 'allkeys-lfu'
@@ -758,7 +780,7 @@ open($custom_defaults_file, '>', $custom_defaults_path) or die "rewrite package 
 print {$custom_defaults_file} JSON::PP->new->canonical(1)->encode($custom_defaults_policy) . "\n";
 close($custom_defaults_file) or die "close package memory ceiling policy: $!";
 chmod(0600, $custom_defaults_path) or die "chmod package memory ceiling policy: $!";
-my $capped_account = { name => 'ormcapped', uid => $<, gid => $test_gid, plan => 'starter' };
+my $capped_account = { name => 'ormcapped', uid => $test_uid, gid => $test_gid, plan => 'starter' };
 is($manager->provision($capped_account, 'generic')->{error}, 'provider_policy_denied',
     'continue enforcing the package memory ceiling against global defaults');
 ok(!-e "$etc_instances/ormcapped" && !-e "$data_instances/ormcapped",
@@ -822,7 +844,7 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
         return (1, '');
     },
 );
-my $migration_account = { name => 'ormmig', uid => $<, gid => $test_gid };
+my $migration_account = { name => 'ormmig', uid => $test_uid, gid => $test_gid };
 my $migration_provisioned = $migration_manager->provision($migration_account, 'generic');
 ok($migration_provisioned->{success}, 'provision an isolated Redis fixture for migration tests');
 my $run_migration = sub {
@@ -918,6 +940,7 @@ binmode($old_dump);
 print {$old_dump} 'old on-disk cache state';
 close($old_dump) or die "close previous dump fixture: $!";
 chmod(0600, $dump_path) or die "chmod previous dump fixture: $!";
+chown($test_uid, $test_gid, $dump_path) or die "chown previous dump fixture: $!";
 $current_snapshot = 'live pre-restore state';
 my $restored = $manager->dispatch('backup.restore', $account, undef, undef, $restore_id);
 ok($restored->{success} && $restored->{backup_id} eq $restore_id && $restored->{state} eq 'running',
@@ -1524,7 +1547,7 @@ my $no_policy_manager = Orm::Broker::InstanceManager->new(
     etc_root => $etc_instances, data_root => $data_instances, policy => $no_policy,
     expected_owner_uid => $<, binary_probe => sub { 1 },
 );
-is($no_policy_manager->dispatch('instance.provision', { name => 'newacct', uid => $<, gid => $account->{gid} })->{error},
+is($no_policy_manager->dispatch('instance.provision', { name => 'newacct', uid => $test_uid, gid => $account->{gid} })->{error},
     'backend_policy_required', 'provisioning requires an explicit provider backend policy');
 
 socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";

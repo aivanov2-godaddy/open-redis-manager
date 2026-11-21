@@ -23,6 +23,12 @@ $assertions = [
         && str_contains($whmPage, 'Database ceiling'),
     is_string($whmPage) && str_contains($whmPage, 'WhmAuditEventWriter::providerPolicyChanged($providerAction)')
         && str_contains($whmPage, 'WhmAuditEventWriter::backendSelection($submittedBackend, true)'),
+    is_string($whmPage) && str_contains($whmPage, "'provider.events.configure'")
+        && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
+        && str_contains($whmPage, 'providerBackendSelected($submittedBackend)')
+        && str_contains($whmPage, 'name="provider_event_rotate_key"')
+        && str_contains($whmPage, 'key_configured')
+        && !str_contains($whmPage, 'name="provider_event_signing_key"'),
     is_string($whmPage) && str_contains($whmPage, '$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
         && str_contains($whmPage, "in_array(\$_POST['orm_audit_action'] ?? null, ['search', 'export'], true)")
         && str_contains($whmPage, "'Cache-Control: private, no-store, max-age=0'")

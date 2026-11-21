@@ -77,6 +77,21 @@ sub parse_request {
             version => 1,
         };
     }
+    if ($frame =~ /\A\{"operation":"provider\.events\.(status|queue\.status)","version":1\}\n\z/) {
+        return { operation => 'provider.events.' . $1, version => 1 };
+    }
+    if ($frame =~ /\A\{"destination":"([A-Za-z0-9:\/._~!\$&'()*+,;=@%-]{0,2048})","enabled":(true|false),"operation":"provider\.events\.configure","rotate_key":(true|false),"version":1\}\n\z/) {
+        return {
+            destination => $1,
+            enabled => $2 eq 'true' ? 1 : 0,
+            operation => 'provider.events.configure',
+            rotate_key => $3 eq 'true' ? 1 : 0,
+            version => 1,
+        };
+    }
+    if ($frame =~ /\A\{"backend":"(redis|valkey)","operation":"provider\.backend\.selected","version":1\}\n\z/) {
+        return { backend => $1, operation => 'provider.backend.selected', version => 1 };
+    }
     return undef if $frame !~ /\A\{"operation":"(identity|instance\.status|instance\.auth\.status|instance\.auth\.rotate|instance\.auth\.disable|instance\.metrics|instance\.provision|instance\.start|instance\.stop|backup\.create|backup\.list|provider\.exposure|provider\.branding|provider\.resellers)","version":1\}\n\z/;
 
     my ($operation) = $frame =~ /\A\{"operation":"([^"\\]+)",/;

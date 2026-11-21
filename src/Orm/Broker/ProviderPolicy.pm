@@ -47,6 +47,7 @@ sub new {
         path => $args{path} // '/etc/orm-provider-policy.json',
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
         audit => $args{audit},
+        event_emitter => $args{event_emitter},
     }, $class;
 }
 
@@ -121,7 +122,7 @@ sub provision_decision {
                 && $usage->{memory_mib} + $memory_mib > $effective->{reseller_max_memory_mib};
         }
     }
-    my $decision = $self->_decision($effective, \@violations, $account);
+    my $decision = $self->_decision($effective, \@violations, $account, 'instance.provision');
     $decision->{provision_memory_mib} = 0 + $memory_mib;
     $decision->{provision_max_clients} = _minimum(100, $effective->{max_clients});
     $decision->{provision_databases} = _minimum(
@@ -145,11 +146,12 @@ sub memory_decision {
             if $max_clients > $effective->{max_clients}
             && (!defined($existing_max_clients) || $max_clients > $existing_max_clients);
     }
-    return $self->_decision($effective, \@violations, $account);
+    return $self->_decision($effective, \@violations, $account, 'instance.configure');
 }
 
 sub _decision {
-    my ($self, $effective, $violations, $account) = @_;
+    my ($self, $effective, $violations, $account, $operation) = @_;
+    my $allowed = $effective->{mode} ne 'enforce' || !@{$violations} ? 1 : 0;
     if (@{$violations}) {
         my $actor_uid = ref($account) eq 'HASH' && defined($account->{uid}) && !ref($account->{uid})
             && $account->{uid} =~ /\A[0-9]{1,10}\z/ ? $account->{uid} : 'unknown';
@@ -167,8 +169,18 @@ sub _decision {
             };
         }
     }
+    if (!$allowed && ref($self->{event_emitter}) && eval { $self->{event_emitter}->can('emit') }) {
+        my %violations = map { $_ => 1 } @{$violations};
+        my $reason = $violations{package_disabled} ? 'policy_disabled' : 'quota_exceeded';
+        eval { $self->{event_emitter}->emit('policy.denied', {
+            operation => $operation, reason_code => $reason,
+        }); };
+        eval { $self->{event_emitter}->emit('quota.reached', {
+            quota_kind => $violations{reseller_instance_quota_exceeded} ? 'instances' : 'memory_mib',
+        }); } if $violations{reseller_instance_quota_exceeded} || $violations{reseller_memory_quota_exceeded};
+    }
     return {
-        allowed => $effective->{mode} ne 'enforce' || !@{$violations} ? 1 : 0,
+        allowed => $allowed,
         mode => $effective->{mode},
         max_memory_mib => $effective->{max_memory_mib},
         backup_retention => $effective->{backup_retention},

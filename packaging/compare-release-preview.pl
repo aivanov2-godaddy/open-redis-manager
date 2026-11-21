@@ -60,7 +60,16 @@ sub allowed_target {
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PeerCredentials.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Protocol.pm
         /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Server.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventConfig.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventEndpoint.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventEmitter.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventQueue.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEventTransport.pm
+        /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/ProviderEvents.pm
+        /usr/local/cpanel/3rdparty/orm/bin/orm-provider-events-worker.pl
         /etc/systemd/system/orm-broker.service
+        /etc/systemd/system/orm-provider-events.service
+        /etc/systemd/system/orm-provider-events.timer
         /etc/systemd/system/orm-instance@.service
         /etc/systemd/system/orm-metrics-collect@.service
         /etc/systemd/system/orm-metrics-collect@.timer

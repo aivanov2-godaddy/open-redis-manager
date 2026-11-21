@@ -36,6 +36,7 @@ src/Orm/Backend/BackendPolicyStore.php
 bin/orm-broker.pl
 bin/orm-instance-launcher.pl
 bin/orm-metrics-collect.pl
+bin/orm-provider-events-worker.pl
 src/Orm/Broker/AccountResolver.pm
 src/Orm/Broker/BackendPolicy.pm
 src/Orm/Broker/Handler.pm
@@ -44,7 +45,15 @@ src/Orm/Broker/FleetInventory.pm
 src/Orm/Broker/PeerCredentials.pm
 src/Orm/Broker/Protocol.pm
 src/Orm/Broker/Server.pm
+src/Orm/Broker/ProviderEventConfig.pm
+src/Orm/Broker/ProviderEventEndpoint.pm
+src/Orm/Broker/ProviderEventEmitter.pm
+src/Orm/Broker/ProviderEventQueue.pm
+src/Orm/Broker/ProviderEventTransport.pm
+src/Orm/Broker/ProviderEvents.pm
 packaging/systemd/orm-broker.service
+packaging/systemd/orm-provider-events.service
+packaging/systemd/orm-provider-events.timer
 packaging/systemd/orm-instance@.service
 packaging/systemd/orm-metrics-collect@.service
 packaging/systemd/orm-metrics-collect@.timer
