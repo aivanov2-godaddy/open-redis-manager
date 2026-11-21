@@ -62,11 +62,15 @@ $byCategory = array_column($report['findings'], null, 'category');
 $assert($report['mode'] === 'report-only' && !$report['partial'], 'produce a complete advisory-only report when inputs are complete');
 $assert(($byCategory['memory_pressure']['count'] ?? null) === 1
     && ($byCategory['client_pressure']['count'] ?? null) === 2
-    && ($byCategory['low_hit_ratio']['count'] ?? null) === 1,
-    'report bounded memory, client, and low-hit-ratio evidence');
+    && ($byCategory['low_hit_ratio']['count'] ?? null) === 1
+    && $byCategory['memory_pressure']['window_start_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 60)
+    && $byCategory['memory_pressure']['window_end_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 60),
+    'report bounded memory, client, and low-hit-ratio evidence with the exact snapshot instant');
 $assert(($byCategory['eviction_rate']['count'] ?? null) === 2
     && str_contains($byCategory['eviction_rate']['evidence'], '3600–7200 seconds')
     && str_contains($byCategory['eviction_rate']['evidence'], gmdate('Y-m-d\TH:i:s\Z', $now - 7200))
+    && $byCategory['eviction_rate']['window_start_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 7200)
+    && $byCategory['eviction_rate']['window_end_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 60)
     && ($byCategory['operation_rate']['count'] ?? null) === 5
     && str_contains($byCategory['operation_rate']['evidence'], '120 operations per second')
     && str_contains($byCategory['operation_rate']['evidence'], 'not an abuse verdict'),
@@ -81,6 +85,10 @@ $assert(($byCategory['auth_management_events']['count'] ?? null) === 4
     && str_contains($byCategory['auth_management_events']['evidence'], '1 unsuccessful')
     && str_contains($byCategory['auth_management_events']['evidence'], 'not Redis client login attempts'),
     'count only normalized AUTH management events in the bounded 24-hour window');
+$assert($byCategory['auth_management_events']['window_start_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 86400)
+    && $byCategory['auth_management_events']['window_end_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now)
+    && str_contains($byCategory['auth_management_events']['evidence'], gmdate('Y-m-d\TH:i:s\Z', $now - 86400)),
+    'attach exact UTC bounds for the AUTH management event review window');
 $encoded = json_encode($report, JSON_THROW_ON_ERROR);
 $assert(!str_contains($encoded, 'testacct') && !str_contains($encoded, 'report-secret-canary'),
     'omit account names and secret-like input from the report');
@@ -183,8 +191,9 @@ $partialAudit['partial'] = true;
 $partial = WhmSecurityReport::build($fleet, $partialAudit, $now);
 $partialCategories = array_column($partial['findings'], null, 'category');
 $assert($partial['partial'] && array_key_exists('auth_audit_unavailable', $partialCategories)
-    && $partialCategories['auth_audit_unavailable']['count'] === null,
-    'show unknown authentication event coverage instead of zero when the audit source is partial');
+    && $partialCategories['auth_audit_unavailable']['count'] === null
+    && $partialCategories['auth_audit_unavailable']['window_start_utc'] === gmdate('Y-m-d\TH:i:s\Z', $now - 86400),
+    'show unknown authentication event coverage and its bounded review window when the audit source is partial');
 $unavailable = WhmSecurityReport::build(null, null, $now);
 $unavailableCategories = array_column($unavailable['findings'], null, 'category');
 $assert($unavailable['partial'] && array_key_exists('metrics_unavailable', $unavailableCategories)
