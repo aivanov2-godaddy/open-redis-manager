@@ -28,6 +28,8 @@ The source's application-detection and connection-helper claims are not proof th
 
 The WHM section describes a fleet dashboard and account list; Redis/Valkey selection, diagnostics, and migration; account CLI and backups; maintenance and recovery tools; global defaults; report/warn/enforce provider policy; package limits and auto-provisioning; reseller quotas; branding; update visibility; and security/audit surfaces.
 
+The page keeps abuse/resource detection report-only by default. Its report/warn/enforce modes belong to the separate provider policy for provisioning and package limits; the documentation does not describe automatic remediation of abuse findings. ORM therefore keeps security findings advisory and does not attach service actions to those findings.
+
 Some claims are versioned or partial on the source site. ORM tracks each capability as implemented, partial, planned, or requiring host validation in the feature catalog. A reference-page description does not upgrade that status.
 
 ## Runtime, policy, and compatibility themes
