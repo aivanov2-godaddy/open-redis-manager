@@ -51,7 +51,7 @@ orm_account_create_hook_state() {
     local listing
     [[ -x "$ORM_MANAGE_HOOKS" ]] || return 3
     listing="$("$ORM_MANAGE_HOOKS" list 2>/dev/null)" || return 3
-    printf '%s\n' "$listing" | awk -v expected="$ORM_ACCOUNT_CREATE_HOOK" '
+    printf '%s\n' "$listing" | awk -v expected="$ORM_ACCOUNT_CREATE_HOOK --run" '
         /^[^[:space:]].*:[[:space:]]*$/ { category=$1; sub(/:$/, "", category); event=""; next }
         /^[[:space:]]+[[:alnum:]_:]+:[[:space:]]*$/ {
             candidate=$1; sub(/:$/, "", candidate)

@@ -1,9 +1,10 @@
 # Unreleased development notes
 
 - EA Podman WHM reporting now computes report-only maximum per-process eviction, operation, and optional authentication-failure deltas after complete scans confirm the exact same Redis/Valkey server-ID set and monotonic counters. A separate root-only baseline stores SHA-256 server-ID digests and allowlisted counters; digests are linkable pseudonymous state and never leave that file. Process changes, resets, partial scans, invalid state, and gaps beyond 26 hours remain explicitly unknown.
+- The idempotent installer verifies the cPanel account-create hook using the action-suffixed script path returned by `manage_hooks list`.
 
 **Updated:** 2026-11-22
-**Release:** `0.1.0-rc.9` is a source-matched validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
+**Release:** `0.1.0-rc.10` is a source-matched validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
 
 The cPanel instance launcher now validates the current version-three instance manifest as well as the retained version-one and version-two formats. This allows newly provisioned Redis and Valkey services to start with the manifest schema written by the broker.
 
