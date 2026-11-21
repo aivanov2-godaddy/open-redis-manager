@@ -69,7 +69,7 @@ configure_case() {
     export ORM_PROVIDER_EVENTS_SERVICE ORM_PROVIDER_EVENTS_TIMER
     export ORM_PODMAN_METRICS_SERVICE ORM_PODMAN_METRICS_TIMER
 
-    mkdir -p "$test_root/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
+    mkdir -p "$test_root/bin" "$ORM_CPANEL_ROOT/bin" "$test_root/cpanel/php" "$test_root/var/cpanel/apps" \
         "$test_root/etc/systemd/system" "$test_root/var/lib" "$test_root/run" "$TEST_TMPDIR"
     : >"$test_root/cpanel/php/WHM.php"
     : >"$test_root/cpanel/php/cpanel.php"
