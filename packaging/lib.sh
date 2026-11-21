@@ -351,12 +351,28 @@ orm_legacy_managed_v1_file_map() {
 }
 
 orm_release_install_map_is_compatible() {
-    local candidate="$1" installed="$2" approved_addition
-    approved_addition='application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+    local candidate="$1" installed="$2" line added_row approved
+    local -a approved_additions=() added_rows=()
+    approved_additions+=(
+        'application_discovery|src/Orm/Cpanel/ApplicationDiscovery.php|/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/ApplicationDiscovery.php|644'
+        'broker_podman_metrics_collector|src/Orm/Broker/PodmanMetricsCollector.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/PodmanMetricsCollector.pm|644'
+        'podman_metrics_collector|bin/orm-podman-metrics-collect.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl|755'
+        'podman_metrics_service|packaging/systemd/orm-podman-metrics.service|/etc/systemd/system/orm-podman-metrics.service|644'
+        'podman_metrics_timer|packaging/systemd/orm-podman-metrics.timer|/etc/systemd/system/orm-podman-metrics.timer|644'
+    )
     [[ -f "$candidate" && ! -L "$candidate" && -f "$installed" && ! -L "$installed" ]] || return 1
     cmp -s -- "$candidate" "$installed" && return 0
-    [[ "$(grep -Fxc -- "$approved_addition" "$candidate")" == 1 ]] || return 1
-    cmp -s -- <(grep -Fvx -- "$approved_addition" "$candidate") "$installed"
+    while IFS= read -r line; do
+        grep -Fxq -- "$line" "$installed" && continue
+        added_row=0
+        for approved in "${approved_additions[@]}"; do
+            if [[ "$line" == "$approved" ]]; then added_row=1; break; fi
+        done
+        [[ "$added_row" -eq 1 && "$(grep -Fxc -- "$line" "$candidate")" == 1 ]] || return 1
+        added_rows+=("$line")
+    done <"$candidate"
+    ((${#added_rows[@]} > 0)) || return 1
+    cmp -s -- <(grep -Fvx -f <(printf '%s\n' "${added_rows[@]}") "$candidate") "$installed"
 }
 
 orm_legacy_managed_v1_expected_manifest() {
