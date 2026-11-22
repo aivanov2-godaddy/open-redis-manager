@@ -356,12 +356,7 @@ while IFS='|' read -r key action source target mode digest previous; do
             || orm_die 'release changes WHM AppConfig; registration changes require a separate cPanel transaction.'
         continue
     fi
-    case "$key:$action" in
-        broker_*:unchanged|broker_*:adopt|broker_bin:unchanged|broker_bin:adopt|broker_unit:unchanged|broker_unit:adopt|instance_unit:unchanged|instance_unit:adopt|metrics_service:unchanged|metrics_service:adopt|metrics_timer:unchanged|metrics_timer:adopt) ;;
-        broker_*:*|broker_bin:*|broker_unit:*|instance_unit:*|metrics_service:*|metrics_timer:*)
-            broker_related_change=1
-            ;;
-    esac
+    if orm_release_file_requires_maintenance "$key" "$action" "$target"; then broker_related_change=1; fi
     orm_safe_target_parent_chain "$physical" || orm_die 'installed target parent chain is unsafe.'
     if [[ "$action" == adopt ]]; then
         [[ -z "${installed_digest[$key]+x}" && -f "$physical" && ! -L "$physical" \

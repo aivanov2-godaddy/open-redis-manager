@@ -16,6 +16,76 @@ final class ReleaseApplyJob
     private const MAX_OUTPUT_BYTES = 4096;
     private const MAX_JOB_RECORDS = 100;
 
+    /** @param array<string,mixed> $preview */
+    public static function previewRequiresMaintenance(array $preview): bool
+    {
+        $actions = $preview['fileActions'] ?? null;
+        if (!is_array($actions) || count($actions) > 100) {
+            return true;
+        }
+        foreach ($actions as $action) {
+            if (!is_array($action) || !is_string($action['key'] ?? null)
+                || !preg_match('/\A[a-z_]{1,64}\z/D', $action['key'])
+                || !is_string($action['action'] ?? null)
+                || !is_string($action['target'] ?? null) || !self::isSafeTarget($action['target'])) {
+                return true;
+            }
+            $key = $action['key'];
+            $changed = !in_array($action['action'], ['unchanged', 'adopt'], true);
+            if ($changed && (str_starts_with($key, 'broker_')
+                || in_array($key, ['broker_bin', 'broker_unit', 'instance_unit', 'metrics_service', 'metrics_timer'], true)
+                || self::targetRequiresMaintenance($action['target']))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** @param array<string,mixed> $preview @return array{required:bool,ready:bool,state:string,message:string} */
+    public static function maintenancePreflight(array $preview, ?callable $runner = null): array
+    {
+        if (!self::previewIsConflictFree($preview)) {
+            return [
+                'required' => false,
+                'ready' => false,
+                'state' => 'invalid',
+                'message' => 'A valid, conflict-free preview is required before checking maintenance readiness.',
+            ];
+        }
+        if (!self::previewRequiresMaintenance($preview)) {
+            return [
+                'required' => false,
+                'ready' => true,
+                'state' => 'not_required',
+                'message' => 'This change set does not replace broker or systemd service files.',
+            ];
+        }
+
+        $state = self::brokerServiceState($runner);
+        if ($state === 'inactive') {
+            return [
+                'required' => true,
+                'ready' => true,
+                'state' => $state,
+                'message' => 'The broker is inactive. The update worker will verify service state again before applying.',
+            ];
+        }
+        if ($state === 'active') {
+            return [
+                'required' => true,
+                'ready' => false,
+                'state' => $state,
+                'message' => 'The ORM broker is active. This change requires a maintenance window. Stop the broker through the documented maintenance procedure, verify it is inactive, then run a fresh preview. ORM has not changed service state and did not queue the update.',
+            ];
+        }
+        return [
+            'required' => true,
+            'ready' => false,
+            'state' => $state,
+            'message' => 'ORM could not verify that the broker is safely inactive. The update was not queued and service state was not changed. Check the broker state and systemd access, then run a fresh preview.',
+        ];
+    }
+
     /** @param array<string,mixed> $preview @param array<string,mixed> $request @return array<string,mixed> */
     public static function submit(
         string $authenticatedUser,
@@ -76,6 +146,16 @@ final class ReleaseApplyJob
                         'message' => 'An update job is already active or needs recovery review. Check its status before starting another update.',
                     ];
                 }
+            }
+
+            $maintenance = self::maintenancePreflight($preview, $runner);
+            if ($maintenance['required'] && !$maintenance['ready']) {
+                return [
+                    'ok' => false,
+                    'requiresMaintenance' => true,
+                    'brokerState' => $maintenance['state'],
+                    'message' => $maintenance['message'],
+                ];
             }
 
             try {
@@ -224,6 +304,8 @@ final class ReleaseApplyJob
         }
         foreach ($preview['fileActions'] as $action) {
             if (!is_array($action) || !in_array($action['action'] ?? null, ['add', 'adopt', 'normalize', 'replace', 'unchanged'], true)
+                || !is_string($action['key'] ?? null) || !preg_match('/\A[a-z_]{1,64}\z/D', $action['key'])
+                || !is_string($action['target'] ?? null) || !self::isSafeTarget($action['target'])
                 || (in_array(($action['action'] ?? null), ['adopt', 'normalize'], true) && ($action['requiresReview'] ?? null) !== true)) {
                 return false;
             }
@@ -265,6 +347,27 @@ final class ReleaseApplyJob
             '/\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z/D',
             $value
         ) === 1;
+    }
+
+    private static function targetRequiresMaintenance(string $target): bool
+    {
+        return $target === '/usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl'
+            || str_starts_with($target, '/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/')
+            || str_starts_with($target, '/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/Broker')
+            || str_starts_with($target, '/etc/systemd/system/orm-');
+    }
+
+    private static function isSafeTarget(string $target): bool
+    {
+        if (strlen($target) > 512 || preg_match('/\A\/(?:[A-Za-z0-9._@-]+\/)*[A-Za-z0-9._@-]+\z/D', $target) !== 1) {
+            return false;
+        }
+        foreach (explode('/', substr($target, 1)) as $component) {
+            if ($component === '.' || $component === '..') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static function isTimestamp(mixed $value): bool
@@ -466,6 +569,33 @@ final class ReleaseApplyJob
         $environment = ['HOME' => '/root', 'LANG' => 'C', 'LC_ALL' => 'C', 'PATH' => '/usr/sbin:/usr/bin:/sbin:/bin'];
         $result = $runner === null ? self::execute($argv, $environment) : $runner($argv, $environment);
         return is_array($result) && ($result['exit_code'] ?? null) === 0;
+    }
+
+    private static function brokerServiceState(?callable $runner): string
+    {
+        if ($runner === null && (!is_file('/usr/bin/timeout') || !is_executable('/usr/bin/timeout')
+            || !is_file('/usr/bin/systemctl') || !is_executable('/usr/bin/systemctl')
+            || !function_exists('proc_open'))) {
+            return 'unavailable';
+        }
+        $argv = ['/usr/bin/timeout', '--signal=KILL', '5s', '/usr/bin/systemctl', 'is-active', 'orm-broker.service'];
+        $environment = ['HOME' => '/root', 'LANG' => 'C', 'LC_ALL' => 'C', 'PATH' => '/usr/sbin:/usr/bin:/sbin:/bin'];
+        $result = $runner === null ? self::execute($argv, $environment) : $runner($argv, $environment);
+        if (!is_array($result) || !isset($result['exit_code'], $result['stdout'])
+            || !is_int($result['exit_code']) || !is_string($result['stdout']) || strlen($result['stdout']) > 128) {
+            return 'unavailable';
+        }
+        $state = trim($result['stdout']);
+        if (!in_array($state, ['active', 'inactive', 'failed', 'activating', 'deactivating', 'reloading'], true)) {
+            return 'unavailable';
+        }
+        if ($state === 'active' && $result['exit_code'] === 0) {
+            return 'active';
+        }
+        if ($state !== 'active' && $result['exit_code'] === 3) {
+            return $state;
+        }
+        return 'unavailable';
     }
 
     /** @param list<string> $argv @param array<string,string> $environment @return array{exit_code:int,stdout:string} */

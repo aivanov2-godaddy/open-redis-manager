@@ -53,6 +53,7 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
 $updatePreview = null;
 $updateApplyMessage = null;
 $updateJobStatus = null;
+$updateMaintenancePreflight = null;
 if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)) {
     $updateAction = $_POST['orm_action'] ?? null;
     if (in_array($updateAction, ['update.preview', 'update.apply', 'update.status'], true)) {
@@ -61,11 +62,13 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     }
     if ($updateAction === 'update.preview') {
         $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser ?? '', $_SERVER);
+        $updateMaintenancePreflight = \Orm\Update\ReleaseApplyJob::maintenancePreflight($updatePreview);
     } elseif ($updateAction === 'update.apply') {
         $updatePreview = \Orm\Update\ReleasePreview::run($authenticatedUser ?? '', $_SERVER);
         $updateApplyMessage = \Orm\Update\ReleaseApplyJob::submit(
             $authenticatedUser ?? '', $_SERVER, $_POST, $updatePreview
         );
+        $updateMaintenancePreflight = \Orm\Update\ReleaseApplyJob::maintenancePreflight($updatePreview);
     } elseif ($updateAction === 'update.status') {
         $updateJobStatus = \Orm\Update\ReleaseApplyJob::status(
             $authenticatedUser ?? '', $_SERVER, $_POST
@@ -908,6 +911,16 @@ WHM::header('Open Redis Manager', 0, 0);
           <p role="alert"><?= htmlspecialchars((string) ($updatePreview['message'] ?? 'The update preview could not be verified.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
         <?php else: ?>
           <p role="status">Signature and compatibility verified. No files were changed.</p>
+          <?php if (($updateMaintenancePreflight['required'] ?? false) === true): ?>
+            <p role="note">This change set changes ORM broker or systemd service files and requires a maintenance window. ORM will not stop or restart the broker for you.</p>
+            <?php if (($updateMaintenancePreflight['ready'] ?? false) !== true): ?>
+              <?php if (($updateApplyMessage['requiresMaintenance'] ?? false) !== true): ?>
+                <p role="alert"><?= htmlspecialchars((string) ($updateMaintenancePreflight['message'] ?? 'Broker maintenance readiness could not be verified. The update was not queued.'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+              <?php endif; ?>
+            <?php else: ?>
+              <p role="status"><?= htmlspecialchars((string) $updateMaintenancePreflight['message'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+            <?php endif; ?>
+          <?php endif; ?>
           <dl>
             <dt>Installed version</dt><dd><?= htmlspecialchars($updatePreview['installedVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
             <dt>Candidate version</dt><dd><?= htmlspecialchars($updatePreview['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></dd>
@@ -944,7 +957,8 @@ WHM::header('Open Redis Manager', 0, 0);
               </tbody>
             </table>
           </details>
-          <?php if (\Orm\Update\ReleaseApplyJob::previewIsConflictFree($updatePreview)): ?>
+          <?php if (\Orm\Update\ReleaseApplyJob::previewIsConflictFree($updatePreview)
+              && (($updateMaintenancePreflight['required'] ?? false) !== true || ($updateMaintenancePreflight['ready'] ?? false) === true)): ?>
             <form method="post">
               <input type="hidden" name="orm_action" value="update.apply">
               <input type="hidden" name="candidate_version" value="<?= htmlspecialchars($updatePreview['candidateVersion'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
@@ -952,7 +966,7 @@ WHM::header('Open Redis Manager', 0, 0);
               <label><input type="checkbox" name="confirm_update" value="1" required> I reviewed this signed release and confirm the update.</label>
               <button type="submit">Queue signed update</button>
             </form>
-          <?php else: ?>
+          <?php elseif (!\Orm\Update\ReleaseApplyJob::previewIsConflictFree($updatePreview)): ?>
             <p role="alert">This preview contains conflicts, file moves, retirements, or unsupported actions. Resolve them before applying this release.</p>
           <?php endif; ?>
         <?php endif; ?>

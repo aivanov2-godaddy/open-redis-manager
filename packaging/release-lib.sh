@@ -6,6 +6,23 @@ ORM_RELEASE_ARTIFACT_MAX_BYTES=134217728
 ORM_RELEASE_METADATA_MAX_AGE_SECONDS=7776000
 ORM_RELEASE_CLOCK_SKEW_SECONDS=300
 
+orm_release_file_requires_maintenance() {
+    local key="${1:-}" action="${2:-}" target="${3:-}"
+    case "$action" in
+        unchanged|adopt) return 1 ;;
+    esac
+    case "$key" in
+        broker_*|broker_bin|broker_unit|instance_unit|metrics_service|metrics_timer) return 0 ;;
+    esac
+    case "$target" in
+        /usr/local/cpanel/3rdparty/orm/bin/orm-broker.pl\
+        |/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/*\
+        |/usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/Broker*\
+        |/etc/systemd/system/orm-*) return 0 ;;
+    esac
+    return 1
+}
+
 orm_release_crlf_normalized_sha256() {
     local path="${1:-}"
     [[ -n "$path" && -f "$path" && ! -L "$path" ]] || return 1
