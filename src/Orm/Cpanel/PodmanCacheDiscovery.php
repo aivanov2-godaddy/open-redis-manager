@@ -11,6 +11,20 @@ final class PodmanCacheDiscovery
     private const MAX_METRIC_VALUE = 9_000_000_000_000_000;
 
     /**
+     * Keep first-run setup available when the account inventory is unknown,
+     * but offer Podman installation only after a verified empty inventory.
+     *
+     * @return array{show_wizard: bool, allow_podman_install: bool}
+     */
+    public static function firstRunSetupPolicy(bool $instanceNotConfigured, ?string $inventoryStatus): array
+    {
+        return [
+            'show_wizard' => $instanceNotConfigured && $inventoryStatus !== 'installed',
+            'allow_podman_install' => $instanceNotConfigured && $inventoryStatus === 'not-installed',
+        ];
+    }
+
+    /**
      * @param null|callable(string): array{reachable:bool,version:?string} $probe
      * @return list<array{container:string,backend:string,version:?string,socket_path:string,status:string,metrics:?array,metrics_sampled_at:?int}>
      */

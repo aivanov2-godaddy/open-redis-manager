@@ -125,10 +125,11 @@ if (!is_string($setupMode) || !in_array($setupMode, ['choose', 'native', 'podman
     $setupMode = 'choose';
 }
 $podmanInventoryStatus = $podmanInventory['status'] ?? null;
-$podmanInventoryVerifiedAbsent = $podmanInventoryStatus === 'not-installed';
-$showSetupWizard = $brokerVerified && is_array($instanceStatus)
-    && ($instanceStatus['success'] ?? false) === true && ($instanceStatus['state'] ?? null) === 'not_configured'
-    && in_array($podmanInventoryStatus, ['not-installed', 'unavailable'], true);
+$instanceNotConfigured = $brokerVerified && is_array($instanceStatus)
+    && ($instanceStatus['success'] ?? false) === true && ($instanceStatus['state'] ?? null) === 'not_configured';
+$setupPolicy = \Orm\Cpanel\PodmanCacheDiscovery::firstRunSetupPolicy($instanceNotConfigured, $podmanInventoryStatus);
+$showSetupWizard = $setupPolicy['show_wizard'];
+$podmanInventoryVerifiedAbsent = $setupPolicy['allow_podman_install'];
 $podmanSetup = $showSetupWizard && $setupMode === 'podman'
     ? \Orm\Cpanel\PodmanLifecycleManager::inspectSetup($account->username()) : null;
 $nativeDiscovery = $showSetupWizard && $setupMode === 'native'

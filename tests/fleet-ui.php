@@ -98,7 +98,7 @@ $assert(str_contains($cpanel, 'ea-podman install <?= htmlspecialchars($packageIn
     && str_contains($cpanel, 'will not run a host package manager')
     && str_contains($cpanel, 'could not safely verify this account’s cPanel container inventory'),
     'show only fixed EA package setup instructions and preserve unknown inventory states');
-$assert(str_contains($cpanel, "in_array(\$podmanInventoryStatus, ['not-installed', 'unavailable'], true)")
+$assert(str_contains($cpanel, 'PodmanCacheDiscovery::firstRunSetupPolicy')
     && str_contains($cpanel, '!$podmanInventoryVerifiedAbsent')
     && str_contains($cpanel, 'it will not recommend installing another one'),
     'keep first-run native setup available when Podman discovery is unknown while withholding duplicate Podman install steps');

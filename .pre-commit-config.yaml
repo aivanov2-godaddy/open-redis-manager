@@ -29,6 +29,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-first-run-setup-policy
+        name: cPanel first-run setup policy checks
+        entry: php tests/cpanel-first-run-setup-policy.php
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: php-health-guidance
         name: cPanel health guidance checks
         entry: php tests/cpanel-health-guidance.php
