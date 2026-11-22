@@ -743,8 +743,8 @@ close($drift_config) or die "close reset config: $!";
 like($drift_content, qr/^maxmemory 8388608$/m, 'reset config uses the fixed 8 MiB recovery ceiling');
 like($drift_content, qr/^maxclients 10$/m, 'reset config uses the fixed low recovery client limit');
 like($drift_content, qr/^requirepass \Q$reset_secret\E$/m, 'reset config installs the returned AUTH credential');
-is($manager->recovery_config_scan($account)->{finding}, 'service_stopped',
-    'verify that a canonical reset config no longer reports config damage');
+is($manager->recovery_config_scan($account), undef,
+    'do not offer config recovery after writing a canonical reset config');
 ok(unlink($recovery_config_path), 'remove reset config before restoring the original fixture');
 ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
     'restore the validated config before unsafe-path checks');
