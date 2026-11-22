@@ -108,7 +108,6 @@ approved_additions=(
     'podman_metrics_collector|bin/orm-podman-metrics-collect.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl|755'
     'podman_metrics_service|packaging/systemd/orm-podman-metrics.service|/etc/systemd/system/orm-podman-metrics.service|644'
     'podman_metrics_timer|packaging/systemd/orm-podman-metrics.timer|/etc/systemd/system/orm-podman-metrics.timer|644'
-    'broker_slow_log_reader|src/Orm/Broker/SlowLogReader.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/SlowLogReader.pm|644'
 )
 grep -Fvx -f <(printf '%s\n' "${approved_additions[@]}") "$new_install_map" >"$old_install_map"
 orm_release_install_map_is_compatible "$new_install_map" "$old_install_map" \

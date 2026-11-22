@@ -283,7 +283,6 @@ orm_package_file_map() {
         broker_backend_policy "$ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm" "$ORM_BROKER_LIB/BackendPolicy.pm" 644 \
         broker_handler "$ORM_REPO_ROOT/src/Orm/Broker/Handler.pm" "$ORM_BROKER_LIB/Handler.pm" 644 \
         broker_instance_manager "$ORM_REPO_ROOT/src/Orm/Broker/InstanceManager.pm" "$ORM_BROKER_LIB/InstanceManager.pm" 644 \
-        broker_slow_log_reader "$ORM_REPO_ROOT/src/Orm/Broker/SlowLogReader.pm" "$ORM_BROKER_LIB/SlowLogReader.pm" 644 \
         broker_fleet_inventory "$ORM_REPO_ROOT/src/Orm/Broker/FleetInventory.pm" "$ORM_BROKER_LIB/FleetInventory.pm" 644 \
         broker_peer_credentials "$ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm" "$ORM_BROKER_LIB/PeerCredentials.pm" 644 \
         broker_protocol "$ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm" "$ORM_BROKER_LIB/Protocol.pm" 644 \
@@ -446,7 +445,6 @@ orm_release_install_map_is_compatible() {
         'podman_metrics_collector|bin/orm-podman-metrics-collect.pl|/usr/local/cpanel/3rdparty/orm/bin/orm-podman-metrics-collect.pl|755'
         'podman_metrics_service|packaging/systemd/orm-podman-metrics.service|/etc/systemd/system/orm-podman-metrics.service|644'
         'podman_metrics_timer|packaging/systemd/orm-podman-metrics.timer|/etc/systemd/system/orm-podman-metrics.timer|644'
-        'broker_slow_log_reader|src/Orm/Broker/SlowLogReader.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/SlowLogReader.pm|644'
     )
     [[ -f "$candidate" && ! -L "$candidate" && -f "$installed" && ! -L "$installed" ]] || return 1
     cmp -s -- "$candidate" "$installed" && return 0
