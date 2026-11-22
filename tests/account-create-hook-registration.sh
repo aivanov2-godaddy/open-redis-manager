@@ -48,6 +48,19 @@ orm_account_create_hook_state
 ORM_ACCOUNT_HOOK_ADDED=0
 orm_ensure_account_create_hook
 [[ "$ORM_ACCOUNT_HOOK_ADDED" -eq 0 ]]
+registered_hook="$ORM_ACCOUNT_CREATE_HOOK"
+missing_hook="$test_root/missing-account-create-hook"
+printf '%s\n' "$missing_hook" >"$ORM_HOOK_REGISTRY"
+ORM_ACCOUNT_CREATE_HOOK="$missing_hook"
+orm_account_create_hook_state
+if orm_ensure_account_create_hook; then
+    printf 'a registered but missing account-create executable was incorrectly accepted.\n' >&2
+    exit 1
+fi
+[[ "$(<"$ORM_HOOK_REGISTRY")" == "$missing_hook" && ! -e "$missing_hook" ]] \
+    || { printf 'missing-hook validation changed the registration or created a target.\n' >&2; exit 1; }
+ORM_ACCOUNT_CREATE_HOOK="$registered_hook"
+printf '%s\n' "$registered_hook" >"$ORM_HOOK_REGISTRY"
 orm_remove_account_create_hook
 [[ "$ORM_ACCOUNT_HOOK_REMOVED" -eq 1 ]]
 state=0
