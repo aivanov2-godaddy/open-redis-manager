@@ -82,6 +82,11 @@ my $fleet_migration = parse_request($fleet_migration_request);
 ok($fleet_migration && $fleet_migration->{operation} eq 'fleet.migrate'
     && $fleet_migration->{target_backend} eq 'valkey' && $fleet_migration->{writes_quiesced},
     'accept only an acknowledged root Redis-to-Valkey migration request');
+my $fleet_auth_rotate = parse_request('{"operation":"fleet.auth.rotate","username":"acct01","version":1}' . "\n");
+ok($fleet_auth_rotate && $fleet_auth_rotate->{operation} eq 'fleet.auth.rotate'
+    && $fleet_auth_rotate->{username} eq 'acct01', 'accept a fixed root AUTH rotation request');
+ok(!parse_request('{"operation":"fleet.auth.rotate","secret":"chosen","username":"acct01","version":1}' . "\n"),
+    'reject client-selected AUTH secrets');
 for my $range (qw(24h 7d)) {
     is(parse_request('{"operation":"metrics.history","range":"' . $range . '","version":1}' . "\n")->{range},
         $range, "accept a canonical $range metrics history request");
@@ -1816,6 +1821,12 @@ unlike($disabled_auth_config, qr/^requirepass /m, 'remove the password directive
 is($auth_audit[-1]->[2], 'auth.disable', 'audit AUTH disable with a fixed action name');
 unlike(JSON::PP->new->canonical(1)->encode(\@auth_audit), qr/\Q$rotated_secret\E/,
     'never include the disabled password in the audit record');
+my $root_auth_rotation = $manager->rotate_auth($account, 0);
+ok($root_auth_rotation->{success} && $root_auth_rotation->{secret} =~ /\A[A-Za-z0-9_-]{43}\z/,
+    'allow the root fleet path to reuse the verified one-time AUTH rotation flow');
+is($auth_audit[-1]->[0], 0, 'attribute WHM AUTH rotation to the privileged root actor');
+unlike(JSON::PP->new->canonical(1)->encode(\@auth_audit), qr/\Q$root_auth_rotation->{secret}\E/,
+    'exclude the WHM-generated credential from all AUTH audit entries');
 $metrics_info = "used_memory:not-a-number\n";
 my $malformed_stale_metrics = $manager->dispatch('instance.metrics', $account);
 ok($malformed_stale_metrics->{success} && $malformed_stale_metrics->{stale} && $malformed_stale_metrics->{retained},
@@ -1939,6 +1950,13 @@ ok(Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60,
     'rate-limit long migrations per account rather than blocking other accounts');
 ok(!Orm::Broker::Server::_rate_allowed(\%fleet_migration_rates, 0, 101, 1, 1, 60, 'fleet.migrate:acct01'),
     'rate-limit repeated migration attempts for the same account');
+my %fleet_auth_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_auth_rates, 0, 100, 1, 1, 60, 'fleet.auth.rotate:acct01'),
+    'allow the first per-account AUTH rotation within its cooldown');
+ok(Orm::Broker::Server::_rate_allowed(\%fleet_auth_rates, 0, 101, 1, 1, 60, 'fleet.auth.rotate:acct02'),
+    'keep AUTH rotation cooldowns isolated between accounts');
+ok(!Orm::Broker::Server::_rate_allowed(\%fleet_auth_rates, 0, 101, 1, 1, 60, 'fleet.auth.rotate:acct01'),
+    'rate-limit repeated AUTH rotation for the same account');
 my %auto_provision_rates;
 ok(Orm::Broker::Server::_rate_allowed(\%auto_provision_rates, 0, 100, 1, 1, 60, 'fleet.auto_provision:ormauto'),
     'allow one account-create provisioning event in its per-account rate bucket');

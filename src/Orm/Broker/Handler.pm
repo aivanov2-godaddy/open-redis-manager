@@ -167,6 +167,19 @@ sub handle_frame {
                     : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
             }
         }
+        if ($request->{operation} eq 'fleet.auth.rotate') {
+            if ($peer_uid != 0) {
+                eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, 'auth.rotate') }
+                    if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };
+                $response = _not_authorized();
+            } elsif (!defined($fleet_inventory)) {
+                $response = { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            } else {
+                my $rotation_response = eval { $fleet_inventory->rotate_auth($request->{username}) };
+                $response = ref($rotation_response) eq 'HASH' ? $rotation_response
+                    : { error => 'operation_failed', success => JSON::PP::false, version => 1 };
+            }
+        }
         if ($request->{operation} eq 'fleet.control') {
             if ($peer_uid != 0) {
                 eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $request->{action}) }

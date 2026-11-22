@@ -415,6 +415,45 @@ sub _recovery_scan_response {
     return $response;
 }
 
+sub rotate_auth {
+    my ($self, $username) = @_;
+    my $action = 'auth.rotate';
+    return _fleet_failure('invalid_request', $username, $action, 0)
+        if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
+    my $account = eval { $self->{resolver}->resolve_name($username) };
+    if (ref($account) ne 'HASH' || ($account->{name} // '') ne $username) {
+        my $audited = _audit_event($self, 0, $username, $action, 'account_unavailable', 'unavailable');
+        return _fleet_failure('account_unavailable', $username, $action, $audited);
+    }
+    my $manager = $self->{instance_manager};
+    my $result = eval { $manager->rotate_auth($account, 0) }
+        if defined($manager) && eval { $manager->can('rotate_auth') };
+    if (ref($result) eq 'HASH' && $result->{success}
+        && JSON::PP::is_bool($result->{auth_configured}) && $result->{auth_configured}
+        && defined($result->{secret}) && !ref($result->{secret})
+        && $result->{secret} =~ /\A[A-Za-z0-9_-]{43}\z/) {
+        my $audited = _audit_event($self, 0, $username, $action, 'success', 'running');
+        return {
+            action => $action,
+            audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
+            auth_configured => JSON::PP::true,
+            secret => $result->{secret},
+            state => 'running',
+            success => JSON::PP::true,
+            username => $username,
+            version => 1,
+        };
+    }
+    my %allowed_errors = map { $_ => 1 } qw(
+        auth_generation_failed auth_recovery_required auth_rotation_failed configuration_storage_unavailable
+        configuration_unavailable instance_unavailable not_configured not_running operation_in_progress
+    );
+    my $error = ref($result) eq 'HASH' && defined($result->{error}) && $allowed_errors{$result->{error}}
+        ? $result->{error} : 'operation_failed';
+    my $audited = _audit_event($self, 0, $username, $action, $error, 'unavailable');
+    return _fleet_failure($error, $username, $action, $audited);
+}
+
 sub migrate {
     my ($self, $username, $target_backend, $writes_quiesced) = @_;
     my $action = 'migration.to-valkey';
@@ -715,7 +754,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|auto_provision|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
+        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -724,7 +763,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
+        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 

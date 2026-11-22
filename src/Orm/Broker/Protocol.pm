@@ -33,6 +33,9 @@ sub parse_request {
     if ($frame =~ /\A\{"operation":"fleet\.recovery\.repair","repair":"(start|config_rebuild)","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.recovery.repair', repair => $1, username => $2, version => 1 };
     }
+    if ($frame =~ /\A\{"operation":"fleet\.auth\.rotate","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
+        return { operation => 'fleet.auth.rotate', username => $1, version => 1 };
+    }
     if ($frame =~ /\A\{"action":"(start|stop|restart)","operation":"fleet\.control","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { action => $1, operation => 'fleet.control', username => $2, version => 1 };
     }

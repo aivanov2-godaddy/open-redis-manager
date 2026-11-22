@@ -603,6 +603,32 @@ $badConfigRebuildStateClient = new BrokerClient(static fn (string $request): str
 );
 $assert($badConfigRebuildStateClient->repairFleetAccount('demo', 'config_rebuild') === null,
     'Reject a configuration rebuild receipt that claims the service was running.');
+$rotationRequests = [];
+$rotationSecret = str_repeat('A', 43);
+$rotationClient = new BrokerClient(static function (string $request) use (&$rotationRequests, $rotationSecret): string {
+    $rotationRequests[] = $request;
+    return json_encode([
+        'action' => 'auth.rotate', 'audit_logged' => true, 'auth_configured' => true,
+        'secret' => $rotationSecret, 'state' => 'running', 'success' => true,
+        'username' => 'demo', 'version' => 1,
+    ], JSON_THROW_ON_ERROR) . "\n";
+});
+$rotationResult = $rotationClient->rotateFleetAuth('demo');
+$assert($rotationRequests[0] === "{\"operation\":\"fleet.auth.rotate\",\"username\":\"demo\",\"version\":1}\n"
+    && ($rotationResult['secret'] ?? null) === $rotationSecret && ($rotationResult['state'] ?? null) === 'running',
+    'Send the fixed root account rotation and accept its one-time credential receipt.');
+$assert($rotationClient->rotateFleetAuth('../root') === null && count($rotationRequests) === 1,
+    'Reject malformed account names before requesting a fleet AUTH rotation.');
+$malformedRotationClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"auth.rotate\",\"audit_logged\":true,\"auth_configured\":true,\"secret\":\"short\",\"state\":\"running\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($malformedRotationClient->rotateFleetAuth('demo') === null,
+    'Reject an unexpected or malformed generated AUTH credential.');
+$failedRotationClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"auth.rotate\",\"audit_logged\":true,\"error\":\"auth_recovery_required\",\"success\":false,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert(($failedRotationClient->rotateFleetAuth('demo')['error'] ?? null) === 'auth_recovery_required',
+    'Preserve the recovery-required result without returning credential material.');
 $controlFailure = new BrokerClient(static fn (string $request): string =>
     "{\"audit_logged\":true,\"error\":\"not_configured\",\"success\":false,\"version\":1}\n"
 );

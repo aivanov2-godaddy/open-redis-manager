@@ -35,6 +35,7 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our %BACKUPS;
     our @MIGRATION_CALLS;
     our @DIAGNOSTICS_CALLS;
+    our @AUTH_ROTATE_CALLS;
     our @RECOVERY_HEALTH_CALLS;
     our @RECOVERY_CALLS;
     our %RECOVERY_ERRORS;
@@ -133,6 +134,12 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         my ($self, $account) = @_;
         push @RECOVERY_HEALTH_CALLS, $account->{name};
         return { success => $account->{name} eq 'acct01' ? 1 : 0 };
+    }
+    sub rotate_auth {
+        my ($self, $account, $actor_uid) = @_;
+        push @AUTH_ROTATE_CALLS, [$account->{name}, $actor_uid];
+        return { success => 0, error => 'not_running' } if $account->{name} eq 'acct10';
+        return { success => 1, auth_configured => JSON::PP::true, secret => 'A' x 43 };
     }
     sub create_backup {
         my ($self, $account) = @_;
@@ -295,6 +302,7 @@ my $recoveryScanRequest = '{"operation":"fleet.recovery.scan","username":"acct02
 my $recoveryConfigScanRequest = '{"operation":"fleet.recovery.scan","username":"acct07","version":1}' . "\n";
 my $recoveryRepairRequest = '{"operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n";
 my $recoveryConfigRepairRequest = '{"operation":"fleet.recovery.repair","repair":"config_rebuild","username":"acct07","version":1}' . "\n";
+my $authRotateRequest = '{"operation":"fleet.auth.rotate","username":"acct02","version":1}' . "\n";
 is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
 is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
 is(parse_request($recoveryConfigRepairRequest)->{repair}, 'config_rebuild', 'parse the fixed configuration rebuild repair');
@@ -302,6 +310,33 @@ ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repa
     'reject arbitrary commands from recovery requests');
 ok(!parse_request('{"operation":"fleet.recovery.repair","repair":"chmod","username":"acct02","version":1}' . "\n"),
     'reject recovery actions outside the fixed repair allowlist');
+is(parse_request($authRotateRequest)->{operation}, 'fleet.auth.rotate', 'parse the fixed root AUTH rotation request');
+ok(!parse_request('{"operation":"fleet.auth.rotate","secret":"chosen","username":"acct02","version":1}' . "\n"),
+    'reject caller-selected AUTH secrets');
+my $rotation = $inventory->rotate_auth('acct02');
+ok($rotation->{success} && $rotation->{action} eq 'auth.rotate' && $rotation->{auth_configured}
+    && $rotation->{secret} eq ('A' x 43) && $rotation->{state} eq 'running',
+    'return a verified one-time generated password for a running account');
+is_deeply($Local::FleetManager::AUTH_ROTATE_CALLS[-1], ['acct02', 0],
+    'perform WHM AUTH rotation as the root actor against only the resolved account');
+is_deeply($audit[-1], [0, 'acct02', 'auth.rotate', 'success', 'running'],
+    'audit successful WHM AUTH rotation without placing the generated secret in event fields');
+is($inventory->rotate_auth('acct10')->{error}, 'not_running',
+    'preserve a safe failure when the selected AUTH target is not running');
+is_deeply($audit[-1], [0, 'acct10', 'auth.rotate', 'not_running', 'unavailable'],
+    'audit failed WHM AUTH rotation without recording credential material');
+my $rotationCallsBeforeDenial = scalar @Local::FleetManager::AUTH_ROTATE_CALLS;
+like(Orm::Broker::Handler->handle_frame($authRotateRequest, 10001, undef, undef, $inventory),
+    qr/"error":"not_authorized"/, 'deny non-root peers from fleet AUTH rotation');
+is_deeply($audit[-1], [10001, 'acct02', 'auth.rotate', 'not_authorized', 'unavailable'],
+    'audit denied AUTH rotation with the kernel peer identity');
+is(scalar @Local::FleetManager::AUTH_ROTATE_CALLS, $rotationCallsBeforeDenial,
+    'never call the AUTH manager for a non-root rotation request');
+ok($inventory->audit_rate_limited(0, 'acct02', 'auth.rotate'), 'record rate-limited AUTH rotation');
+is_deeply($audit[-1], [0, 'acct02', 'auth.rotate', 'rate_limited', 'unavailable'],
+    'audit AUTH rotation rate limits with fixed metadata only');
+my $rootAuthRotation = Orm::Broker::Handler->handle_frame($authRotateRequest, 0, undef, undef, $inventory);
+like($rootAuthRotation, qr/"secret":"A{43}"/, 'allow root and return the generated password through the fixed response');
 my $control_calls_before_recovery_scan = scalar @Local::FleetManager::CONTROL_CALLS;
 my $stoppedScan = $inventory->recovery_scan('acct02');
 ok($stoppedScan->{success} && $stoppedScan->{finding} eq 'service_stopped'
