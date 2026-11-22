@@ -299,13 +299,14 @@ sub recovery_scan {
     my $config_scan = eval { $self->{instance_manager}->recovery_config_scan($account) }
         if defined($self->{instance_manager}) && eval { $self->{instance_manager}->can('recovery_config_scan') };
     if (ref($config_scan) eq 'HASH' && $config_scan->{success}
-        && ($config_scan->{finding} // '') eq 'config_drift'
+        && ($config_scan->{finding} // '') =~ /\A(?:config_drift|config_missing|config_malformed)\z/
         && defined($config_scan->{state}) && $config_scan->{state} =~ /\A(?:running|starting|stopping|stopped|failed)\z/) {
         my $repair = $config_scan->{repair};
-        $repair = undef if !defined($repair) || ref($repair) || $repair ne 'config_rebuild';
+        my $expected_repair = $config_scan->{finding} eq 'config_drift' ? 'config_rebuild' : 'config_reset';
+        $repair = undef if !defined($repair) || ref($repair) || $repair ne $expected_repair;
         $repair = undef if $config_scan->{state} ne 'stopped' && $config_scan->{state} ne 'failed';
         my $audited = _audit_event($self, 0, $username, $action, 'success', $config_scan->{state});
-        return _recovery_scan_response($username, 'config_drift', $repair, $config_scan->{state}, $audited);
+        return _recovery_scan_response($username, $config_scan->{finding}, $repair, $config_scan->{state}, $audited);
     }
 
     my $status = eval { $self->{instance_manager}->status($account) }
@@ -351,10 +352,11 @@ sub recovery_scan {
 sub recovery_repair {
     my ($self, $username, $repair) = @_;
     my $action = defined($repair) && !ref($repair) && $repair eq 'config_rebuild'
-        ? 'recovery.config_rebuild' : 'recovery.start';
+        ? 'recovery.config_rebuild' : defined($repair) && !ref($repair) && $repair eq 'config_reset'
+            ? 'recovery.config_reset' : 'recovery.start';
     return _fleet_failure('invalid_request', $username, $action, 0)
         if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/
-        || !defined($repair) || ref($repair) || $repair !~ /\A(?:start|config_rebuild)\z/;
+        || !defined($repair) || ref($repair) || $repair !~ /\A(?:start|config_rebuild|config_reset)\z/;
 
     my $scan = $self->recovery_scan($username);
     if (ref($scan) ne 'HASH' || !$scan->{success}) {
@@ -372,17 +374,24 @@ sub recovery_repair {
         return _fleet_failure('account_unavailable', $username, $action, $audited);
     }
     my $result = eval {
-        $repair eq 'start'
-            ? $self->{instance_manager}->recovery_start_if_stopped($account)
+        $repair eq 'start' ? $self->{instance_manager}->recovery_start_if_stopped($account)
+            : $repair eq 'config_reset' ? $self->{instance_manager}->recovery_reset_config($account)
             : $self->{instance_manager}->recovery_rebuild_config($account)
     } if defined($self->{instance_manager}) && eval {
-        $self->{instance_manager}->can($repair eq 'start' ? 'recovery_start_if_stopped' : 'recovery_rebuild_config')
+        $self->{instance_manager}->can($repair eq 'start' ? 'recovery_start_if_stopped'
+            : $repair eq 'config_reset' ? 'recovery_reset_config' : 'recovery_rebuild_config')
     };
     my $state_valid = ref($result) eq 'HASH' && defined($result->{state})
         && ($repair eq 'start' ? $result->{state} =~ /\A(?:starting|running)\z/ : $result->{state} =~ /\A(?:stopped|failed)\z/);
     if (ref($result) eq 'HASH' && $result->{success} && $state_valid) {
+        if ($repair eq 'config_reset' && (!JSON::PP::is_bool($result->{auth_configured})
+            || !$result->{auth_configured} || !defined($result->{secret}) || ref($result->{secret})
+            || $result->{secret} !~ /\A[A-Za-z0-9_-]{43}\z/)) {
+            my $audited = _audit_event($self, 0, $username, $action, 'operation_failed', 'unavailable');
+            return _fleet_failure('operation_failed', $username, $action, $audited);
+        }
         my $audited = _audit_event($self, 0, $username, $action, 'success', $result->{state});
-        return {
+        my $response = {
             action => $action,
             audit_logged => $audited ? JSON::PP::true : JSON::PP::false,
             state => $result->{state},
@@ -390,9 +399,14 @@ sub recovery_repair {
             username => $username,
             version => 1,
         };
+        if ($repair eq 'config_reset') {
+            $response->{auth_configured} = JSON::PP::true;
+            $response->{secret} = $result->{secret};
+        }
+        return $response;
     }
     my %allowed_errors = map { $_ => 1 } qw(
-        configuration_storage_unavailable instance_unavailable not_configured operation_in_progress repair_not_applicable service_failed
+        auth_generation_failed configuration_storage_unavailable instance_unavailable not_configured operation_in_progress repair_not_applicable service_failed
     );
     my $error = ref($result) eq 'HASH' && defined($result->{error}) && $allowed_errors{$result->{error}}
         ? $result->{error} : 'instance_unavailable';
@@ -754,7 +768,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
+        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -763,7 +777,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild)\z/;
+        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 

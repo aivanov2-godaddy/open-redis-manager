@@ -40,8 +40,10 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our @RECOVERY_CALLS;
     our %RECOVERY_ERRORS;
     our %RECOVERY_CONFIG_DRIFT;
+    our %RECOVERY_CONFIG_RESET;
     our @RECOVERY_CONFIG_SCAN_CALLS;
     our @RECOVERY_CONFIG_REBUILD_CALLS;
+    our @RECOVERY_CONFIG_RESET_CALLS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -70,6 +72,12 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     sub recovery_config_scan {
         my ($self, $account) = @_;
         push @RECOVERY_CONFIG_SCAN_CALLS, $account->{name};
+        if ($RECOVERY_CONFIG_RESET{$account->{name}}) {
+            my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+            my $result = { success => 1, finding => $RECOVERY_CONFIG_RESET{$account->{name}}, state => $state };
+            $result->{repair} = 'config_reset' if $state eq 'stopped' || $state eq 'failed';
+            return $result;
+        }
         return undef if !$RECOVERY_CONFIG_DRIFT{$account->{name}};
         my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
         my $result = { success => 1, finding => 'config_drift', state => $state };
@@ -84,6 +92,14 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         return { success => 0, error => 'repair_not_applicable' }
             if $state ne 'stopped' && $state ne 'failed';
         return { success => 1, state => $state };
+    }
+    sub recovery_reset_config {
+        my ($self, $account) = @_;
+        push @RECOVERY_CONFIG_RESET_CALLS, $account->{name};
+        my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+        return { success => 0, error => 'repair_not_applicable' }
+            if $state ne 'stopped' && $state ne 'failed';
+        return { success => 1, state => $state, auth_configured => JSON::PP::true, secret => 'A' x 43 };
     }
     sub backups {
         my ($self, $account) = @_;
@@ -302,10 +318,12 @@ my $recoveryScanRequest = '{"operation":"fleet.recovery.scan","username":"acct02
 my $recoveryConfigScanRequest = '{"operation":"fleet.recovery.scan","username":"acct07","version":1}' . "\n";
 my $recoveryRepairRequest = '{"operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n";
 my $recoveryConfigRepairRequest = '{"operation":"fleet.recovery.repair","repair":"config_rebuild","username":"acct07","version":1}' . "\n";
+my $recoveryConfigResetRequest = '{"operation":"fleet.recovery.repair","repair":"config_reset","username":"acct09","version":1}' . "\n";
 my $authRotateRequest = '{"operation":"fleet.auth.rotate","username":"acct02","version":1}' . "\n";
 is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
 is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
 is(parse_request($recoveryConfigRepairRequest)->{repair}, 'config_rebuild', 'parse the fixed configuration rebuild repair');
+is(parse_request($recoveryConfigResetRequest)->{repair}, 'config_reset', 'parse the fixed malformed-config reset repair');
 ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n"),
     'reject arbitrary commands from recovery requests');
 ok(!parse_request('{"operation":"fleet.recovery.repair","repair":"chmod","username":"acct02","version":1}' . "\n"),
@@ -383,6 +401,20 @@ $Local::FleetManager::RECOVERY_CONFIG_DRIFT{acct08} = 1;
 my $runningConfigDriftScan = $inventory->recovery_scan('acct08');
 ok($runningConfigDriftScan->{success} && $runningConfigDriftScan->{state} eq 'running'
     && !exists($runningConfigDriftScan->{repair}), 'never offer a config rebuild while a service is running');
+$Local::FleetManager::RECOVERY_CONFIG_RESET{acct09} = 'config_missing';
+$Local::FleetManager::CONTROL_STATES{acct09} = 'stopped';
+my $missingConfigScan = $inventory->recovery_scan('acct09');
+ok($missingConfigScan->{success} && $missingConfigScan->{finding} eq 'config_missing'
+    && $missingConfigScan->{repair} eq 'config_reset' && $missingConfigScan->{state} eq 'stopped',
+    'offer a fixed config reset only for a verified missing config on a stopped service');
+my $configResetResult = $inventory->recovery_repair('acct09', 'config_reset');
+ok($configResetResult->{success} && $configResetResult->{action} eq 'recovery.config_reset'
+    && $configResetResult->{state} eq 'stopped' && $configResetResult->{auth_configured}
+    && $configResetResult->{secret} eq ('A' x 43), 'return the one-time replacement credential in the reset receipt');
+is_deeply($Local::FleetManager::RECOVERY_CONFIG_RESET_CALLS[-1], 'acct09',
+    'scope malformed-config reset to the account selected by WHM');
+is_deeply($audit[-1], [0, 'acct09', 'recovery.config_reset', 'success', 'stopped'],
+    'audit config reset without recording the one-time password');
 $Local::FleetManager::CONTROL_STATES{acct05} = { unexpected => 'state' };
 is($inventory->recovery_scan('acct05')->{error}, 'instance_unavailable',
     'reject non-scalar service states from the status provider');
@@ -422,6 +454,13 @@ my $rootConfigRecoveryScan = Orm::Broker::Handler->handle_frame($recoveryConfigS
 like($rootConfigRecoveryScan, qr/"finding":"config_drift"/, 'allow root to scan config drift without exposing file contents');
 my $rootConfigRecoveryRepair = Orm::Broker::Handler->handle_frame($recoveryConfigRepairRequest, 0, undef, undef, $inventory);
 like($rootConfigRecoveryRepair, qr/"action":"recovery\.config_rebuild"/, 'allow root peers to invoke the fixed config rebuild');
+$Local::FleetManager::CONTROL_STATES{acct09} = 'stopped';
+my $rootConfigResetScan = Orm::Broker::Handler->handle_frame(
+    '{"operation":"fleet.recovery.scan","username":"acct09","version":1}' . "\n", 0, undef, undef, $inventory);
+like($rootConfigResetScan, qr/"repair":"config_reset"/, 'allow root to scan and receive the fixed config-reset action');
+my $rootConfigReset = Orm::Broker::Handler->handle_frame($recoveryConfigResetRequest, 0, undef, undef, $inventory);
+like($rootConfigReset, qr/"action":"recovery\.config_reset".*"secret":"A{43}"/,
+    'allow root to receive the one-time password from the fixed reset repair');
 
 my $controlRequest = '{"action":"start","operation":"fleet.control","username":"acct01","version":1}' . "\n";
 is(parse_request($controlRequest)->{operation}, 'fleet.control', 'accept the fixed root fleet-control request');

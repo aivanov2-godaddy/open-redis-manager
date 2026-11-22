@@ -81,10 +81,12 @@ $assert(str_contains($whm, "'instance.provision','instance.configure','instance.
     && str_contains($whm, 'ORM-managed cPanel provisioning, configuration, start, and stop requests are included')
     && str_contains($whm, 'cPanel EA Podman commands'),
     'filter normalized cPanel operation events and explain the audit coverage boundary');
-$assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_rebuild'")
+$assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_missing' =>")
+    && str_contains($whm, "'config_malformed' =>") && str_contains($whm, "'config_reset'")
     && str_contains($whm, 'Rebuild config') && str_contains($whm, 'ORM will not start the service')
-    && str_contains($whm, 'recovery.config_rebuild'),
-    'show scan-gated canonical config recovery with explicit confirmation and audit action');
+    && str_contains($whm, 'Reset config and replace AUTH') && str_contains($whm, 'recovery.config_reset')
+    && str_contains($whm, 'One-time replacement AUTH password') && str_contains($whm, 'private, no-store'),
+    'show scan-gated config rebuild/reset with explicit confirmation, one-time password and audit action');
 $assert(str_contains($whm, "\$finding['window_start_utc']")
     && str_contains($whm, "\$finding['window_end_utc']") && str_contains($whm, 'Evidence window:'),
     'render escaped UTC evidence bounds on each WHM security report finding');
