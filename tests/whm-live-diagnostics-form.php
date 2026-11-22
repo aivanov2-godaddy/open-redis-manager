@@ -12,7 +12,7 @@ const ORM_INSTALL_ROOT = '/usr/local/cpanel/3rdparty/orm';
 if (in_array('--help', $argv, true)) {
     fwrite(STDOUT, "Usage: php tests/whm-live-diagnostics-form.php --username=ACCOUNT --confirm-live-reads\n"
         . "Requires root on a disposable cPanel & WHM host and one running ORM-managed Redis instance.\n"
-        . "Submits seven fixed read-only probes at the account rate limit, then rejects an unsupported class.\n"
+        . "Submits eight fixed read-only probes at the account rate limit, then rejects an unsupported class.\n"
         . "Output contains only pass/fail checks; no host, account, response body, or diagnostic values.\n");
     exit(0);
 }
@@ -321,4 +321,4 @@ if ($failed !== []) {
     fwrite(STDOUT, 'Checks: ' . implode(' ', array_map(static fn (string $label): string => $label . '=fail', $failed)) . "\n");
     exit($exitCode ?? 1);
 }
-fwrite(STDOUT, "Live WHM diagnostics passed: root form; seven fixed read-only probes rendered with per-class audit events; unsupported class rejected.\n");
+fwrite(STDOUT, "Live WHM diagnostics passed: root form; eight fixed read-only probes rendered with per-class audit events; unsupported class rejected.\n");
