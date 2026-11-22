@@ -146,6 +146,7 @@ $classes = [
     'info_clients' => ['label' => 'INFO clients', 'fields' => ['Connected clients' => 'integer', 'Blocked clients' => 'integer', 'Client limit' => 'integer']],
     'info_stats' => ['label' => 'INFO stats', 'fields' => ['Commands per second' => 'integer', 'Keyspace hits' => 'integer', 'Keyspace misses' => 'integer', 'Expired keys' => 'integer', 'Evicted keys' => 'integer']],
     'info_commandstats' => ['label' => 'INFO commandstats', 'fields' => [], 'marker' => '<th scope="col">Command</th>'],
+    'slowlog' => ['label' => 'SLOWLOG GET', 'fields' => [], 'marker' => '<th scope="col">Logged at (UTC)</th>'],
     'dbsize' => ['label' => 'DBSIZE', 'fields' => ['Keys in database 0' => 'integer']],
 ];
 $boundedValuePresent = static function (string $body, string $label, string $kind): bool {
@@ -245,8 +246,10 @@ try {
         $heading = '<h3>Read-only ' . $definition['label'] . ' result for <code>' . $username . '</code></h3>';
         $fieldsPresent = true;
         if (isset($definition['marker'])) {
-            $fieldsPresent = str_contains($body, $definition['marker'])
-                && str_contains($body, 'Total CPU time (µs)');
+            $fieldsPresent = str_contains($body, $definition['marker']);
+            if ($commandClass === 'info_commandstats') {
+                $fieldsPresent = $fieldsPresent && str_contains($body, 'Total CPU time (µs)');
+            }
         }
         foreach ($definition['fields'] as $field => $kind) {
             $fieldsPresent = $fieldsPresent && $boundedValuePresent($body, $field, $kind);

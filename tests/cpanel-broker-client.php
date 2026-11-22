@@ -491,6 +491,9 @@ $diagnosticPayloads = [
         ['calls' => 18, 'command' => 'get', 'usec' => 45],
         ['calls' => 7, 'command' => 'set', 'usec' => 35],
     ], 'truncated' => 0],
+    'slowlog' => ['entries' => [
+        ['command' => 'get', 'duration_usec' => 456, 'timestamp' => 1700000000],
+    ], 'truncated' => 0],
     'dbsize' => ['database_keys' => 42],
 ];
 $diagnosticClient = new BrokerClient(static function (string $request) use (&$diagnosticRequests, $diagnosticPayloads): string {
@@ -504,7 +507,7 @@ $diagnosticClient = new BrokerClient(static function (string $request) use (&$di
 });
 $assert(($diagnosticClient->diagnoseFleetAccount('demo', 'dbsize')['result']['database_keys'] ?? null) === 42,
     'Parse a normalized fixed diagnostics response.');
-foreach (['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'dbsize'] as $commandClass) {
+foreach (['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'slowlog', 'dbsize'] as $commandClass) {
     $diagnosticResult = $diagnosticClient->diagnoseFleetAccount('demo', $commandClass);
     $lastRequest = end($diagnosticRequests);
     $assert(($diagnosticResult['success'] ?? false) && $diagnosticResult['command_class'] === $commandClass
@@ -530,6 +533,15 @@ $badCommandStatsClient = new BrokerClient(static fn (string $request): string =>
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
 $assert($badCommandStatsClient->diagnoseFleetAccount('demo', 'info_commandstats') === null,
     'Reject command arguments or unexpected fields from the command-stat response.');
+$badSlowlogClient = new BrokerClient(static fn (string $request): string => json_encode([
+    'action' => 'diagnostics.slowlog', 'audit_logged' => true, 'command_class' => 'slowlog',
+    'result' => ['entries' => [[
+        'command' => 'get', 'duration_usec' => 1, 'timestamp' => 1700000000, 'arguments' => ['secret'],
+    ]], 'truncated' => 0],
+    'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$assert($badSlowlogClient->diagnoseFleetAccount('demo', 'slowlog') === null,
+    'Reject arguments and unexpected fields from a slow-log response.');
 $boundaryDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
     'action' => 'diagnostics.dbsize', 'audit_logged' => true, 'command_class' => 'dbsize',
     'result' => ['database_keys' => 9_000_000_000_000_000],

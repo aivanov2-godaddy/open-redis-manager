@@ -29,6 +29,7 @@ Images below include local previews, prototype captures, and explicitly labeled 
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
 | [WHM read-only diagnostics](whm-fleet-diagnostics.png) | Synthetic root-only account row and the validated read-only metrics result with privacy boundary | 1440 × 1100; [SVG preview](previews/whm-fleet-diagnostics.svg) |
 | [WHM command visibility](whm-command-visibility.png) | Root-only command counts and cumulative CPU time without command arguments, keys, or values | Synthetic preview; [SVG source](previews/whm-command-visibility.svg) |
+| [WHM slow-log visibility](whm-slowlog.png) | Root-only slow-command names, UTC timestamps, and execution durations; no arguments or client metadata | Synthetic preview; [SVG source](previews/whm-slowlog.svg) |
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |
 | [WHM security](whm-security.png) | Security signals and report-only policy | 1500 × 1200 |

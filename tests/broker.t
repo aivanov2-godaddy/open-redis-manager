@@ -71,7 +71,7 @@ is(parse_request('{"operation":"fleet.backup.create","username":"acct01","versio
 my $fleet_diagnostics_request = '{"command_class":"info_memory","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
 is(parse_request($fleet_diagnostics_request)->{command_class}, 'info_memory',
     'accept a canonical fixed read-only diagnostics command class');
-for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats dbsize)) {
+for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats slowlog dbsize)) {
     is(parse_request('{"command_class":"' . $command_class . '","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n")
         ->{command_class}, $command_class, "accept the fixed $command_class diagnostic class");
 }
@@ -912,15 +912,33 @@ ok($manager->start($account)->{success}, 'start the instance again after config 
             { command => 'get', calls => 18, usec => 45 },
             { command => 'set', calls => 7, usec => 35 },
         ], truncated => 0 },
+        slowlog => { entries => [
+            { command => 'get', duration_usec => 456, timestamp => 1700000000 },
+        ], truncated => 0 },
         dbsize => { database_keys => 42 },
     );
-    for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats dbsize)) {
+    my $slowlog_bulk = sub { return '$' . length($_[0]) . "\r\n" . $_[0] . "\r\n"; };
+    my @slowlog_calls;
+    my $slowlog_reply = '*1' . "\r\n" . '*6' . "\r\n"
+        . ':12' . "\r\n" . ':1700000000' . "\r\n" . ':456' . "\r\n"
+        . '*2' . "\r\n" . $slowlog_bulk->('GET') . $slowlog_bulk->('secret-key')
+        . $slowlog_bulk->('192.0.2.44:6390') . $slowlog_bulk->('private-client-name');
+    local $manager->{slowlog_reply_call} = sub {
+        push @slowlog_calls, [@_];
+        return $slowlog_reply;
+    };
+    for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats slowlog dbsize)) {
         my $probe = $manager->read_diagnostic_command($account, $command_class);
         ok($probe->{success} && $probe->{command_class} eq $command_class,
             "run selected $command_class probe and return its fixed class");
         is_deeply($probe->{result}, $expected_diagnostic_results{$command_class},
             "return only the normalized $command_class result fields");
     }
+    is_deeply([map { [@{$_}[0 .. 1]] } @slowlog_calls], [['redis', '/var/lib/orm-instances/ormtest/redis.sock']],
+        'read the slow log only from the trusted manifest socket');
+    my $slowlog_json = JSON::PP->new->canonical->encode($expected_diagnostic_results{slowlog});
+    unlike($slowlog_json, qr/secret-key|192\.0\.2\.44|private-client-name/,
+        'discard command arguments and client metadata before building the diagnostic result');
     is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [
         ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'],
         ['INFO', 'commandstats'], ['DBSIZE'],

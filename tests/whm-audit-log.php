@@ -92,6 +92,15 @@ $ownershipRecoveryAudit = $ownershipRecoveryReader->read($now - 60, $now, ['acti
 $assert($ownershipRecoveryAudit['record_count'] === 1
     && $ownershipRecoveryAudit['records'][0]['state'] === 'stopped',
     'Recognize and filter metadata-only ownership repair audit events.');
+$slowlogAuditReader = new WhmAuditLog(static fn (): array => [
+    'status' => 'ok',
+    'lines' => [$journal('orm-broker', 'fleet_operation actor_uid=0 account=acct01 action=diagnostics.slowlog result=success state=running', $now - 1)],
+]);
+$slowlogAudit = $slowlogAuditReader->read($now - 60, $now, ['action' => 'diagnostics.slowlog']);
+$assert($slowlogAudit['record_count'] === 1
+    && $slowlogAudit['records'][0]['action'] === 'diagnostics.slowlog'
+    && $slowlogAudit['records'][0]['account'] === 'acct01',
+    'Recognize slow-log diagnostics as fixed metadata-only audit events.');
 $assert(WhmAuditLog::normalizeFilters(['account' => '../root']) === null
     && WhmAuditLog::normalizeFilters(['action' => 'redis-cli']) === null
     && WhmAuditLog::normalizeFilters(['arbitrary' => 'value']) === null, 'Reject unsafe and unknown filters.');

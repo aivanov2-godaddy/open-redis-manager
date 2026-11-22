@@ -39,6 +39,11 @@ $assert(str_contains($whm, "'info_memory' => ['label' => 'INFO memory'")
     && str_contains($whm, 'name="command_class"') && str_contains($whm, 'Run read-only probe')
     && str_contains($whm, 'diagnoseFleetAccount($username, $commandClass)'),
     'offer an accessible fixed diagnostic-class selector and execute only the selected class');
+$assert(str_contains($whm, "'slowlog' => ['label' => 'SLOWLOG GET'")
+    && str_contains($whm, "\$fleetDiagnosticsResult['command_class'] === 'slowlog'")
+    && str_contains($whm, 'command arguments, client addresses, client names, and raw replies are discarded by the broker')
+    && str_contains($whm, "diagnostics.slowlog"),
+    'render the bounded slow-log view and explain its metadata-only privacy boundary');
 $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecurityReport::consumeRateLimit'),
     'guard report generation behind the root WHM POST path and persistent throttle');
 $assert(str_contains($whm, '$fleetAuthRotationRequest = $rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')

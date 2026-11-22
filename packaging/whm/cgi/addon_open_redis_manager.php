@@ -148,6 +148,7 @@ $diagnosticCommands = [
     'info_clients' => ['label' => 'INFO clients', 'fields' => ['connected_clients' => 'Connected clients', 'blocked_clients' => 'Blocked clients', 'maxclients' => 'Client limit']],
     'info_stats' => ['label' => 'INFO stats', 'fields' => ['commands_per_second' => 'Commands per second', 'keyspace_hits' => 'Keyspace hits', 'keyspace_misses' => 'Keyspace misses', 'expired_keys' => 'Expired keys', 'evicted_keys' => 'Evicted keys']],
     'info_commandstats' => ['label' => 'INFO commandstats', 'fields' => []],
+    'slowlog' => ['label' => 'SLOWLOG GET', 'fields' => []],
     'dbsize' => ['label' => 'DBSIZE', 'fields' => ['database_keys' => 'Keys in database 0']],
 ];
 $fleetDiagnosticsMessage = null;
@@ -1015,6 +1016,17 @@ WHM::header('Open Redis Manager', 0, 0);
             <?php if ($fleetDiagnosticsResult['result']['commands'] === []): ?><tr><td colspan="3">No command statistics were returned.</td></tr><?php endif; ?>
           </tbody></table>
           <p><?= $fleetDiagnosticsResult['result']['truncated'] ? 'Showing the 60 most-called command types.' : 'Showing all reported command types.' ?> These counters reset when the service restarts and are not a time-window rate.</p>
+        <?php elseif ($fleetDiagnosticsResult['command_class'] === 'slowlog'): ?>
+          <p>Newest slow-log entries for this ORM-managed cache. Only command names and execution timing are shown; command arguments, client addresses, client names, and raw replies are discarded by the broker.</p>
+          <table><thead><tr><th scope="col">Command</th><th scope="col">Logged at (UTC)</th><th scope="col">Execution time (µs)</th></tr></thead><tbody>
+            <?php foreach ($fleetDiagnosticsResult['result']['entries'] as $entry): ?>
+              <tr><th scope="row"><code><?= htmlspecialchars(strtoupper($entry['command']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></th>
+                <td><time datetime="<?= gmdate('Y-m-d\TH:i:s\Z', $entry['timestamp']) ?>"><?= gmdate('Y-m-d H:i:s\Z', $entry['timestamp']) ?></time></td>
+                <td><?= number_format($entry['duration_usec']) ?></td></tr>
+            <?php endforeach; ?>
+            <?php if ($fleetDiagnosticsResult['result']['entries'] === []): ?><tr><td colspan="3">No slow commands were recorded.</td></tr><?php endif; ?>
+          </tbody></table>
+          <p><?= $fleetDiagnosticsResult['result']['truncated'] ? 'Showing the 10 most recent entries; more are available.' : 'Showing all returned entries.' ?> Redis/Valkey controls the slow-log threshold and retention length; ORM does not change them.</p>
         <?php else: ?>
         <table><tbody>
           <?php foreach ($diagnosticDefinition['fields'] as $field => $label): ?>
@@ -1685,7 +1697,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.info_commandstats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','recovery.ownership_fix','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.info_commandstats','diagnostics.slowlog','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','recovery.ownership_fix','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>
