@@ -31,7 +31,7 @@ $brokerLines = [
     $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct01 action=diagnostics.info_memory result=success state=running', $now - 25),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=client_limit_exceeded', $now - 17),
     $journal('orm-broker', 'provider_policy actor_uid=43210 account=acct01 action=policy.violation result=warn state=database_limit_exceeded', $now - 16),
-    $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct07 action=recovery.config_rebuild result=success state=stopped', $now - 3),
+    $journal('orm-broker', 'fleet_operation actor_uid=0 account=acct07 action=recovery.config_reset result=success state=stopped', $now - 3),
     $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.provision result=success state=running', $now - 53),
     $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.configure result=failure state=running', $now - 52),
     $journal('orm-broker', 'account_operation actor_uid=1000 account=acct01 action=instance.start result=success state=starting', $now - 51),
@@ -56,8 +56,8 @@ $assert($result['records'][0]['action'] === 'provider.events.configure' && $resu
 $assert($result['records'][11]['action'] === 'security.thresholds.update' && $result['records'][11]['result'] === 'success',
     'Recognize fixed metadata-only security threshold policy updates.');
 $assert($result['records'][3]['action'] === 'provider.package.save' && $result['records'][3]['source'] === 'orm-whm', 'Sort newest first and normalize WHM policy events.');
-$assert($result['records'][2]['action'] === 'recovery.config_rebuild' && $result['records'][2]['state'] === 'stopped',
-    'Recognize the fixed metadata-only config rebuild recovery audit event.');
+$assert($result['records'][2]['action'] === 'recovery.config_reset' && $result['records'][2]['state'] === 'stopped',
+    'Recognize the fixed metadata-only config reset recovery audit event.');
 $assert($result['records'][5]['action'] === 'policy.violation' && $result['records'][5]['actor'] === '43210', 'Normalize broker provider policy events using their trusted account actor.');
 $assert($result['records'][8]['action'] === 'auth.enable', 'Recognize fixed metadata-only AUTH enable events.');
 $assert($result['records'][9]['action'] === 'diagnostics.info_memory' && $result['records'][9]['actor'] === '0'

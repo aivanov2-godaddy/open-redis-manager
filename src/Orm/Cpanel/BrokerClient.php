@@ -1258,7 +1258,7 @@ final class BrokerClient
                 || ($decoded['action'] ?? null) !== 'recovery.scan'
                 || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null)
                 || !in_array($decoded['finding'] ?? null, [
-                    'config_drift', 'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
+                    'config_drift', 'config_malformed', 'config_missing', 'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
                     'service_stopped', 'service_transitioning',
                 ], true)
                 || !in_array($decoded['state'] ?? null, [
@@ -1275,6 +1275,7 @@ final class BrokerClient
                 'service_failed' => ['failed', 'start'],
                 'service_transitioning' => [in_array($decoded['state'], ['starting', 'stopping'], true) ? $decoded['state'] : '', null],
                 'config_drift' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'config_rebuild' : null],
+                'config_missing', 'config_malformed' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'config_reset' : null],
                 'service_healthy', 'health_probe_failed' => ['running', null],
                 'not_configured' => ['not_configured', null],
             };
@@ -1310,14 +1311,18 @@ final class BrokerClient
         ];
     }
 
-    /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,state?:string,error?:string}|null */
+    /** @return array{success:bool,version:int,username?:string,action?:string,audit_logged?:bool,auth_configured?:bool,secret?:string,state?:string,error?:string}|null */
     public function repairFleetAccount(string $username, string $repair): ?array
     {
         if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
-            || !in_array($repair, ['start', 'config_rebuild'], true)) {
+            || !in_array($repair, ['start', 'config_rebuild', 'config_reset'], true)) {
             return null;
         }
-        $action = $repair === 'start' ? 'recovery.start' : 'recovery.config_rebuild';
+        $action = match ($repair) {
+            'start' => 'recovery.start',
+            'config_rebuild' => 'recovery.config_rebuild',
+            default => 'recovery.config_reset',
+        };
         $request = json_encode(
             ['operation' => 'fleet.recovery.repair', 'repair' => $repair, 'username' => $username, 'version' => 1],
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
@@ -1333,10 +1338,18 @@ final class BrokerClient
         sort($keys);
         if ($decoded['success']) {
             $states = $repair === 'start' ? ['running', 'starting'] : ['stopped', 'failed'];
-            if ($keys !== ['action', 'audit_logged', 'state', 'success', 'username', 'version']
+            $expectedKeys = $repair === 'config_reset'
+                ? ['action', 'audit_logged', 'auth_configured', 'secret', 'state', 'success', 'username', 'version']
+                : ['action', 'audit_logged', 'state', 'success', 'username', 'version'];
+            if ($keys !== $expectedKeys
                 || ($decoded['action'] ?? null) !== $action || ($decoded['username'] ?? null) !== $username
                 || !is_bool($decoded['audit_logged'] ?? null)
                 || !in_array($decoded['state'] ?? null, $states, true)) {
+                return null;
+            }
+            if ($repair === 'config_reset'
+                && (($decoded['auth_configured'] ?? null) !== true || !is_string($decoded['secret'] ?? null)
+                    || preg_match('/\A[A-Za-z0-9_-]{43}\z/', $decoded['secret']) !== 1)) {
                 return null;
             }
             return $decoded;
@@ -1347,7 +1360,7 @@ final class BrokerClient
         ];
         if (!in_array($keys, $allowedKeySets, true)
             || !in_array($decoded['error'] ?? null, [
-                'account_unavailable', 'configuration_storage_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'not_configured',
+                'account_unavailable', 'auth_generation_failed', 'configuration_storage_unavailable', 'instance_unavailable', 'invalid_request', 'not_authorized', 'not_configured',
                 'operation_in_progress', 'rate_limited', 'repair_not_applicable', 'scan_failed', 'service_failed',
             ], true)) {
             return null;

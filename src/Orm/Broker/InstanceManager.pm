@@ -1047,8 +1047,8 @@ sub recovery_start_if_stopped {
 sub recovery_config_scan {
     my ($self, $account) = @_;
     return undef if !_valid_account($account);
-    my $manifest = $self->_read_manifest($account, 1);
-    return undef if ref($manifest) ne 'HASH' || $manifest->{_recovery_config_canonical};
+    my $manifest = $self->_read_manifest($account, 1, 1);
+    return undef if ref($manifest) ne 'HASH';
     my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
     my $normalized_state = $active || $state eq 'active' ? 'running'
         : $state eq 'activating' ? 'starting'
@@ -1056,13 +1056,75 @@ sub recovery_config_scan {
         : $state eq 'failed' ? 'failed'
         : $state eq 'inactive' ? 'stopped' : undef;
     return undef if !defined($normalized_state);
+    my $reset_kind = $manifest->{_recovery_config_reset_kind};
+    return undef if !$reset_kind && $manifest->{_recovery_config_canonical};
+    my $finding = defined($reset_kind) && $reset_kind eq 'missing' ? 'config_missing'
+        : defined($reset_kind) && $reset_kind eq 'malformed' ? 'config_malformed' : 'config_drift';
     my $response = {
-        finding => 'config_drift',
+        finding => $finding,
         state => $normalized_state,
         success => JSON::PP::true,
         version => 1,
     };
-    $response->{repair} = 'config_rebuild' if $normalized_state eq 'stopped' || $normalized_state eq 'failed';
+    $response->{repair} = $reset_kind ? 'config_reset' : 'config_rebuild'
+        if $normalized_state eq 'stopped' || $normalized_state eq 'failed';
+    return $response;
+}
+
+sub recovery_reset_config {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $manifest = $self->_read_manifest($account, 1, 1);
+    my $response;
+    if (ref($manifest) ne 'HASH' || !$manifest->{_recovery_config_reset_kind}) {
+        $response = _failure('repair_not_applicable');
+    } else {
+        my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+        if ($active || $state eq 'active' || $state eq 'activating' || $state eq 'deactivating') {
+            $response = _failure('repair_not_applicable');
+        } elsif ($state ne 'inactive' && $state ne 'failed') {
+            $response = _failure('instance_unavailable');
+        } else {
+            my $secret = _generate_auth_secret();
+            my $settings = {
+                memory_mib => 8,
+                maxmemory_policy => 'allkeys-lru',
+                maxclients => 10,
+                timeout => 0,
+            };
+            my $config = defined($secret)
+                ? _redis_config($manifest->{data}, $manifest->{socket}, $settings,
+                    $secret, _manifest_database_count($manifest))
+                : undef;
+            my $saved = defined($config) && $self->_atomic_write(
+                $manifest->{config}, $config, 0640, $self->{expected_owner_uid}, $account->{gid}
+            );
+            my $verified = $saved ? $self->_read_manifest($account) : undef;
+            my ($auth_valid, $verified_secret) = $verified
+                ? $self->_read_auth_secret($account, $verified) : (0, undef);
+            if ($verified && $verified->{settings}->{maxclients} == 10
+                && $verified->{settings}->{memory_mib} == 8 && defined($secret)
+                && $auth_valid && defined($verified_secret) && $verified_secret eq $secret) {
+                my ($running, $final_state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+                if (!$running && ($final_state eq 'inactive' || $final_state eq 'failed')) {
+                    $response = {
+                        auth_configured => JSON::PP::true,
+                        secret => $secret,
+                        state => $final_state eq 'failed' ? 'failed' : 'stopped',
+                        success => JSON::PP::true,
+                        version => 1,
+                    };
+                } else {
+                    $response = _failure('instance_unavailable');
+                }
+            } else {
+                $response = _failure(defined($secret) ? 'configuration_storage_unavailable' : 'auth_generation_failed');
+            }
+        }
+    }
+    close($lock);
     return $response;
 }
 
@@ -2850,7 +2912,7 @@ sub validate_instance_manifest {
 }
 
 sub _read_manifest {
-    my ($self, $account, $allow_config_drift) = @_;
+    my ($self, $account, $allow_config_drift, $allow_config_recovery) = @_;
     return undef if !$self->_trusted_directory($self->{etc_root});
     my $directory = $self->_account_config_dir($account->{name});
     my @dir_stat = lstat($directory);
@@ -2880,13 +2942,36 @@ sub _read_manifest {
     }
     return undef if !defined($self->_available_binary($manifest->{backend}));
     my ($settings, $auth_secret, $canonical) = $self->_valid_config($account, $manifest, $allow_config_drift);
-    return undef if !$settings;
-    $manifest->{settings} = $settings;
-    if ($allow_config_drift) {
-        $manifest->{_recovery_config_canonical} = $canonical ? 1 : 0;
-        $manifest->{_recovery_auth_secret} = $auth_secret;
+    if (!$settings) {
+        return undef if !$allow_config_recovery;
+        my $reset_kind = $self->_recovery_config_kind($account, $manifest);
+        return undef if !defined($reset_kind);
+        $manifest->{_recovery_config_reset_kind} = $reset_kind;
+        $manifest->{settings} = {
+            memory_mib => 8, maxmemory_policy => 'allkeys-lru', maxclients => 10, timeout => 0,
+        };
+    } else {
+        $manifest->{settings} = $settings;
+        if ($allow_config_drift) {
+            $manifest->{_recovery_config_canonical} = $canonical ? 1 : 0;
+            $manifest->{_recovery_auth_secret} = $auth_secret;
+        }
     }
     return $manifest;
+}
+
+sub _recovery_config_kind {
+    my ($self, $account, $manifest) = @_;
+    my @data_stat = lstat($manifest->{data});
+    return undef if !@data_stat || !S_ISDIR($data_stat[2])
+        || $data_stat[4] != $account->{uid} || $data_stat[5] != $account->{gid}
+        || ($data_stat[2] & 0077) != 0;
+    my @config_stat = lstat($manifest->{config});
+    return 'missing' if !@config_stat && $! == ENOENT;
+    return undef if !@config_stat || !S_ISREG($config_stat[2])
+        || $config_stat[4] != $self->{expected_owner_uid} || $config_stat[5] != $account->{gid}
+        || $config_stat[3] != 1 || ($config_stat[2] & 0037) != 0 || $config_stat[7] > 16384;
+    return 'malformed';
 }
 
 sub _valid_config {

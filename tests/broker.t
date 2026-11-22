@@ -694,8 +694,10 @@ for my $unsafe_case (@unsafe_recovery_configs) {
     open($drift_config, '>', $recovery_config_path) or die "write unsafe recovery fixture: $!";
     print {$drift_config} $unsafe_case->[1];
     close($drift_config) or die "close unsafe recovery fixture: $!";
-    is($manager->recovery_config_scan($account), undef,
-        "do not offer config recovery for $unsafe_case->[0]");
+    my $malformed_scan = $manager->recovery_config_scan($account);
+    ok($malformed_scan->{success} && $malformed_scan->{finding} eq 'config_malformed'
+        && $malformed_scan->{repair} eq 'config_reset' && $malformed_scan->{state} eq 'stopped',
+        "offer an explicit credential-reset repair for safely stored $unsafe_case->[0]");
     is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
         "refuse config replacement for $unsafe_case->[0]");
     open($drift_config, '<', $recovery_config_path) or die "read unsafe recovery fixture: $!";
@@ -703,10 +705,47 @@ for my $unsafe_case (@unsafe_recovery_configs) {
     close($drift_config) or die "close unsafe recovery fixture: $!";
     is($drift_content, $unsafe_case->[1], "leave $unsafe_case->[0] unchanged");
 }
+open($drift_config, '>', $recovery_config_path) or die "write malformed config reset fixture: $!";
+print {$drift_config} $malformed_auth_config;
+close($drift_config) or die "close malformed config reset fixture: $!";
+my $malformed_reset_scan = $manager->recovery_config_scan($account);
+ok($malformed_reset_scan->{finding} eq 'config_malformed' && $malformed_reset_scan->{repair} eq 'config_reset',
+    'offer the reset repair for a safely owned config with malformed AUTH syntax');
+my $malformed_config_reset = $manager->recovery_reset_config($account);
+ok($malformed_config_reset->{success} && $malformed_config_reset->{auth_configured}
+    && $malformed_config_reset->{secret} =~ /\A[A-Za-z0-9_-]{43}\z/,
+    'replace a safely owned malformed config and rotate AUTH');
+open($drift_config, '<', $recovery_config_path) or die "read malformed config reset result: $!";
+$drift_content = do { local $/; <$drift_config> };
+close($drift_config) or die "close malformed config reset result: $!";
+my $malformed_reset_secret = $malformed_config_reset->{secret};
+like($drift_content, qr/^requirepass \Q$malformed_reset_secret\E$/m,
+    'write the newly generated password into the canonical malformed-config recovery result');
 ok(unlink($recovery_config_path), 'remove config for missing-file recovery test');
-is($manager->recovery_config_scan($account), undef, 'do not offer config recovery when the config file is missing');
+my $missing_config_scan = $manager->recovery_config_scan($account);
+ok($missing_config_scan->{success} && $missing_config_scan->{finding} eq 'config_missing'
+    && $missing_config_scan->{repair} eq 'config_reset' && $missing_config_scan->{state} eq 'stopped',
+    'offer a reset repair for a missing config when the manifest and data directory remain trusted');
 is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
-    'refuse to synthesize config after the existing file is lost');
+    'do not use the settings-preserving rebuild when the config file is missing');
+my $starts_before_config_reset = scalar grep { $_->[0] eq 'start' } @systemctl_calls;
+my $config_reset = $manager->recovery_reset_config($account);
+ok($config_reset->{success} && $config_reset->{state} eq 'stopped'
+    && $config_reset->{auth_configured} && $config_reset->{secret} =~ /\A[A-Za-z0-9_-]{43}\z/,
+    'reset missing config to a bounded profile with a new one-time AUTH password');
+is(scalar(grep { $_->[0] eq 'start' } @systemctl_calls), $starts_before_config_reset,
+    'leave the service stopped after a config reset');
+my $reset_secret = $config_reset->{secret};
+is($config_reset->{secret}, $reset_secret, 'return the generated credential only in the explicit reset receipt');
+open($drift_config, '<', $recovery_config_path) or die "read reset config: $!";
+$drift_content = do { local $/; <$drift_config> };
+close($drift_config) or die "close reset config: $!";
+like($drift_content, qr/^maxmemory 8388608$/m, 'reset config uses the fixed 8 MiB recovery ceiling');
+like($drift_content, qr/^maxclients 10$/m, 'reset config uses the fixed low recovery client limit');
+like($drift_content, qr/^requirepass \Q$reset_secret\E$/m, 'reset config installs the returned AUTH credential');
+is($manager->recovery_config_scan($account)->{finding}, 'service_stopped',
+    'verify that a canonical reset config no longer reports config damage');
+ok(unlink($recovery_config_path), 'remove reset config before restoring the original fixture');
 ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
     'restore the validated config before unsafe-path checks');
 ok(chmod(0660, $recovery_config_path), 'make config group-writable for the unsafe-mode recovery test');

@@ -556,6 +556,13 @@ $configRecoveryScan = $configRecoveryScanClient->scanFleetRecovery('demo');
 $assert(($configRecoveryScan['finding'] ?? null) === 'config_drift'
     && ($configRecoveryScan['repair'] ?? null) === 'config_rebuild' && ($configRecoveryScan['state'] ?? null) === 'failed',
     'Accept the fixed scan-guided config rebuild finding for a failed instance.');
+$missingConfigScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_missing\",\"repair\":\"config_reset\",\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$missingConfigScan = $missingConfigScanClient->scanFleetRecovery('demo');
+$assert(($missingConfigScan['finding'] ?? null) === 'config_missing'
+    && ($missingConfigScan['repair'] ?? null) === 'config_reset',
+    'Accept scan findings for safely missing config with the explicit reset repair.');
 $invalidConfigRecoveryScanClient = new BrokerClient(static fn (string $request): string =>
     "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_drift\",\"repair\":null,\"state\":\"not_configured\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
 );
@@ -603,6 +610,25 @@ $badConfigRebuildStateClient = new BrokerClient(static fn (string $request): str
 );
 $assert($badConfigRebuildStateClient->repairFleetAccount('demo', 'config_rebuild') === null,
     'Reject a configuration rebuild receipt that claims the service was running.');
+$resetSecret = str_repeat('R', 43);
+$configResetRequests = [];
+$configResetClient = new BrokerClient(static function (string $request) use (&$configResetRequests, $resetSecret): string {
+    $configResetRequests[] = $request;
+    return json_encode([
+        'action' => 'recovery.config_reset', 'audit_logged' => true, 'auth_configured' => true,
+        'secret' => $resetSecret, 'state' => 'stopped', 'success' => true,
+        'username' => 'demo', 'version' => 1,
+    ], JSON_THROW_ON_ERROR) . "\n";
+});
+$configResetResult = $configResetClient->repairFleetAccount('demo', 'config_reset');
+$assert($configResetRequests[0] === "{\"operation\":\"fleet.recovery.repair\",\"repair\":\"config_reset\",\"username\":\"demo\",\"version\":1}\n"
+    && ($configResetResult['secret'] ?? null) === $resetSecret && ($configResetResult['state'] ?? null) === 'stopped',
+    'Send the fixed config reset and accept only its one-time AUTH credential receipt.');
+$malformedConfigResetClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.config_reset\",\"audit_logged\":true,\"auth_configured\":true,\"secret\":\"short\",\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert($malformedConfigResetClient->repairFleetAccount('demo', 'config_reset') === null,
+    'Reject a config reset receipt with a malformed credential.');
 $rotationRequests = [];
 $rotationSecret = str_repeat('A', 43);
 $rotationClient = new BrokerClient(static function (string $request) use (&$rotationRequests, $rotationSecret): string {
