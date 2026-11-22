@@ -4,12 +4,15 @@ use warnings;
 use Errno qw(ENOENT);
 use Fcntl qw(O_RDONLY O_WRONLY O_RDWR O_CREAT O_EXCL O_NOFOLLOW :mode :flock);
 use File::Spec;
+use IO::Socket::UNIX;
 use JSON::PP ();
 use MIME::Base64 qw(encode_base64);
 use POSIX qw(WNOHANG _exit setgid setuid);
+use Socket qw(SOCK_STREAM);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 use Orm::Broker::BackendPolicy;
 use Orm::Broker::ProviderPolicy;
+use Orm::Broker::SlowLogReader;
 use Sys::Syslog qw(:standard :macros);
 
 my %SERVER_BINARIES = (
@@ -87,6 +90,7 @@ sub new {
         restore_state_timeout => defined($args{restore_state_timeout}) ? $args{restore_state_timeout} : 20,
         metrics_probe => $args{metrics_probe},
         redis_cli_call => $args{redis_cli_call},
+        slowlog_reply_call => $args{slowlog_reply_call},
         config_get => $args{config_get},
         config_set => $args{config_set},
         auth_probe => $args{auth_probe},
@@ -771,7 +775,7 @@ sub read_diagnostic_command {
     my ($self, $account, $command_class) = @_;
     return _failure('invalid_request') if !_valid_account($account)
         || !defined($command_class) || ref($command_class)
-        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)\z/;
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|slowlog|dbsize)\z/;
     my $status = $self->status($account);
     return $status if ref($status) ne 'HASH' || !$status->{success};
     return _failure('not_configured') if $status->{state} eq 'not_configured';
@@ -800,6 +804,10 @@ sub read_diagnostic_command {
         my $commandstats = _parse_commandstats($self->_run_redis_cli($backend, $socket, 'INFO', 'commandstats'));
         return _failure('diagnostics_unavailable') if ref($commandstats) ne 'HASH';
         $result = $commandstats;
+    } elsif ($command_class eq 'slowlog') {
+        my $slowlog = $self->_read_slowlog($backend, $socket);
+        return _failure('diagnostics_unavailable') if ref($slowlog) ne 'HASH';
+        $result = $slowlog;
     } else {
         my %sections = (
             info_server => ['server', { $version_field => 'version', uptime_in_seconds => 'integer' }],
@@ -1958,6 +1966,56 @@ sub _run_redis_cli {
     alarm(0);
     return undef if !$completed || $opened || $output eq '' || length($output) > $output_limit;
     return $output;
+}
+
+sub _read_slowlog {
+    my ($self, $backend, $socket) = @_;
+    return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/
+        || !defined($socket) || ref($socket)
+        || $socket !~ m{\A\Q$self->{data_root}\E/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+
+    if (ref($self->{slowlog_reply_call}) eq 'CODE') {
+        my $reply = eval { $self->{slowlog_reply_call}->($backend, $socket) };
+        return undef if !defined($reply) || ref($reply) || length($reply) > 65536;
+        open(my $handle, '<', \$reply) or return undef;
+        binmode($handle);
+        return Orm::Broker::SlowLogReader->parse_handle($handle);
+    }
+
+    my ($auth_valid, $auth_secret) = $self->_auth_secret_for_socket($socket);
+    return undef if !$auth_valid;
+    my $client = IO::Socket::UNIX->new(Type => SOCK_STREAM, Peer => $socket);
+    return undef if !$client;
+    binmode($client);
+
+    my $result;
+    my $completed = eval {
+        local $SIG{ALRM} = sub { die "slow log read timeout\n" };
+        alarm(3);
+        if (defined($auth_secret)) {
+            my $auth_request = _redis_resp_command('AUTH', $auth_secret);
+            die "slow log auth write failed\n" if !print {$client} $auth_request;
+            die "slow log auth failed\n" if !Orm::Broker::SlowLogReader->expect_simple_ok($client);
+        }
+        my $request = _redis_resp_command('SLOWLOG', 'GET', '11');
+        die "slow log request failed\n" if !print {$client} $request;
+        $result = Orm::Broker::SlowLogReader->parse_handle($client);
+        alarm(0);
+        1;
+    };
+    alarm(0);
+    close($client);
+    return undef if !$completed;
+    return $result;
+}
+
+sub _redis_resp_command {
+    my (@arguments) = @_;
+    my $request = '*' . scalar(@arguments) . "\r\n";
+    for my $argument (@arguments) {
+        $request .= '$' . length($argument) . "\r\n" . $argument . "\r\n";
+    }
+    return $request;
 }
 
 sub _auth_secret_for_socket {

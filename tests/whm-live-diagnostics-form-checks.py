@@ -13,9 +13,9 @@ checks = {
     and "chmod($cookieFile, 0600)" in script,
     "pins HTTPS to the local WHM listener": "CURLOPT_RESOLVE => [$host . ':2087:127.0.0.1']" in script,
     "keeps redirects inside the same SSO session": "outside the authenticated session" in script,
-    "covers all seven fixed command classes": all(
+    "covers all eight fixed command classes": all(
         f"'{name}' =>" in script
-        for name in ("ping", "info_server", "info_memory", "info_clients", "info_stats", "info_commandstats", "dbsize")
+        for name in ("ping", "info_server", "info_memory", "info_clients", "info_stats", "info_commandstats", "slowlog", "dbsize")
     ),
     "waits for the per-account diagnostic throttle window": "usleep(5_100_000)" in script,
     "checks class-specific successful audit records": "'diagnostics.' . $commandClass" in script

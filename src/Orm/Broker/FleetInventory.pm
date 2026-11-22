@@ -240,7 +240,7 @@ sub diagnostics {
     my ($self, $username, $command_class) = @_;
     return _fleet_failure('invalid_request', $username, 'diagnostics.read', 0)
         if !defined($command_class) || ref($command_class)
-        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)\z/;
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|slowlog|dbsize)\z/;
     my $action = 'diagnostics.' . $command_class;
     return _fleet_failure('invalid_request', $username, $action, 0)
         if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
@@ -786,7 +786,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
+        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|slowlog|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -795,7 +795,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
+        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|slowlog|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 
@@ -835,6 +835,7 @@ sub _valid_diagnostic_result {
         info_clients => [qw(blocked_clients connected_clients maxclients)],
         info_stats => [qw(commands_per_second evicted_keys expired_keys keyspace_hits keyspace_misses)],
         info_commandstats => [qw(commands truncated)],
+        slowlog => [qw(entries truncated)],
     );
     my $fields = $expected{$command_class};
     return 0 if !defined($fields) || join(',', sort keys %{$result}) ne join(',', sort @{$fields});
@@ -851,6 +852,22 @@ sub _valid_diagnostic_result {
                     || $command->{$counter} !~ /\A(?:0|[1-9][0-9]{0,15})\z/
                     || $command->{$counter} > $max_integer;
             }
+        }
+        return 1;
+    }
+    if ($command_class eq 'slowlog') {
+        return 0 if ref($result->{truncated}) || ($result->{truncated} ne '0' && $result->{truncated} ne '1')
+            || ref($result->{entries}) ne 'ARRAY' || @{$result->{entries}} > 10;
+        for my $entry (@{$result->{entries}}) {
+            return 0 if ref($entry) ne 'HASH' || join(',', sort keys %{$entry}) ne 'command,duration_usec,timestamp'
+                || !defined($entry->{command}) || ref($entry->{command})
+                || $entry->{command} !~ /\A(?:[A-Za-z][A-Za-z0-9_.|]{0,63}|other)\z/;
+            for my $counter (qw(duration_usec timestamp)) {
+                return 0 if !defined($entry->{$counter}) || ref($entry->{$counter})
+                    || $entry->{$counter} !~ /\A(?:0|[1-9][0-9]{0,15})\z/
+                    || $entry->{$counter} > $max_integer;
+            }
+            return 0 if $entry->{timestamp} > 253402300799;
         }
         return 1;
     }

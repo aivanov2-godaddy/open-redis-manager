@@ -158,6 +158,9 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
             info_commandstats => { commands => [
                 { command => 'get', calls => 18, usec => 45 },
             ], truncated => 0 },
+            slowlog => { entries => [
+                { command => 'get', duration_usec => 456, timestamp => 1700000000 },
+            ], truncated => 0 },
             dbsize => { database_keys => 42 },
         );
         return {
@@ -327,6 +330,19 @@ is_deeply($audit[-1], [0, 'acct01', 'diagnostics.info_commandstats', 'success', 
 ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_commandstats', {
     commands => [{ command => 'get', calls => 1, usec => 2, key => 'secret' }], truncated => 0,
 }), 'reject command arguments and extra fields from a command-stat response');
+my $slowlog_request = '{"command_class":"slowlog","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
+ok(parse_request($slowlog_request)->{command_class} eq 'slowlog', 'accept the fixed slow-log diagnostic class');
+my $slowlog_response = $inventory->diagnostics('acct01', 'slowlog');
+ok($slowlog_response->{success} && $slowlog_response->{result}->{entries}->[0]->{command} eq 'get',
+    'return only the validated slow-log command and timing');
+is_deeply($audit[-1], [0, 'acct01', 'diagnostics.slowlog', 'success', 'running'],
+    'audit slow-log reads by fixed class without storing log contents');
+ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('slowlog', {
+    entries => [{ command => 'get', duration_usec => 1, timestamp => 1700000000, arguments => ['secret'] }], truncated => 0,
+}), 'reject slow-log command arguments and unexpected response fields');
+ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('slowlog', {
+    entries => [{ command => 'get', duration_usec => 1, timestamp => 253402300800 }], truncated => 0,
+}), 'reject timestamps outside the supported UTC range');
 is($inventory->diagnostics('acct02', 'dbsize')->{error}, 'not_running', 'require a running instance for diagnostics');
 is($inventory->diagnostics('../root', 'dbsize')->{error}, 'invalid_request', 'reject malformed diagnostics targets');
 is($inventory->diagnostics('acct01', 'flushall')->{error}, 'invalid_request', 'reject unknown command classes before dispatch');

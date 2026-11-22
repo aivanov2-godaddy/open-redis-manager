@@ -11,7 +11,7 @@ final class BrokerClient
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
     private const MAX_RESPONSE_BYTES = 262144;
     private const MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
-    private const DIAGNOSTIC_COMMAND_CLASSES = ['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'dbsize'];
+    private const DIAGNOSTIC_COMMAND_CLASSES = ['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'slowlog', 'dbsize'];
     private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
@@ -1464,6 +1464,7 @@ final class BrokerClient
             'info_clients' => ['blocked_clients', 'connected_clients', 'maxclients'],
             'info_stats' => ['commands_per_second', 'evicted_keys', 'expired_keys', 'keyspace_hits', 'keyspace_misses'],
             'info_commandstats' => ['commands', 'truncated'],
+            'slowlog' => ['entries', 'truncated'],
             default => [],
         };
         $keys = array_keys($result);
@@ -1504,6 +1505,32 @@ final class BrokerClient
                         || $command[$counter] > self::MAX_DIAGNOSTIC_INTEGER) {
                         return false;
                     }
+                }
+            }
+            return true;
+        }
+        if ($commandClass === 'slowlog') {
+            if (!is_int($result['truncated'] ?? null) || !in_array($result['truncated'], [0, 1], true)
+                || !is_array($result['entries'] ?? null)
+                || !array_is_list($result['entries']) || count($result['entries']) > 10) {
+                return false;
+            }
+            foreach ($result['entries'] as $entry) {
+                if (!is_array($entry) || array_is_list($entry)
+                    || array_diff(array_keys($entry), ['command', 'duration_usec', 'timestamp']) !== []
+                    || count($entry) !== 3
+                    || !is_string($entry['command'] ?? null)
+                    || preg_match('/\A(?:[A-Za-z][A-Za-z0-9_.|]{0,63}|other)\z/', $entry['command']) !== 1) {
+                    return false;
+                }
+                foreach (['duration_usec', 'timestamp'] as $counter) {
+                    if (!is_int($entry[$counter] ?? null) || $entry[$counter] < 0
+                        || $entry[$counter] > self::MAX_DIAGNOSTIC_INTEGER) {
+                        return false;
+                    }
+                }
+                if ($entry['timestamp'] > 253402300799) {
+                    return false;
                 }
             }
             return true;
