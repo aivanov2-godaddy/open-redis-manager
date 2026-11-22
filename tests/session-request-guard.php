@@ -117,7 +117,7 @@ $assert(str_contains($cpanelPage, "if (\$brokerVerified && \\Orm\\Security\\Sess
 
 $whmActions = $actionsForInput($whmPage, 'orm_action');
 $assert($whmActions === [
-    'backend.select', 'fleet.backup', 'fleet.backup.batch', 'fleet.control', 'fleet.diagnostics',
+    'backend.select', 'fleet.auth.rotate', 'fleet.backup', 'fleet.backup.batch', 'fleet.control', 'fleet.diagnostics',
     'fleet.migrate', 'fleet.recovery.repair', 'fleet.recovery.scan', 'fleet.summary',
     'provider.events.configure', 'provider.policy.update', 'security.policy.update', 'security.report',
     'update.apply', 'update.preview', 'update.status',
@@ -127,6 +127,7 @@ $guardedActions = [
     'security.policy.update' => 'if',
     'security.report' => 'if',
     'fleet.control' => '$controlRequest',
+    'fleet.auth.rotate' => '$fleetAuthRotationRequest',
     'fleet.backup' => '$fleetBackupRequest',
     'fleet.backup.batch' => '$fleetBatchRequest',
     'fleet.migrate' => '$fleetMigrationRequest',

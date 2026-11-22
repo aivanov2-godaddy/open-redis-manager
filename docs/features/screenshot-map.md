@@ -13,7 +13,7 @@ The public gallery has three cPanel and nine WHM screenshots. Its cards open an 
 | WHM account management | Search/filter, per-account status, port, resource use and action links. |
 | WHM command console | Select an account, issue a Redis CLI command and read output. |
 | WHM backups | Account-specific and fleet snapshot workflows. |
-| WHM recovery | Scan results, health actions, restart/config/credential/permission repair. |
+| WHM recovery | Scan results, health actions, restart/config repair, credential rotation and permission repair. ORM implements selected-account AUTH rotation; missing-config recovery and ownership repair remain open. |
 | WHM global settings | Defaults, update checks, user CLI visibility and history retention. |
 | WHM security | Firewall guidance, local binding and credential rotation. |
 | WHM package and reseller policy | Root-only package service availability, memory/retention ceilings, report/warn/enforce mode, exposure tier, reseller usage and quota controls. |

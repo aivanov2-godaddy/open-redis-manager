@@ -1368,6 +1368,60 @@ final class BrokerClient
         ];
     }
 
+    /** @return array{success:bool,version:int,action?:string,audit_logged?:bool,auth_configured?:bool,secret?:string,state?:string,username?:string,error?:string}|null */
+    public function rotateFleetAuth(string $username): ?array
+    {
+        if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1) {
+            return null;
+        }
+        $request = json_encode(
+            ['operation' => 'fleet.auth.rotate', 'username' => $username, 'version' => 1],
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        ) . "\n";
+        $response = $this->exchange === null
+            ? $this->exchangeWithLocalBroker($request, 30)
+            : ($this->exchange)($request);
+        $decoded = self::decodeSingleBrokerResponse($response);
+        if (!is_array($decoded) || ($decoded['version'] ?? null) !== 1 || !is_bool($decoded['success'] ?? null)) {
+            return null;
+        }
+        $keys = array_keys($decoded);
+        sort($keys);
+        if ($decoded['success']) {
+            if ($keys !== ['action', 'audit_logged', 'auth_configured', 'secret', 'state', 'success', 'username', 'version']
+                || ($decoded['action'] ?? null) !== 'auth.rotate' || ($decoded['username'] ?? null) !== $username
+                || ($decoded['auth_configured'] ?? null) !== true || ($decoded['state'] ?? null) !== 'running'
+                || !is_bool($decoded['audit_logged'] ?? null)
+                || !is_string($decoded['secret'] ?? null)
+                || preg_match('/\A[A-Za-z0-9_-]{43}\z/', $decoded['secret']) !== 1) {
+                return null;
+            }
+            return $decoded;
+        }
+        if ($keys === ['error', 'success', 'version']
+            && in_array($decoded['error'] ?? null, ['not_authorized', 'operation_failed', 'rate_limited'], true)) {
+            return ['error' => $decoded['error'], 'success' => false, 'version' => 1];
+        }
+        $expectedKeys = ['action', 'audit_logged', 'error', 'success', 'username', 'version'];
+        if ($keys !== $expectedKeys || ($decoded['action'] ?? null) !== 'auth.rotate'
+            || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null)
+            || !in_array($decoded['error'] ?? null, [
+                'account_unavailable', 'auth_generation_failed', 'auth_recovery_required', 'auth_rotation_failed',
+                'configuration_storage_unavailable', 'configuration_unavailable', 'instance_unavailable',
+                'invalid_request', 'not_configured', 'not_running', 'operation_in_progress', 'operation_failed', 'rate_limited',
+            ], true)) {
+            return null;
+        }
+        return [
+            'action' => 'auth.rotate',
+            'audit_logged' => $decoded['audit_logged'],
+            'error' => $decoded['error'],
+            'success' => false,
+            'username' => $username,
+            'version' => 1,
+        ];
+    }
+
     private static function decodeSingleBrokerResponse(?string $response): ?array
     {
         if (!is_string($response) || $response === '' || strlen($response) > self::MAX_RESPONSE_BYTES

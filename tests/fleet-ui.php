@@ -41,6 +41,14 @@ $assert(str_contains($whm, "'info_memory' => ['label' => 'INFO memory'")
     'offer an accessible fixed diagnostic-class selector and execute only the selected class');
 $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecurityReport::consumeRateLimit'),
     'guard report generation behind the root WHM POST path and persistent throttle');
+$assert(str_contains($whm, '$fleetAuthRotationRequest = $rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
+    && str_contains($whm, "&& (\$_POST['orm_action'] ?? null) === 'fleet.auth.rotate'")
+    && str_contains($whm, 'rotateFleetAuth($username)'),
+    'guard per-account AUTH rotation behind root authorization and the WHM session token');
+$assert(str_contains($whm, 'Enable / rotate AUTH password')
+    && str_contains($whm, 'Cache-Control: private, no-store, max-age=0')
+    && str_contains($whm, 'One-time AUTH password') && str_contains($whm, 'ORM will not show it again'),
+    'show generated credentials once in a non-cacheable WHM response with explicit handling guidance');
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');

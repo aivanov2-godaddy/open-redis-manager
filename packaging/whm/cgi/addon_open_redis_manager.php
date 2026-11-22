@@ -247,6 +247,49 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
         ];
     }
 }
+$fleetAuthRotationMessage = null;
+$fleetAuthRotationResult = null;
+$fleetAuthRotationRequest = $rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVER)
+    && ($_POST['orm_action'] ?? null) === 'fleet.auth.rotate';
+if ($fleetAuthRotationRequest) {
+    header('Cache-Control: private, no-store, max-age=0');
+    header('Pragma: no-cache');
+    header('Referrer-Policy: no-referrer');
+    header('X-Content-Type-Options: nosniff');
+    $username = $_POST['username'] ?? null;
+    $rotation = is_string($username) ? $fleetClient->rotateFleetAuth($username) : null;
+    if ($rotation === null) {
+        $fleetAuthRotationMessage = ['type' => 'error', 'text' => 'The AUTH rotation result could not be verified. Check this account before retrying.'];
+    } elseif ($rotation['success']) {
+        $fleetAuthRotationResult = $rotation;
+        $fleetAuthRotationMessage = [
+            'type' => 'success',
+            'text' => 'AUTH was enabled or rotated for ' . $rotation['username'] . '. The previous password is revoked; update its applications now.'
+                . ($rotation['audit_logged'] ? ' The action was recorded in the system authentication log.'
+                    : ' Warning: the credential changed, but its audit record could not be confirmed.'),
+        ];
+    } else {
+        $rotationErrors = [
+            'account_unavailable' => 'The selected cPanel account could not be verified.',
+            'auth_generation_failed' => 'A new password could not be generated; no change was applied.',
+            'auth_recovery_required' => 'ORM could not verify the rotation rollback. Check the service and applications before retrying.',
+            'auth_rotation_failed' => 'The rotation failed; ORM attempted to restore the previous password.',
+            'configuration_storage_unavailable' => 'The new credential could not be stored safely; no change was applied.',
+            'configuration_unavailable' => 'The instance configuration could not be verified; no change was applied.',
+            'instance_unavailable' => 'The instance could not be verified; no change was applied.',
+            'not_configured' => 'The selected account does not have an ORM-managed instance.',
+            'not_running' => 'The selected instance must be running before its AUTH password can be rotated.',
+            'operation_in_progress' => 'Another operation is active for this account. Wait, then scan the account before retrying.',
+            'rate_limited' => 'Wait one minute before rotating AUTH for this account again.',
+        ];
+        $fleetAuthRotationMessage = [
+            'type' => 'error',
+            'text' => ($rotationErrors[$rotation['error'] ?? ''] ?? 'The AUTH rotation was rejected.')
+                . (array_key_exists('audit_logged', $rotation) && !$rotation['audit_logged']
+                    ? ' The denial could not be confirmed in the audit log.' : ''),
+        ];
+    }
+}
 $fleetControlMessage = null;
 $fleetBackupMessage = null;
 $fleetBatchResult = null;
@@ -917,6 +960,16 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php if ($fleetMigrationMessage !== null): ?>
         <p role="<?= $fleetMigrationMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetMigrationMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
+      <?php if ($fleetAuthRotationMessage !== null): ?>
+        <p role="<?= $fleetAuthRotationMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetAuthRotationMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
+        <?php if ($fleetAuthRotationResult !== null): ?>
+          <section aria-labelledby="orm-auth-rotation-title">
+            <h3 id="orm-auth-rotation-title">One-time AUTH password for <?= htmlspecialchars($fleetAuthRotationResult['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h3>
+            <p>Copy this password now and update the account’s applications. ORM will not show it again. Keep it private.</p>
+            <output><code><?= htmlspecialchars($fleetAuthRotationResult['secret'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></output>
+          </section>
+        <?php endif; ?>
+      <?php endif; ?>
       <?php if ($fleetDiagnosticsMessage !== null): ?>
         <p role="<?= $fleetDiagnosticsMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetDiagnosticsMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p>
       <?php endif; ?>
@@ -1040,7 +1093,7 @@ WHM::header('Open Redis Manager', 0, 0);
           <p>Batch operations apply only to this visible page and at most two running accounts per request. Each outcome is reported independently and recorded in the system authentication log.</p>
         </div>
         <table>
-           <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Usage from snapshot</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery scan</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
+            <thead><tr><th scope="col">cPanel account</th><th scope="col">Backend</th><th scope="col">Instance state</th><th scope="col">Usage from snapshot</th><th scope="col">Service actions</th><th scope="col">Read-only diagnostics</th><th scope="col">Recovery and AUTH</th><th scope="col">Migration</th><th scope="col">Backups and restore</th></tr></thead>
           <tbody id="orm-fleet-rows">
             <?php foreach ($fleetPage['entries'] as $entry): ?>
               <tr data-account="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" data-state="<?= htmlspecialchars($entry['state'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
@@ -1105,6 +1158,11 @@ WHM::header('Open Redis Manager', 0, 0);
                       <?php endif; ?>
                     </form>
                   <?php endif; ?>
+                  <form method="post" class="orm-fleet-actions">
+                    <input type="hidden" name="orm_action" value="fleet.auth.rotate">
+                    <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
+                    <button type="submit"<?= $entry['state'] === 'running' ? '' : ' disabled' ?> onclick="return confirm('Enable or rotate AUTH for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? The service will restart briefly, the previous password will be revoked, and the new password will be shown once on the next page.')">Enable / rotate AUTH password</button>
+                  </form>
                 </td>
                 <td>
                   <?php if ($entry['backend'] === 'redis'): ?>

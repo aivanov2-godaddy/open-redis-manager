@@ -497,7 +497,8 @@ sub auth_status {
 }
 
 sub rotate_auth {
-    my ($self, $account) = @_;
+    my ($self, $account, $actor_uid) = @_;
+    $actor_uid = $account->{uid} if !defined($actor_uid);
     my $lock = $self->_acquire_instance_lock($account);
     my $response;
     if (!defined($lock)) {
@@ -505,7 +506,7 @@ sub rotate_auth {
     } else {
         $response = $self->_rotate_auth_locked($account);
     }
-    $self->_auth_audit($account, $response, 'auth.rotate');
+    $self->_auth_audit($account, $response, 'auth.rotate', $actor_uid);
     close($lock) if defined($lock);
     return $response;
 }
@@ -568,7 +569,8 @@ sub _disable_auth_locked {
 }
 
 sub _auth_audit {
-    my ($self, $account, $response, $action) = @_;
+    my ($self, $account, $response, $action, $actor_uid) = @_;
+    $actor_uid = $account->{uid} if !defined($actor_uid) || ref($actor_uid) || $actor_uid !~ /\A[0-9]{1,10}\z/;
     $action = $action eq 'auth.disable' ? 'auth.disable' : 'auth.rotate';
     my $outcome = ref($response) eq 'HASH' && $response->{success}
         ? 'success' : ref($response) eq 'HASH' ? ($response->{error} // 'failed') : 'failed';
@@ -576,13 +578,13 @@ sub _auth_audit {
     my $state = $outcome eq 'success' || $outcome eq 'auth_rotation_failed' || $outcome eq 'auth_disable_failed'
         ? 'running' : 'unavailable';
     if (ref($self->{auth_audit}) eq 'CODE') {
-        eval { $self->{auth_audit}->($account->{uid}, $account->{name}, $action, $outcome, $state) };
+        eval { $self->{auth_audit}->($actor_uid, $account->{name}, $action, $outcome, $state) };
         return;
     }
     eval {
         openlog('orm-broker', 'pid', 'authpriv');
         syslog(LOG_NOTICE, 'account_auth actor_uid=%s account=%s action=%s result=%s state=%s',
-            $account->{uid}, $account->{name}, $action, $outcome, $state)
+            $actor_uid, $account->{name}, $action, $outcome, $state)
             or die "syslog write failed";
         closelog();
     };
