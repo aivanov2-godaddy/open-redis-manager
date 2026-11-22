@@ -71,10 +71,12 @@ is(parse_request('{"operation":"fleet.backup.create","username":"acct01","versio
 my $fleet_diagnostics_request = '{"command_class":"info_memory","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
 is(parse_request($fleet_diagnostics_request)->{command_class}, 'info_memory',
     'accept a canonical fixed read-only diagnostics command class');
-for my $command_class (qw(ping info_server info_memory info_clients info_stats dbsize)) {
+for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats dbsize)) {
     is(parse_request('{"command_class":"' . $command_class . '","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n")
         ->{command_class}, $command_class, "accept the fixed $command_class diagnostic class");
 }
+ok(!parse_request('{"command_class":"info_commandstats","command":"INFO","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n"),
+    'reject caller-provided Redis commands for command-stat visibility');
 my $fleet_restore = parse_request('{"backup_id":"snapshot-1794760000-a1b2c3d4.rdb","operation":"fleet.backup.restore","username":"acct01","version":1}' . "\n");
 ok($fleet_restore && $fleet_restore->{backup_id} eq 'snapshot-1794760000-a1b2c3d4.rdb'
     && $fleet_restore->{username} eq 'acct01', 'accept a canonical account-scoped fleet restore request');
@@ -871,6 +873,7 @@ ok($manager->start($account)->{success}, 'start the instance again after config 
         return "# Memory\r\nused_memory:1048576\r\nused_memory_peak:2097152\r\nmaxmemory:67108864\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'memory';
         return "# Clients\r\nconnected_clients:3\r\nblocked_clients:0\r\nmaxclients:100\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'clients';
         return "# Stats\r\ninstantaneous_ops_per_sec:12\r\nkeyspace_hits:90\r\nkeyspace_misses:10\r\nexpired_keys:4\r\nevicted_keys:2\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'stats';
+        return "# Commandstats\r\ncmdstat_get:calls=18,usec=45,usec_per_call=2.50,rejected_calls=0,failed_calls=1\r\ncmdstat_set:calls=7,usec=35,usec_per_call=5.00,rejected_calls=2,failed_calls=0\r\n" if @arguments == 2 && $arguments[0] eq 'INFO' && $arguments[1] eq 'commandstats';
         return "42\n" if @arguments == 1 && $arguments[0] eq 'DBSIZE';
         return undef;
     };
@@ -905,9 +908,13 @@ ok($manager->start($account)->{success}, 'start the instance again after config 
         info_memory => { maxmemory_bytes => 67108864, memory_peak_bytes => 2097152, memory_used_bytes => 1048576 },
         info_clients => { blocked_clients => 0, connected_clients => 3, maxclients => 100 },
         info_stats => { commands_per_second => 12, evicted_keys => 2, expired_keys => 4, keyspace_hits => 90, keyspace_misses => 10 },
+        info_commandstats => { commands => [
+            { command => 'get', calls => 18, usec => 45 },
+            { command => 'set', calls => 7, usec => 35 },
+        ], truncated => 0 },
         dbsize => { database_keys => 42 },
     );
-    for my $command_class (qw(ping info_server info_memory info_clients info_stats dbsize)) {
+    for my $command_class (qw(ping info_server info_memory info_clients info_stats info_commandstats dbsize)) {
         my $probe = $manager->read_diagnostic_command($account, $command_class);
         ok($probe->{success} && $probe->{command_class} eq $command_class,
             "run selected $command_class probe and return its fixed class");
@@ -915,8 +922,37 @@ ok($manager->start($account)->{success}, 'start the instance again after config 
             "return only the normalized $command_class result fields");
     }
     is_deeply([map { [@{$_}[2 .. $#{$_}]] } @diagnostics_commands], [
-        ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'], ['DBSIZE'],
+        ['PING'], ['INFO', 'server'], ['INFO', 'memory'], ['INFO', 'clients'], ['INFO', 'stats'],
+        ['INFO', 'commandstats'], ['DBSIZE'],
     ], 'execute each selected class using only its fixed Redis arguments');
+    my $commandstats = Orm::Broker::InstanceManager::_parse_commandstats(
+        "# Commandstats\ncmdstat_get:calls=18,usec=45,usec_per_call=2.50,rejected_calls=0,failed_calls=1\n"
+            . "cmdstat_acl|whoami:calls=2,usec=12,usec_per_call=6.00\n"
+    );
+    is_deeply($commandstats, { commands => [
+        { command => 'get', calls => 18, usec => 45 },
+        { command => 'acl|whoami', calls => 2, usec => 12 },
+    ], truncated => 0 }, 'parse command names and counters while discarding timing details and all command arguments');
+    is(Orm::Broker::InstanceManager::_parse_commandstats("cmdstat_get:calls=1,usec=2,secret=value\n"), undef,
+        'reject malformed command-stat payloads instead of exposing unparsed data');
+    is(Orm::Broker::InstanceManager::_parse_commandstats("cmdstat_get;keys:calls=1,usec=2\n"), undef,
+        'reject unrecognized command-name characters');
+    my $many_commandstats = join('', map { "cmdstat_cmd$_:calls=" . (100 - $_) . ",usec=10,usec_per_call=1.00\n" } 1 .. 61);
+    my $bounded_commandstats = Orm::Broker::InstanceManager::_parse_commandstats($many_commandstats);
+    ok($bounded_commandstats->{truncated} && @{$bounded_commandstats->{commands}} == 60
+        && $bounded_commandstats->{commands}->[0]->{command} eq 'cmd1',
+        'return only the 60 most-called command types in deterministic order');
+    my $too_many_command_rows = { commands => [map { { command => "cmd$_", calls => 1, usec => 1 } } 1 .. 61], truncated => 1 };
+    ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_commandstats', $too_many_command_rows),
+        'reject command-stat structures above the shared output row bound');
+    my $valid_commandstats = { commands => [
+        { command => 'get', calls => 18, usec => 45 }, { command => 'set', calls => 7, usec => 35 },
+    ], truncated => 0 };
+    ok(Orm::Broker::FleetInventory::_valid_diagnostic_result('info_commandstats', $valid_commandstats),
+        'accept the bounded command-stat result schema');
+    ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_commandstats', {
+        %{$valid_commandstats}, raw_output => 'private command data',
+    }), 'reject unexpected raw diagnostic data');
     ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_memory', { memory_used_bytes => 'raw' }),
         'reject nonnumeric output from a selected diagnostic class');
     is(Orm::Broker::InstanceManager::_parse_info_fields("counter:9000000000000001\n", { counter => 'integer' }), undef,

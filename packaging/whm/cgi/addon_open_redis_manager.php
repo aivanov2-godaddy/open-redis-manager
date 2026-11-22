@@ -147,6 +147,7 @@ $diagnosticCommands = [
     'info_memory' => ['label' => 'INFO memory', 'fields' => ['memory_used_bytes' => 'Memory used (bytes)', 'memory_peak_bytes' => 'Memory peak (bytes)', 'maxmemory_bytes' => 'Configured memory limit (bytes)']],
     'info_clients' => ['label' => 'INFO clients', 'fields' => ['connected_clients' => 'Connected clients', 'blocked_clients' => 'Blocked clients', 'maxclients' => 'Client limit']],
     'info_stats' => ['label' => 'INFO stats', 'fields' => ['commands_per_second' => 'Commands per second', 'keyspace_hits' => 'Keyspace hits', 'keyspace_misses' => 'Keyspace misses', 'expired_keys' => 'Expired keys', 'evicted_keys' => 'Evicted keys']],
+    'info_commandstats' => ['label' => 'INFO commandstats', 'fields' => []],
     'dbsize' => ['label' => 'DBSIZE', 'fields' => ['database_keys' => 'Keys in database 0']],
 ];
 $fleetDiagnosticsMessage = null;
@@ -1004,6 +1005,17 @@ WHM::header('Open Redis Manager', 0, 0);
       <?php if ($fleetDiagnosticsResult !== null): ?>
         <?php $diagnosticDefinition = $diagnosticCommands[$fleetDiagnosticsResult['command_class']]; ?>
         <h3>Read-only <?= htmlspecialchars($diagnosticDefinition['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> result for <code><?= htmlspecialchars($fleetDiagnosticsResult['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></h3>
+        <?php if ($fleetDiagnosticsResult['command_class'] === 'info_commandstats'): ?>
+          <p>Command calls and CPU time since the Redis/Valkey process started. Command arguments, keys and values are not returned.</p>
+          <table><thead><tr><th scope="col">Command</th><th scope="col">Calls</th><th scope="col">Total CPU time (µs)</th></tr></thead><tbody>
+            <?php foreach ($fleetDiagnosticsResult['result']['commands'] as $command): ?>
+              <tr><th scope="row"><code><?= htmlspecialchars(strtoupper($command['command']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></th>
+                <td><?= number_format($command['calls']) ?></td><td><?= number_format($command['usec']) ?></td></tr>
+            <?php endforeach; ?>
+            <?php if ($fleetDiagnosticsResult['result']['commands'] === []): ?><tr><td colspan="3">No command statistics were returned.</td></tr><?php endif; ?>
+          </tbody></table>
+          <p><?= $fleetDiagnosticsResult['result']['truncated'] ? 'Showing the 60 most-called command types.' : 'Showing all reported command types.' ?> These counters reset when the service restarts and are not a time-window rate.</p>
+        <?php else: ?>
         <table><tbody>
           <?php foreach ($diagnosticDefinition['fields'] as $field => $label): ?>
             <tr><th scope="row"><?= htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></th>
@@ -1012,6 +1024,7 @@ WHM::header('Open Redis Manager', 0, 0);
                     : (string) $fleetDiagnosticsResult['result'][$field], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td></tr>
           <?php endforeach; ?>
         </tbody></table>
+        <?php endif; ?>
         <p>Only the selected fixed, read-only Redis/Valkey command class was run. This view never returns keys, values, credentials, or raw command output.</p>
       <?php endif; ?>
         <?php if ($fleetSummaryMessage !== null): ?><p role="<?= $fleetSummaryMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($fleetSummaryMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
@@ -1672,7 +1685,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','recovery.ownership_fix','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.info_commandstats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','recovery.ownership_fix','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>

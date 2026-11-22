@@ -23,7 +23,7 @@ final class WhmAuditLog
         'start', 'stop', 'restart', 'backup.create', 'backup.restore', 'migration.to-valkey',
         'instance.provision', 'instance.configure', 'instance.start', 'instance.stop', 'auto_provision',
         'diagnostics.read', 'diagnostics.ping', 'diagnostics.info_server', 'diagnostics.info_memory',
-        'diagnostics.info_clients', 'diagnostics.info_stats', 'diagnostics.dbsize',
+        'diagnostics.info_clients', 'diagnostics.info_stats', 'diagnostics.info_commandstats', 'diagnostics.dbsize',
         'recovery.scan', 'recovery.start', 'recovery.config_rebuild', 'recovery.config_reset', 'recovery.ownership_fix', 'auth.enable', 'auth.rotate', 'auth.disable',
         'provider.default', 'provider.package.save', 'provider.package.remove',
         'provider.reseller.save', 'provider.reseller.remove', 'provider.branding.save',

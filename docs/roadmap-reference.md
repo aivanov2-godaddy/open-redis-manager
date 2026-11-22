@@ -26,7 +26,7 @@ The reference [documentation roadmap](https://cpanelredismanager.com/documentati
 
 | Version family | Planned themes described by the reference |
 |---|---|
-| 2.7.x | Observability and debugging: deeper graphs, slow-log and command visibility, debug mode, security summaries, stronger health scoring and audit visibility. |
+| 2.7.x | Observability and debugging: deeper graphs, slow-log and command visibility, debug mode, security summaries, stronger health scoring and audit visibility. ORM adds a bounded root-only `INFO commandstats` view with names and cumulative counters only; it does not expose slow-log arguments. |
 | 2.8.x | Background workers, restart backoff, auto-healing, orphan cleanup and system maintenance automation. |
 | 2.9.x | Profiles and configuration bundles, backup rollback and integrity improvements, cross-server export/import, and signed configuration validation. |
 | 2.10.x | REST API, webhooks and automation events, Redis version management, and external Redis integration. |

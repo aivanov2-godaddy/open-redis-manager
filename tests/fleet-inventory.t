@@ -155,6 +155,9 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
             info_memory => { memory_used_bytes => 1048576, memory_peak_bytes => 2097152, maxmemory_bytes => 67108864 },
             info_clients => { connected_clients => 3, blocked_clients => 0, maxclients => 100 },
             info_stats => { commands_per_second => 12, keyspace_hits => 90, keyspace_misses => 10, expired_keys => 4, evicted_keys => 2 },
+            info_commandstats => { commands => [
+                { command => 'get', calls => 18, usec => 45 },
+            ], truncated => 0 },
             dbsize => { database_keys => 42 },
         );
         return {
@@ -313,6 +316,17 @@ is_deeply($audit[-1], [0, 'acct01', 'diagnostics.dbsize', 'success', 'running'],
     'audit the selected command class without storing command output or values');
 ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('dbsize', { database_keys => 9_000_000_000_000_001 }),
     'reject selected diagnostic integers above the shared PHP-safe boundary');
+my $commandstats_request = '{"command_class":"info_commandstats","operation":"fleet.diagnostics","username":"acct01","version":1}' . "\n";
+ok(parse_request($commandstats_request)->{command_class} eq 'info_commandstats',
+    'accept the fixed command-stat diagnostic class');
+my $commandstats_response = $inventory->diagnostics('acct01', 'info_commandstats');
+ok($commandstats_response->{success} && $commandstats_response->{result}->{commands}->[0]->{command} eq 'get',
+    'return validated aggregate command counters without arguments');
+is_deeply($audit[-1], [0, 'acct01', 'diagnostics.info_commandstats', 'success', 'running'],
+    'audit command-stat reads by fixed class without storing returned counters');
+ok(!Orm::Broker::FleetInventory::_valid_diagnostic_result('info_commandstats', {
+    commands => [{ command => 'get', calls => 1, usec => 2, key => 'secret' }], truncated => 0,
+}), 'reject command arguments and extra fields from a command-stat response');
 is($inventory->diagnostics('acct02', 'dbsize')->{error}, 'not_running', 'require a running instance for diagnostics');
 is($inventory->diagnostics('../root', 'dbsize')->{error}, 'invalid_request', 'reject malformed diagnostics targets');
 is($inventory->diagnostics('acct01', 'flushall')->{error}, 'invalid_request', 'reject unknown command classes before dispatch');

@@ -12,7 +12,7 @@ const ORM_INSTALL_ROOT = '/usr/local/cpanel/3rdparty/orm';
 if (in_array('--help', $argv, true)) {
     fwrite(STDOUT, "Usage: php tests/whm-live-diagnostics-form.php --username=ACCOUNT --confirm-live-reads\n"
         . "Requires root on a disposable cPanel & WHM host and one running ORM-managed Redis instance.\n"
-        . "Submits six fixed read-only probes at the account rate limit, then rejects an unsupported class.\n"
+        . "Submits seven fixed read-only probes at the account rate limit, then rejects an unsupported class.\n"
         . "Output contains only pass/fail checks; no host, account, response body, or diagnostic values.\n");
     exit(0);
 }
@@ -145,6 +145,7 @@ $classes = [
     'info_memory' => ['label' => 'INFO memory', 'fields' => ['Memory used (bytes)' => 'integer', 'Memory peak (bytes)' => 'integer', 'Configured memory limit (bytes)' => 'integer']],
     'info_clients' => ['label' => 'INFO clients', 'fields' => ['Connected clients' => 'integer', 'Blocked clients' => 'integer', 'Client limit' => 'integer']],
     'info_stats' => ['label' => 'INFO stats', 'fields' => ['Commands per second' => 'integer', 'Keyspace hits' => 'integer', 'Keyspace misses' => 'integer', 'Expired keys' => 'integer', 'Evicted keys' => 'integer']],
+    'info_commandstats' => ['label' => 'INFO commandstats', 'fields' => [], 'marker' => '<th scope="col">Command</th>'],
     'dbsize' => ['label' => 'DBSIZE', 'fields' => ['Keys in database 0' => 'integer']],
 ];
 $boundedValuePresent = static function (string $body, string $label, string $kind): bool {
@@ -243,6 +244,10 @@ try {
         $body = $response['body'];
         $heading = '<h3>Read-only ' . $definition['label'] . ' result for <code>' . $username . '</code></h3>';
         $fieldsPresent = true;
+        if (isset($definition['marker'])) {
+            $fieldsPresent = str_contains($body, $definition['marker'])
+                && str_contains($body, 'Total CPU time (µs)');
+        }
         foreach ($definition['fields'] as $field => $kind) {
             $fieldsPresent = $fieldsPresent && $boundedValuePresent($body, $field, $kind);
         }
@@ -313,4 +318,4 @@ if ($failed !== []) {
     fwrite(STDOUT, 'Checks: ' . implode(' ', array_map(static fn (string $label): string => $label . '=fail', $failed)) . "\n");
     exit($exitCode ?? 1);
 }
-fwrite(STDOUT, "Live WHM diagnostics passed: root form; six fixed read-only probes rendered with per-class audit events; unsupported class rejected.\n");
+fwrite(STDOUT, "Live WHM diagnostics passed: root form; seven fixed read-only probes rendered with per-class audit events; unsupported class rejected.\n");
