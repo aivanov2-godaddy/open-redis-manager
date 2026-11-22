@@ -23,7 +23,7 @@ $assert(str_contains($whm, "'security.policy.update'")
     && str_contains($whm, 'security.thresholds.update'),
     'expose separately stored, root-authorized, auditable report-only thresholds');
 $assert(str_contains($whm, 'Thresholds are disabled by default and are advisory only')
-    && str_contains($whm, 'do not enforce, remediate'),
+    && str_contains($whm, 'do not enforce') && str_contains($whm, 'remediate'),
     'explain default-off thresholds and prevent any implication of automatic enforcement');
 $assert(str_contains($whm, 'count($selected) <= 2') && str_contains($whm, 'array_is_list($selected)'),
     'cap and validate the browser-selected batch account list');
@@ -44,9 +44,15 @@ $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecuri
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');
+$assert(str_contains($whm, 'class="orm-security-report"')
+    && str_contains($whm, 'class="orm-report-threshold-grid"')
+    && str_contains($whm, 'class="orm-report-findings"')
+    && str_contains($whm, '.orm-report-completeness')
+    && str_contains($whm, '@media(max-width:760px)'),
+    'render the WHM security report as a responsive, evidence-status UI');
 $fleetPageGuard = strpos($whm, '<?php if ($fleetPage === null): ?>');
 $summaryForm = strpos($whm, 'name="orm_action" value="fleet.summary"');
-$securitySection = strpos($whm, '<section aria-labelledby="orm-security-report-title">');
+$securitySection = strpos($whm, '<section class="orm-security-report" aria-labelledby="orm-security-report-title">');
 $securitySectionEnd = $securitySection === false ? false : strpos($whm, '</section>', $securitySection);
 $assert(is_int($fleetPageGuard) && is_int($summaryForm) && is_int($securitySection)
     && is_int($securitySectionEnd) && $summaryForm < $fleetPageGuard

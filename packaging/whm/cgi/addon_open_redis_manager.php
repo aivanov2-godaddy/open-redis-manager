@@ -764,7 +764,49 @@ if (!$authorized) {
 
 WHM::header('Open Redis Manager', 0, 0);
 ?>
-<style>.orm-entry h1{display:flex;align-items:center;gap:10px}.orm-fleet-batch-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 0}.orm-fleet-batch-controls p{flex-basis:100%;margin:0}.orm-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
+<style>
+.orm-entry h1{display:flex;align-items:center;gap:10px}
+.orm-fleet-batch-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 0}
+.orm-fleet-batch-controls p{flex-basis:100%;margin:0}
+.orm-visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.orm-security-report{max-width:1200px;margin:22px 0;padding:24px;border:1px solid #d6dee8;border-radius:12px;background:#fff;color:#1f2937;box-shadow:0 3px 12px rgba(31,41,55,.07);font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.orm-security-report *{box-sizing:border-box}
+.orm-report-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:8px}
+.orm-report-header h3{margin:0;color:#182230;font-size:22px;line-height:1.25}
+.orm-report-kicker{margin:0 0 5px;color:#b42318;font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+.orm-report-shield{width:38px;height:38px;flex:none;padding:7px;border-radius:10px;background:#fff1ef;color:#b42318}
+.orm-report-intro{max-width:100ch;margin:10px 0 18px;color:#526071}
+.orm-report-threshold-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 18px;margin:0 0 16px;padding:16px;border:1px solid #e3e8ef;border-radius:10px;background:#f8fafc}
+.orm-report-threshold-grid{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.orm-report-threshold-field{min-width:0}
+.orm-report-threshold-field label{display:block;margin:0 0 6px;color:#344054;font-size:12px;font-weight:650}
+.orm-report-threshold-field input{width:100%;min-height:38px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#182230;font:inherit}
+.orm-report-threshold-field input:focus-visible,.orm-report-button:focus-visible{outline:3px solid #fdb9b0;outline-offset:2px}
+.orm-report-threshold-form>p{grid-column:1;margin:0;color:#667085;font-size:12px}
+.orm-report-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px 13px;border:1px solid #b42318;border-radius:7px;background:#b42318;color:#fff;font-family:inherit;font-size:13px;font-weight:650;line-height:1.2;cursor:pointer}
+.orm-report-button:hover{background:#912018;border-color:#912018}
+.orm-report-button-secondary{grid-column:2;background:#fff;color:#912018}
+.orm-report-button-secondary:hover{background:#fff1ef;color:#7a1b14}
+.orm-report-generate-form{margin:0 0 14px}
+.orm-report-message,.orm-report-result-status,.orm-report-empty{margin:12px 0;padding:11px 13px;border:1px solid #dbe5f1;border-radius:8px;background:#f5f8fc;color:#344054}
+.orm-report-result-status{border-left:4px solid #3867e8}
+.orm-report-results{margin-top:18px;padding-top:16px;border-top:1px solid #e7ebf0}
+.orm-report-results-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.orm-report-results-heading h4{margin:0;color:#182230;font-size:17px}
+.orm-report-completeness{display:inline-flex;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700}
+.orm-report-completeness.is-complete{background:#eaf8f1;color:#176b43}
+.orm-report-completeness.is-partial{background:#fff4e5;color:#8a4b08}
+.orm-report-findings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0 0;padding:0;list-style:none}
+.orm-report-findings>li{min-width:0;margin:0;padding:14px;border:1px solid #e2e8f0;border-radius:9px;background:#fff}
+.orm-report-findings>li::marker{content:""}
+.orm-report-findings strong{color:#202939;font-size:13px}
+.orm-report-findings>li p{margin:7px 0 0;color:#526071;font-size:12px;overflow-wrap:anywhere}
+.orm-report-findings>li .orm-report-recommendation{padding-top:8px;border-top:1px solid #edf0f4;color:#344054}
+.orm-report-findings time{font-variant-numeric:tabular-nums}
+.orm-security-report details{margin-top:14px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc}
+.orm-security-report summary{color:#344054;font-weight:650;cursor:pointer}
+@media(max-width:760px){.orm-security-report{padding:16px}.orm-report-threshold-grid,.orm-report-findings{grid-template-columns:1fr}.orm-report-threshold-form{grid-template-columns:1fr}.orm-report-threshold-form>p,.orm-report-button-secondary{grid-column:1}.orm-report-header h3{font-size:19px}}
+</style>
 <main class="orm-entry" aria-labelledby="orm-title">
   <h1 id="orm-title"><svg width="34" height="34" viewBox="0 0 256 256" aria-hidden="true"><title>Open Redis Manager cache cube</title>
   <rect x="4" y="4" width="248" height="248" rx="58" fill="#D92D20"/><rect x="5" y="5" width="246" height="246" rx="57" fill="none" stroke="#FFF" stroke-opacity=".18" stroke-width="2"/>
@@ -915,33 +957,44 @@ WHM::header('Open Redis Manager', 0, 0);
             <?php endif; ?>
           </section>
         <?php endif; ?>
-        <section aria-labelledby="orm-security-report-title">
-          <h3 id="orm-security-report-title">Security and abuse review</h3>
-          <p>This report is read-only and report-only. It uses fresh fleet metrics, verified counter deltas from bounded sample windows, and normalized ORM AUTH management events. Where supported, backend authentication-failure counters are anonymous and aggregate; they do not identify clients or distinguish mistakes from attacks. Missing fields and resets remain unknown. Optional thresholds only change report severity; they do not enforce, remediate, or change the separate provider capacity policy. The report does not inspect passwords or Redis keys.</p>
-          <?php if ($securityReportPolicyMessage !== null): ?><p role="<?= $securityReportPolicyMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportPolicyMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+        <section class="orm-security-report" aria-labelledby="orm-security-report-title">
+          <div class="orm-report-header">
+            <div><p class="orm-report-kicker">Read-only · Report-only</p><h3 id="orm-security-report-title">Security and abuse review</h3></div>
+            <svg class="orm-report-shield" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.2 8.5-8 10-4.8-1.5-8-5-8-10V6l8-3Zm-3.5 9 2.2 2.2 4.8-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <p class="orm-report-intro">Review fresh fleet metrics, verified counter changes from bounded sample windows, and normalized ORM AUTH management events. Where supported, authentication-failure counters are anonymous aggregates; they do not identify clients or distinguish mistakes from attacks. Missing fields and resets stay unknown. Thresholds only change report severity; they do not enforce or remediate or change provider capacity policy. The report does not inspect passwords or read Redis keys.</p>
+          <?php if ($securityReportPolicyMessage !== null): ?><p class="orm-report-message" role="<?= $securityReportPolicyMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportPolicyMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
           <?php if ($rootAuthorized): ?>
-          <form method="post" aria-label="Configure report-only thresholds">
+          <form method="post" class="orm-report-threshold-form" aria-label="Configure report-only thresholds">
             <input type="hidden" name="orm_action" value="security.policy.update">
+            <div class="orm-report-threshold-grid">
+              <div class="orm-report-threshold-field">
             <label for="orm-security-evictions">Evictions per sampled interval (0 disables)</label>
             <input id="orm-security-evictions" name="security_evictions_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['evictions_per_window'] ?? 0) ?>" required>
+              </div>
+              <div class="orm-report-threshold-field">
             <label for="orm-security-operations">Average operations per second (0 disables)</label>
             <input id="orm-security-operations" name="security_operations_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['operations_per_second'] ?? 0) ?>" required>
+              </div>
+              <div class="orm-report-threshold-field">
             <label for="orm-security-auth">Authentication failures per sampled interval (0 disables)</label>
             <input id="orm-security-auth" name="security_auth_failures_threshold" type="number" min="0" max="9000000000000000" step="1" value="<?= (int) ($securityReportPolicy['thresholds']['auth_failures_per_window'] ?? 0) ?>" required>
-            <p>Intervals vary by the actual collected samples (up to 26 hours). Thresholds are disabled by default and are advisory only.</p>
-            <button type="submit">Save report thresholds</button>
+              </div>
+            </div>
+            <p class="orm-report-note">Intervals vary by the actual collected samples (up to 26 hours). Thresholds are disabled by default and are advisory only.</p>
+            <button type="submit" class="orm-report-button orm-report-button-secondary">Save report thresholds</button>
           </form>
           <?php endif; ?>
-          <?php if ($securityReportMessage !== null): ?><p role="<?= $securityReportMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
-          <form method="post">
+          <?php if ($securityReportMessage !== null): ?><p class="orm-report-message" role="<?= $securityReportMessage['type'] === 'error' ? 'alert' : 'status' ?>"><?= htmlspecialchars($securityReportMessage['text'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></p><?php endif; ?>
+          <form method="post" class="orm-report-generate-form">
             <input type="hidden" name="orm_action" value="security.report">
-            <button type="submit"><svg aria-hidden="true" viewBox="0 0 20 20" width="14" height="14"><path d="M10 2.5 17 5v4.5c0 4-2.7 6.8-7 8-4.3-1.2-7-4-7-8V5zM7 10l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Generate report-only review</button>
+            <button type="submit" class="orm-report-button"><svg aria-hidden="true" viewBox="0 0 20 20" width="16" height="16"><path d="M10 2.5 17 5v4.5c0 4-2.7 6.8-7 8-4.3-1.2-7-4-7-8V5zM7 10l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> Generate report-only review</button>
           </form>
           <?php if (is_array($securityReport)): ?>
-            <p role="status">Generated <?= htmlspecialchars($securityReport['generated_at_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $securityReport['partial'] ? ' · partial evidence' : '' ?>. Metric freshness window: 15 minutes. Counter-rate windows: up to 26 hours, based on actual sample times. AUTH management event window: 24 hours.</p>
-            <?php if ($securityReport['findings'] === []): ?><p>No current reportable findings were observed in the available inputs.</p><?php endif; ?>
+            <p class="orm-report-result-status" role="status">Generated <?= htmlspecialchars($securityReport['generated_at_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= $securityReport['partial'] ? ' · partial evidence' : '' ?>. Metrics are fresh for 15 minutes; counter windows use actual sample times up to 26 hours; AUTH management events cover 24 hours.</p>
+            <?php if ($securityReport['findings'] === []): ?><p class="orm-report-empty">No reportable findings were observed in the available inputs.</p><?php endif; ?>
             <?php if ($securityReport['findings'] !== []): ?>
-              <ul>
+              <ul class="orm-report-findings">
                 <?php foreach ($securityReport['findings'] as $finding): ?>
                   <?php $findingSubject = str_starts_with($finding['category'], 'podman_') && $finding['count'] !== null ? ' process(es)' : ' account/event(s)'; ?>
                   <li><strong><?= htmlspecialchars(ucwords(str_replace('_', ' ', $finding['category'])), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong> (<?= htmlspecialchars($finding['severity'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>): <?= $finding['count'] === null ? 'unknown count' : (int) $finding['count'] . $findingSubject ?>. <?= htmlspecialchars($finding['evidence'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> <?php if (is_string($finding['window_start_utc']) && is_string($finding['window_end_utc'])): ?>Evidence window: <time datetime="<?= htmlspecialchars($finding['window_start_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars($finding['window_start_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></time> through <time datetime="<?= htmlspecialchars($finding['window_end_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"><?= htmlspecialchars($finding['window_end_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></time> UTC. <?php endif; ?><?= htmlspecialchars($finding['recommendation'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?><?= is_string($finding['sampled_at_utc']) ? ' Sampled at ' . htmlspecialchars($finding['sampled_at_utc'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '.' : '' ?></li>
