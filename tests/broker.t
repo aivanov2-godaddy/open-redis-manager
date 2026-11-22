@@ -945,6 +945,7 @@ my $migration_unit_state = 'inactive';
 my $migration_source_version = '7.4.0';
 my $fail_target_rdb_check = 0;
 my $fail_valkey_ping_once = 0;
+my $fail_valkey_start_once = 0;
 my $fail_pause_ack_once = 0;
 my $fail_unpause_once = 0;
 my $throw_migration_stop = 0;
@@ -1006,7 +1007,15 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
     systemctl_call => sub {
         my (@args) = @_;
         return ($migration_unit_state eq 'active', $migration_unit_state) if $args[0] eq 'is-active';
-        if ($args[0] eq 'start') { $migration_unit_state = 'active'; return (1, ''); }
+        if ($args[0] eq 'start') {
+            if ($fail_valkey_start_once) {
+                $fail_valkey_start_once = 0;
+                $migration_unit_state = 'inactive';
+                return (0, 'inactive');
+            }
+            $migration_unit_state = 'active';
+            return (1, '');
+        }
         if ($args[0] eq 'stop') {
             if ($throw_migration_stop) {
                 $throw_migration_stop = 0;
@@ -1113,6 +1122,13 @@ ok(!$post_stop_exception_migration->{success}
     'report an exception after service stop with the retained rollback snapshot');
 ok($migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
     'restore the Redis manifest and service after an exception immediately after stopping');
+$fail_valkey_start_once = 1;
+my $target_start_failure = $run_migration->();
+ok(!$target_start_failure->{success} && $target_start_failure->{error} eq 'migration_failed'
+    && defined($target_start_failure->{safety_backup_id}),
+    'retain the safety snapshot when Valkey fails to start');
+ok($migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
+    'roll back Redis from a known inactive state after the Valkey start command fails');
 $fail_valkey_ping_once = 1;
 my $rolled_back_migration = $run_migration->();
 diag('migration rollback fixture response: ' . JSON::PP->new->canonical(1)->encode($rolled_back_migration))
