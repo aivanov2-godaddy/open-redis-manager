@@ -108,6 +108,8 @@ jobs:
         run: php tests/cpanel-application-discovery.php
       - name: Check native backend detection readiness
         run: php tests/backend-discovery.php
+      - name: Check cPanel first-run setup policy
+        run: php tests/cpanel-first-run-setup-policy.php
       - name: Check account-create hook input validation
         run: php tests/account-create-hook.php
       - name: Check provider package policy storage
