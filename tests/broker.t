@@ -945,6 +945,11 @@ my $migration_unit_state = 'inactive';
 my $migration_source_version = '7.4.0';
 my $fail_target_rdb_check = 0;
 my $fail_valkey_ping_once = 0;
+my $fail_pause_ack_once = 0;
+my $fail_unpause_once = 0;
+my $throw_migration_stop = 0;
+my $throw_migration_stop_after_transition = 0;
+my @migration_control_commands;
 my $migration_manager = Orm::Broker::InstanceManager->new(
     etc_root => $migration_etc,
     data_root => $migration_data,
@@ -959,6 +964,18 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
     backend_version_probe => sub { return 'Valkey server v=7.2.5'; },
     redis_cli_call => sub {
         my ($backend, $socket, @arguments) = @_;
+        push @migration_control_commands, join(' ', @arguments)
+            if $backend eq 'redis' && $arguments[0] eq 'CLIENT';
+        if ($backend eq 'redis' && $arguments[0] eq 'CLIENT' && $arguments[1] eq 'PAUSE'
+            && $fail_pause_ack_once) {
+            $fail_pause_ack_once = 0;
+            return "TIMEOUT\n";
+        }
+        if ($backend eq 'redis' && $arguments[0] eq 'CLIENT' && $arguments[1] eq 'UNPAUSE'
+            && $fail_unpause_once) {
+            $fail_unpause_once = 0;
+            return "ERROR\n";
+        }
         return "redis_version:$migration_source_version\r\n" if $backend eq 'redis' && $arguments[0] eq 'INFO' && $arguments[1] eq 'server';
         return "# Keyspace\r\ndb0:keys=2,expires=1,avg_ttl=10\r\n" if $arguments[0] eq 'INFO' && $arguments[1] eq 'keyspace';
         return "PONG\n" if $arguments[0] eq 'PING' && $backend eq 'redis';
@@ -990,7 +1007,18 @@ my $migration_manager = Orm::Broker::InstanceManager->new(
         my (@args) = @_;
         return ($migration_unit_state eq 'active', $migration_unit_state) if $args[0] eq 'is-active';
         if ($args[0] eq 'start') { $migration_unit_state = 'active'; return (1, ''); }
-        if ($args[0] eq 'stop') { $migration_unit_state = 'inactive'; return (1, ''); }
+        if ($args[0] eq 'stop') {
+            if ($throw_migration_stop) {
+                $throw_migration_stop = 0;
+                die "synthetic migration stop exception\n";
+            }
+            $migration_unit_state = 'inactive';
+            if ($throw_migration_stop_after_transition) {
+                $throw_migration_stop_after_transition = 0;
+                die "synthetic post-stop migration exception\n";
+            }
+            return (1, '');
+        }
         return (1, '');
     },
 );
@@ -1020,11 +1048,71 @@ is($run_migration->()->{error}, 'migration_unsupported',
     'reject Redis 7.4 before pausing or modifying the instance');
 is($migration_unit_state, 'active', 'keep Redis running when the source version is unsupported');
 $migration_source_version = '7.2.5';
+$fail_pause_ack_once = 1;
+my $pause_ack_failure = $run_migration->();
+is($pause_ack_failure->{error}, 'migration_pause_failed',
+    'report a missing pause acknowledgement after attempting to clear any ambiguous write pause');
+ok($migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis'
+    && $migration_control_commands[-2] eq 'CLIENT PAUSE 180000 WRITE'
+    && $migration_control_commands[-1] eq 'CLIENT UNPAUSE',
+    'clear the write barrier when the pause command may have succeeded without a verified reply');
+$fail_pause_ack_once = 1;
+$fail_unpause_once = 1;
+my $pause_recovery_retry = $run_migration->();
+is($pause_recovery_retry->{error}, 'migration_failed',
+    'report a recovered migration failure after retrying an unsuccessful unpause');
+ok(@migration_control_commands >= 3
+    && $migration_control_commands[-3] eq 'CLIENT PAUSE 180000 WRITE'
+    && $migration_control_commands[-2] eq 'CLIENT UNPAUSE'
+    && $migration_control_commands[-1] eq 'CLIENT UNPAUSE'
+    && $migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
+    'retry and verify unpause after the first recovery command fails');
+my $original_migration_cli_command = \&Orm::Broker::InstanceManager::_redis_cli_command;
+my $throw_migration_pause = 1;
+my $pause_exception_migration;
+{
+    local *Orm::Broker::InstanceManager::_redis_cli_command = sub {
+        my ($self, $backend, $socket, @arguments) = @_;
+        if ($throw_migration_pause && $backend eq 'redis'
+            && @arguments >= 2 && $arguments[0] eq 'CLIENT' && $arguments[1] eq 'PAUSE') {
+            $throw_migration_pause = 0;
+            push @migration_control_commands, join(' ', @arguments);
+            die "synthetic ambiguous pause exception\n";
+        }
+        return $original_migration_cli_command->(@_);
+    };
+    $pause_exception_migration = $run_migration->();
+}
+is($pause_exception_migration->{error}, 'migration_failed',
+    'recover an unexpected exception during the ambiguous pause-command boundary');
+ok($migration_control_commands[-2] eq 'CLIENT PAUSE 180000 WRITE'
+    && $migration_control_commands[-1] eq 'CLIENT UNPAUSE'
+    && $migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
+    'clear the possible write pause when the pause call throws before returning');
 $fail_target_rdb_check = 1;
 is($run_migration->()->{error}, 'migration_validation_failed',
     'refuse to stop Redis when the Valkey checker rejects the snapshot');
 is($migration_unit_state, 'active', 'leave the Redis service active after target snapshot validation fails');
 $fail_target_rdb_check = 0;
+$throw_migration_stop = 1;
+my $exception_migration = $run_migration->();
+ok(!$exception_migration->{success} && $exception_migration->{error} eq 'migration_failed'
+    && defined($exception_migration->{safety_backup_id}),
+    'report an unexpected migration exception after recovering its safety state');
+ok($migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
+    'keep the original Redis service and backend after an exception before service stop');
+ok(@migration_control_commands >= 2
+    && $migration_control_commands[-2] eq 'CLIENT PAUSE 180000 WRITE'
+    && $migration_control_commands[-1] eq 'CLIENT UNPAUSE',
+    'unpause Redis when an exception escapes after the write barrier is set');
+$throw_migration_stop_after_transition = 1;
+my $post_stop_exception_migration = $run_migration->();
+ok(!$post_stop_exception_migration->{success}
+    && $post_stop_exception_migration->{error} eq 'migration_failed'
+    && defined($post_stop_exception_migration->{safety_backup_id}),
+    'report an exception after service stop with the retained rollback snapshot');
+ok($migration_unit_state eq 'active' && $migration_manager->backend($migration_account) eq 'redis',
+    'restore the Redis manifest and service after an exception immediately after stopping');
 $fail_valkey_ping_once = 1;
 my $rolled_back_migration = $run_migration->();
 diag('migration rollback fixture response: ' . JSON::PP->new->canonical(1)->encode($rolled_back_migration))
