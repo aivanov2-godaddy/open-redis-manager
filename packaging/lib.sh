@@ -76,16 +76,16 @@ orm_account_create_hook_state() {
 ORM_ACCOUNT_HOOK_ADDED=0
 orm_ensure_account_create_hook() {
     local state=0 add_status=0
+    [[ -x "$ORM_ACCOUNT_CREATE_HOOK" ]] || {
+        printf 'ORM installer: the account-create hook executable is missing or not executable.\n' >&2
+        return 1
+    }
     orm_account_create_hook_state || state=$?
     case "$state" in
         0) return 0 ;;
         1) ;;
         *) printf 'ORM installer: the account-create hook registry is unavailable or ambiguous.\n' >&2; return 1 ;;
     esac
-    [[ -x "$ORM_ACCOUNT_CREATE_HOOK" ]] || {
-        printf 'ORM installer: the account-create hook executable is missing or not executable.\n' >&2
-        return 1
-    }
     "$ORM_MANAGE_HOOKS" add script "$ORM_ACCOUNT_CREATE_HOOK" --manual \
         --category Whostmgr --event 'Accounts::Create' --stage post --action=--run \
         >/dev/null || add_status=$?
