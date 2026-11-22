@@ -1154,15 +1154,61 @@ sub migrate_to_valkey {
     my ($self, $account) = @_;
     my $lock = $self->_acquire_instance_lock($account);
     return _failure('operation_in_progress') if !defined($lock);
-    my $response = eval { $self->_migrate_to_valkey_locked($account) };
+    my $transaction = {
+        backup_lock => undef,
+        backup_id => undef,
+        backup_directory => undef,
+        complete => 0,
+        manifest => undef,
+        manifest_changed => 0,
+        pause_attempted => 0,
+        paused => 0,
+        service_stopped => 0,
+        temporary_paths => [],
+    };
+    my $response;
+    my $completed = eval {
+        $response = $self->_migrate_to_valkey_locked($account, $transaction);
+        1;
+    };
+    if (!$completed) {
+        my $recovered = eval { $self->_recover_migration_transaction($account, $transaction) } ? 1 : 0;
+        $response = _failure($recovered ? 'migration_failed' : 'migration_recovery_required');
+        $response->{safety_backup_id} = $transaction->{backup_id}
+            if defined($transaction->{backup_id})
+            && $transaction->{backup_id} =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+    } elsif (ref($response) eq 'HASH' && !$response->{success}
+        && ($transaction->{paused} || $transaction->{pause_attempted})) {
+        my $recovered = eval { $self->_recover_migration_transaction($account, $transaction) } ? 1 : 0;
+        if (!$recovered) {
+            $response = _failure('migration_recovery_required');
+            $response->{safety_backup_id} = $transaction->{backup_id}
+                if defined($transaction->{backup_id})
+                && $transaction->{backup_id} =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+        } elsif (($response->{error} // '') eq 'migration_recovery_required'
+            || ($response->{error} // '') eq 'migration_rollback_failed') {
+            $response = _failure('migration_failed');
+            $response->{safety_backup_id} = $transaction->{backup_id}
+                if defined($transaction->{backup_id})
+                && $transaction->{backup_id} =~ /\Asnapshot-[0-9]{10}-[a-f0-9]{8}[.]rdb\z/;
+        }
+    }
+    for my $path (@{$transaction->{temporary_paths}}) {
+        unlink($path) if defined($path) && (-e $path || -l $path);
+    }
+    if (defined($transaction->{backup_lock})) {
+        close($transaction->{backup_lock});
+        $transaction->{backup_lock} = undef;
+    }
     close($lock);
     return ref($response) eq 'HASH' ? $response : _failure('migration_failed');
 }
 
 sub _migrate_to_valkey_locked {
-    my ($self, $account) = @_;
+    my ($self, $account, $transaction) = @_;
     my $manifest = $self->_read_manifest($account);
     return _failure('not_configured') if !$manifest;
+    $transaction->{manifest} = $manifest;
     return _failure('migration_unsupported') if $manifest->{backend} ne 'redis';
     return _failure('backend_unavailable') if !defined($self->_available_binary('valkey'));
 
@@ -1179,51 +1225,83 @@ sub _migrate_to_valkey_locked {
 
     my $keyspace = $self->_migration_keyspace('redis', $manifest->{socket});
     return _failure('migration_state_unavailable') if ref($keyspace) ne 'HASH';
+    $transaction->{expected_keyspace} = $keyspace;
     my ($backup_directory, $backup_state) = $self->_backup_directory($account, 1);
     return _failure('backup_storage_unavailable') if !$backup_directory || $backup_state ne 'ready';
     my ($backup_lock, $lock_error) = $self->_acquire_backup_lock($backup_directory);
     return _failure($lock_error) if !defined($backup_lock);
+    $transaction->{backup_lock} = $backup_lock;
+    $transaction->{backup_directory} = $backup_directory;
+
+    my @temporary_paths;
+    $transaction->{temporary_paths} = \@temporary_paths;
+    my $finish = sub {
+        my ($response) = @_;
+        unlink($_) for grep { defined($_) && (-e $_ || -l $_) } @temporary_paths;
+        @temporary_paths = ();
+        if (defined($transaction->{backup_lock})) {
+            close($transaction->{backup_lock});
+            $transaction->{backup_lock} = undef;
+        }
+        return $response;
+    };
+    my $unpause = sub {
+        return 1 if !$transaction->{paused} && !$transaction->{pause_attempted};
+        my $ok = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        if ($ok) {
+            $transaction->{paused} = 0;
+            $transaction->{pause_attempted} = 0;
+        }
+        return $ok;
+    };
+    my $rollback = sub {
+        my $recovered = $self->_rollback_migration(
+            $account, $manifest, $backup_directory, $transaction->{backup_id}, $keyspace
+        );
+        if ($recovered) {
+            $transaction->{paused} = 0;
+            $transaction->{pause_attempted} = 0;
+            $transaction->{service_stopped} = 0;
+            $transaction->{manifest_changed} = 0;
+        }
+        return _migration_failure($recovered, $transaction->{backup_id});
+    };
 
     my $unit = $self->_unit_name($account->{name});
+    $transaction->{pause_attempted} = 1;
     my $paused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'PAUSE', '180000', 'WRITE');
     if (!$paused) {
-        close($backup_lock);
-        return _failure('migration_pause_failed');
+        my $unpaused = $unpause->();
+        return $finish->(_failure($unpaused ? 'migration_pause_failed' : 'migration_recovery_required'));
     }
+    $transaction->{paused} = 1;
     my $pause_started = clock_gettime(CLOCK_MONOTONIC);
 
     my $snapshot = $self->_create_backup_locked($account, $manifest, $backup_directory, undef);
     if (ref($snapshot) ne 'HASH' || !$snapshot->{success} || ref($snapshot->{backup}) ne 'HASH') {
-        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
-        close($backup_lock);
-        return _failure($unpaused ? 'migration_snapshot_failed' : 'migration_recovery_required');
+        my $unpaused = $unpause->();
+        return $finish->(_failure($unpaused ? 'migration_snapshot_failed' : 'migration_recovery_required'));
     }
     my $backup_id = $snapshot->{backup}->{id};
-    my @temporary_paths;
-    my $finish = sub {
-        my ($response) = @_;
-        unlink($_) for grep { defined($_) && (-e $_ || -l $_) } @temporary_paths;
-        close($backup_lock);
-        return $response;
-    };
+    $transaction->{backup_id} = $backup_id;
 
     my $paused_keyspace = $self->_migration_keyspace('redis', $manifest->{socket});
     if (ref($paused_keyspace) ne 'HASH' || !_same_keyspace($keyspace, $paused_keyspace)) {
-        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $unpaused = $unpause->();
         my $error = $unpaused ? 'migration_state_unavailable' : 'migration_recovery_required';
         return $finish->(_failure($error));
     }
 
     my $stage = $self->_new_backup_stage_path($backup_directory, 'restore');
     if (!defined($stage)) {
-        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $unpaused = $unpause->();
         return $finish->(_failure($unpaused ? 'backup_storage_unavailable' : 'migration_recovery_required'));
     }
     push @temporary_paths, $stage;
     my $copied = $self->_stage_backup_copy($backup_directory, $backup_id, $stage, $account);
     my $target_check = $copied ? $self->_run_rdb_check('valkey', $stage, $account) : 0;
     if (!$copied || !defined($target_check) || !$target_check) {
-        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $unpaused = $unpause->();
         my $error = !$unpaused ? 'migration_recovery_required'
             : !$copied ? 'backup_storage_unavailable'
             : !defined($target_check) ? 'migration_validation_unavailable' : 'migration_validation_failed';
@@ -1232,27 +1310,26 @@ sub _migrate_to_valkey_locked {
 
     my $pause_age = clock_gettime(CLOCK_MONOTONIC) - $pause_started;
     if ($pause_age >= 150) {
-        my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $unpaused = $unpause->();
         return $finish->(_failure($unpaused ? 'migration_timeout' : 'migration_recovery_required'));
     }
 
     my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
     if (!$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout})) {
         my $recovered = $self->_ensure_unit_running($unit);
-        my $unpaused = $recovered && $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+        my $unpaused = $recovered && $unpause->();
         my $error = !$recovered || !$unpaused ? 'migration_recovery_required' : 'migration_failed';
         return $finish->(_failure($error));
     }
+    $transaction->{service_stopped} = 1;
 
     my $dump_path = File::Spec->catfile($manifest->{data}, 'dump.rdb');
     if (!$self->_restore_target_safe($dump_path, $account, 1)) {
-        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
-        return $finish->(_migration_failure($recovered, $backup_id));
+        return $finish->($rollback->());
     }
     my $installed = $self->_install_restore_stage($stage, $dump_path, $account, 1);
     if ($installed != 1) {
-        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
-        return $finish->(_migration_failure($recovered, $backup_id));
+        return $finish->($rollback->());
     }
 
     my %target_manifest = %{$manifest};
@@ -1267,9 +1344,9 @@ sub _migrate_to_valkey_locked {
     my $manifest_path = $self->_manifest_path($account->{name});
     if (!$self->_atomic_write($manifest_path, $target_manifest_json, 0640,
         $self->{expected_owner_uid}, $account->{gid})) {
-        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
-        return $finish->(_migration_failure($recovered, $backup_id));
+        return $finish->($rollback->());
     }
+    $transaction->{manifest_changed} = 1;
 
     my ($started) = $self->_systemctl('start', '--no-block', $unit);
     my $target_started = $started && $self->_wait_for_unit_state($unit, 'active', $self->{restore_state_timeout});
@@ -1277,10 +1354,14 @@ sub _migrate_to_valkey_locked {
     my $target_keyspace = $target_ping ? $self->_migration_keyspace('valkey', $manifest->{socket}) : undef;
     if (!$target_started || !$target_ping || ref($target_keyspace) ne 'HASH'
         || !_same_keyspace($keyspace, $target_keyspace)) {
-        my $recovered = $self->_rollback_migration($account, $manifest, $backup_directory, $backup_id, $keyspace);
-        return $finish->(_migration_failure($recovered, $backup_id));
+        return $finish->($rollback->());
     }
 
+    $transaction->{complete} = 1;
+    $transaction->{paused} = 0;
+    $transaction->{pause_attempted} = 0;
+    $transaction->{service_stopped} = 0;
+    $transaction->{manifest_changed} = 0;
     return $finish->({
         backup_id => $backup_id,
         source_backend => 'redis',
@@ -1291,6 +1372,52 @@ sub _migrate_to_valkey_locked {
     });
 }
 
+sub _recover_migration_transaction {
+    my ($self, $account, $transaction) = @_;
+    for my $path (@{$transaction->{temporary_paths} // []}) {
+        unlink($path) if defined($path) && (-e $path || -l $path);
+    }
+    $transaction->{temporary_paths} = [];
+
+    my $manifest = ref($transaction->{manifest}) eq 'HASH' ? $transaction->{manifest} : undef;
+    if ($transaction->{complete}) {
+        return 1;
+    }
+    my $current_manifest = $self->_read_manifest($account);
+    my $backend = ref($current_manifest) eq 'HASH' ? $current_manifest->{backend} : undef;
+    my $unit = $self->_unit_name($account->{name});
+    my ($state_ok, $state) = $self->_systemctl('is-active', $unit);
+    return 0 if !defined($state) || (!$state_ok && $state ne 'inactive' && $state ne 'failed');
+
+    my $needs_rollback = $transaction->{service_stopped} || $transaction->{manifest_changed}
+        || ($backend // '') eq 'valkey' || $state eq 'inactive' || $state eq 'failed';
+    if ($needs_rollback) {
+        return 0 if !$manifest || !defined($transaction->{backup_id})
+            || !defined($transaction->{backup_directory});
+        my $recovered = $self->_rollback_migration(
+            $account, $manifest, $transaction->{backup_directory}, $transaction->{backup_id},
+            $transaction->{expected_keyspace}
+        );
+        if ($recovered) {
+            $transaction->{paused} = 0;
+            $transaction->{pause_attempted} = 0;
+            $transaction->{service_stopped} = 0;
+            $transaction->{manifest_changed} = 0;
+            return 1;
+        }
+        return 0;
+    }
+
+    return 1 if !$transaction->{paused} && !$transaction->{pause_attempted};
+    return 0 if ($backend // '') ne 'redis' || $state ne 'active' || !$manifest;
+    my $unpaused = $self->_redis_cli_command('redis', $manifest->{socket}, 'CLIENT', 'UNPAUSE');
+    if ($unpaused) {
+        $transaction->{paused} = 0;
+        $transaction->{pause_attempted} = 0;
+    }
+    return $unpaused ? 1 : 0;
+}
+
 sub _rollback_migration {
     my ($self, $account, $manifest, $backup_directory, $backup_id, $expected_keyspace) = @_;
     my $unit = $self->_unit_name($account->{name});
@@ -1298,7 +1425,7 @@ sub _rollback_migration {
     if ($state_ok && $state eq 'active') {
         my ($stopped) = $self->_systemctl('stop', '--no-block', $unit);
         return 0 if !$stopped || !$self->_wait_for_unit_state($unit, 'inactive', $self->{restore_state_timeout});
-    } elsif (!$state_ok || ($state ne 'inactive' && $state ne 'failed')) {
+    } elsif (!defined($state) || ($state ne 'inactive' && $state ne 'failed')) {
         return 0;
     }
 

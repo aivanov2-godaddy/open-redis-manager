@@ -19,7 +19,7 @@ ORM adds an account operation lock shared with start, stop, restart, configurati
 
 ## Failure and recovery
 
-When a failure occurs after the Redis service stops, ORM attempts to validate the retained snapshot with the Redis checker, restore it, reinstate the Redis manifest, start Redis, and verify service state and key/expiry counts. A failed or unverified rollback is reported as requiring manual recovery. The snapshot ID appears in the WHM result and remains in the account's bounded snapshot list.
+When a failure occurs after the Redis service stops, ORM attempts to validate the retained snapshot with the Redis checker, restore it, reinstate the Redis manifest, start Redis, and verify service state and key/expiry counts. The transaction guard also handles unexpected exceptions and an ambiguous pause-command reply: while the original Redis service is still active it attempts to clear the write pause; after a stop or backend switch it uses the retained snapshot to restore and verify Redis. A failed or unverified recovery is reported as requiring manual recovery. The snapshot ID appears in the WHM result and remains in the account's bounded snapshot list.
 
 Count checks cannot prove that every key value is identical. If the result is uncertain, keep application writers paused, inspect the account and the retained snapshot, and do not repeat the migration blindly. ORM does not read or log Redis keys or values. The operation is per account and does not change the server-wide backend default.
 
