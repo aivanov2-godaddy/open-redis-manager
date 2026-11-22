@@ -28,6 +28,7 @@ Images below include local previews, prototype captures, and explicitly labeled 
 | [WHM Redis-to-Valkey migration](whm-redis-valkey-migration.png) | Synthetic root WHM row with source/target versions, writer-quiescence acknowledgement and snapshot rollback guidance | 1440 × 1000; [SVG source](previews/whm-redis-valkey-migration.svg) |
 | [WHM fleet preview](previews/whm-fleet.html) | Synthetic account list with service actions and individual snapshot/restore results | HTML preview |
 | [WHM read-only diagnostics](whm-fleet-diagnostics.png) | Synthetic root-only account row and the validated read-only metrics result with privacy boundary | 1440 × 1100; [SVG preview](previews/whm-fleet-diagnostics.svg) |
+| [WHM command visibility](whm-command-visibility.png) | Root-only command counts and cumulative CPU time without command arguments, keys, or values | Synthetic preview; [SVG source](previews/whm-command-visibility.svg) |
 | [WHM overview](whm-overview.png) | Fleet summary, trend and backend state | 1500 × 1200 |
 | [WHM accounts](whm-accounts.png) | Searchable account list and health | 1500 × 1200 |
 | [WHM security](whm-security.png) | Security signals and report-only policy | 1500 × 1200 |
@@ -44,6 +45,8 @@ The cPanel diagnostics screenshot is a static, synthetic preview rendered from [
 The provider package and reseller policy image is a static UI preview rendered from [its HTML fixture](previews/whm-package-policy.html). Package/reseller names and limits are sample values and are not read from a live WHM server. The exposure comparison is a static preview rendered from [its HTML fixture](previews/cpanel-exposure-tiers.html), with synthetic values.
 
 The WHM diagnostics image is a static synthetic UI composition. It illustrates the guarded per-account action and allowlisted result; it is not a live capture and contains no cPanel account or service data.
+
+The WHM command visibility image is a static synthetic preview of the fixed `INFO commandstats` class. Its command counters are invented; they are not read from a WHM host or Redis/Valkey service.
 
 The WHM security report image is rendered from a static [synthetic preview](previews/whm-security-report.html). Its rates, counts, and timestamps are invented sample values; the image is not connected to WHM or Redis/Valkey.
 

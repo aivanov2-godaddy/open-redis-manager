@@ -240,7 +240,7 @@ sub diagnostics {
     my ($self, $username, $command_class) = @_;
     return _fleet_failure('invalid_request', $username, 'diagnostics.read', 0)
         if !defined($command_class) || ref($command_class)
-        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)\z/;
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)\z/;
     my $action = 'diagnostics.' . $command_class;
     return _fleet_failure('invalid_request', $username, $action, 0)
         if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
@@ -786,7 +786,7 @@ sub audit_denial {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'invalid' if !defined($action) || ref($action)
-        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
+        || $action !~ /\A(?:start|stop|restart|auto_provision|auth\.rotate|backup\.create|backup\.restore|backup\.batch\.create|backup\.batch\.restore|migration\.to-valkey|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'not_authorized', 'unavailable');
 }
 
@@ -795,7 +795,7 @@ sub audit_rate_limited {
     $peer_uid = 'unknown' if !defined($peer_uid) || ref($peer_uid) || $peer_uid !~ /\A[0-9]{1,10}\z/;
     $username = 'invalid' if !defined($username) || ref($username) || $username !~ /\A[a-zA-Z0-9_-]{1,16}\z/;
     $action = 'recovery.scan' if !defined($action) || ref($action)
-        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
+        || $action !~ /\A(?:auth\.rotate|diagnostics\.(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)|recovery\.scan|recovery\.start|recovery\.config_rebuild|recovery\.config_reset|recovery\.ownership_fix)\z/;
     return _audit_event($self, $peer_uid, $username, $action, 'rate_limited', 'unavailable');
 }
 
@@ -826,6 +826,7 @@ sub _valid_diagnostics {
 sub _valid_diagnostic_result {
     my ($command_class, $result) = @_;
     return 0 if ref($result) ne 'HASH';
+    my $max_integer = 9_000_000_000_000_000;
     my %expected = (
         ping => [qw(response)],
         dbsize => [qw(database_keys)],
@@ -833,9 +834,26 @@ sub _valid_diagnostic_result {
         info_memory => [qw(maxmemory_bytes memory_peak_bytes memory_used_bytes)],
         info_clients => [qw(blocked_clients connected_clients maxclients)],
         info_stats => [qw(commands_per_second evicted_keys expired_keys keyspace_hits keyspace_misses)],
+        info_commandstats => [qw(commands truncated)],
     );
     my $fields = $expected{$command_class};
     return 0 if !defined($fields) || join(',', sort keys %{$result}) ne join(',', sort @{$fields});
+    if ($command_class eq 'info_commandstats') {
+        return 0 if ref($result->{truncated}) || ($result->{truncated} ne '0' && $result->{truncated} ne '1')
+            || ref($result->{commands}) ne 'ARRAY' || @{$result->{commands}} > 60;
+        my %seen;
+        for my $command (@{$result->{commands}}) {
+            return 0 if ref($command) ne 'HASH' || join(',', sort keys %{$command}) ne 'calls,command,usec'
+                || !defined($command->{command}) || ref($command->{command})
+                || $command->{command} !~ /\A[A-Za-z0-9_.|]{1,64}\z/ || $seen{$command->{command}}++;
+            for my $counter (qw(calls usec)) {
+                return 0 if !defined($command->{$counter}) || ref($command->{$counter})
+                    || $command->{$counter} !~ /\A(?:0|[1-9][0-9]{0,15})\z/
+                    || $command->{$counter} > $max_integer;
+            }
+        }
+        return 1;
+    }
     if ($command_class eq 'ping') {
         return defined($result->{response}) && !ref($result->{response}) && $result->{response} eq 'PONG';
     }
@@ -843,7 +861,6 @@ sub _valid_diagnostic_result {
         return 0 if !defined($result->{server_version}) || ref($result->{server_version})
             || $result->{server_version} !~ /\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/;
     }
-    my $max_integer = 9_000_000_000_000_000;
     for my $field (@{$fields}) {
         next if $field eq 'server_version' || $field eq 'response';
         return 0 if !defined($result->{$field}) || ref($result->{$field})

@@ -11,7 +11,7 @@ final class BrokerClient
     private const SOCKET_PATH = 'unix:///run/orm/broker.sock';
     private const MAX_RESPONSE_BYTES = 262144;
     private const MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
-    private const DIAGNOSTIC_COMMAND_CLASSES = ['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'dbsize'];
+    private const DIAGNOSTIC_COMMAND_CLASSES = ['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'dbsize'];
     private const BACKUP_OPERATION_TIMEOUT_SECONDS = 180;
     private const OPERATIONS = [
         'instance.status',
@@ -1163,7 +1163,7 @@ final class BrokerClient
         return $decoded;
     }
 
-    /** @return array{success:bool,version:int,username?:string,command_class?:string,action?:string,audit_logged?:bool,state?:string,result?:array<string,int|string>,error?:string}|null */
+    /** @return array{success:bool,version:int,username?:string,command_class?:string,action?:string,audit_logged?:bool,state?:string,result?:array<string,mixed>,error?:string}|null */
     public function diagnoseFleetAccount(string $username, string $commandClass): ?array
     {
         if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1) {
@@ -1463,6 +1463,7 @@ final class BrokerClient
             'info_memory' => ['maxmemory_bytes', 'memory_peak_bytes', 'memory_used_bytes'],
             'info_clients' => ['blocked_clients', 'connected_clients', 'maxclients'],
             'info_stats' => ['commands_per_second', 'evicted_keys', 'expired_keys', 'keyspace_hits', 'keyspace_misses'],
+            'info_commandstats' => ['commands', 'truncated'],
             default => [],
         };
         $keys = array_keys($result);
@@ -1477,6 +1478,35 @@ final class BrokerClient
         if ($commandClass === 'info_server' && (!is_string($result['server_version'] ?? null)
             || preg_match('/\A[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(?:[-+][A-Za-z0-9.-]{1,24})?\z/', $result['server_version']) !== 1)) {
             return false;
+        }
+        if ($commandClass === 'info_commandstats') {
+            if (!is_int($result['truncated'] ?? null) || !in_array($result['truncated'], [0, 1], true)
+                || !is_array($result['commands'] ?? null)
+                || !array_is_list($result['commands']) || count($result['commands']) > 60) {
+                return false;
+            }
+            $seen = [];
+            foreach ($result['commands'] as $command) {
+                if (!is_array($command)
+                    || !is_string($command['command'] ?? null)
+                    || preg_match('/\A[A-Za-z0-9_.|]{1,64}\z/', $command['command']) !== 1
+                    || isset($seen[$command['command']])) {
+                    return false;
+                }
+                $commandKeys = array_keys($command);
+                sort($commandKeys);
+                if ($commandKeys !== ['calls', 'command', 'usec']) {
+                    return false;
+                }
+                $seen[$command['command']] = true;
+                foreach (['calls', 'usec'] as $counter) {
+                    if (!is_int($command[$counter] ?? null) || $command[$counter] < 0
+                        || $command[$counter] > self::MAX_DIAGNOSTIC_INTEGER) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
         foreach ($expected as $field) {
             if ($field === 'server_version') {

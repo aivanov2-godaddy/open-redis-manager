@@ -487,6 +487,10 @@ $diagnosticPayloads = [
     'info_memory' => ['memory_used_bytes' => 1048576, 'memory_peak_bytes' => 2097152, 'maxmemory_bytes' => 67108864],
     'info_clients' => ['connected_clients' => 3, 'blocked_clients' => 0, 'maxclients' => 100],
     'info_stats' => ['commands_per_second' => 12, 'keyspace_hits' => 90, 'keyspace_misses' => 10, 'expired_keys' => 4, 'evicted_keys' => 2],
+    'info_commandstats' => ['commands' => [
+        ['calls' => 18, 'command' => 'get', 'usec' => 45],
+        ['calls' => 7, 'command' => 'set', 'usec' => 35],
+    ], 'truncated' => 0],
     'dbsize' => ['database_keys' => 42],
 ];
 $diagnosticClient = new BrokerClient(static function (string $request) use (&$diagnosticRequests, $diagnosticPayloads): string {
@@ -500,7 +504,7 @@ $diagnosticClient = new BrokerClient(static function (string $request) use (&$di
 });
 $assert(($diagnosticClient->diagnoseFleetAccount('demo', 'dbsize')['result']['database_keys'] ?? null) === 42,
     'Parse a normalized fixed diagnostics response.');
-foreach (['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'dbsize'] as $commandClass) {
+foreach (['ping', 'info_server', 'info_memory', 'info_clients', 'info_stats', 'info_commandstats', 'dbsize'] as $commandClass) {
     $diagnosticResult = $diagnosticClient->diagnoseFleetAccount('demo', $commandClass);
     $lastRequest = end($diagnosticRequests);
     $assert(($diagnosticResult['success'] ?? false) && $diagnosticResult['command_class'] === $commandClass
@@ -519,6 +523,13 @@ $badDiagnosticClient = new BrokerClient(static fn (string $request): string => j
 ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
 $assert($badDiagnosticClient->diagnoseFleetAccount('demo', 'dbsize') === null,
     'Reject unexpected raw or unbounded fields from diagnostics responses.');
+$badCommandStatsClient = new BrokerClient(static fn (string $request): string => json_encode([
+    'action' => 'diagnostics.info_commandstats', 'audit_logged' => true, 'command_class' => 'info_commandstats',
+    'result' => ['commands' => [['calls' => 1, 'command' => 'get', 'usec' => 2, 'arguments' => ['secret']]], 'truncated' => 0],
+    'state' => 'running', 'success' => true, 'username' => 'demo', 'version' => 1,
+], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+$assert($badCommandStatsClient->diagnoseFleetAccount('demo', 'info_commandstats') === null,
+    'Reject command arguments or unexpected fields from the command-stat response.');
 $boundaryDiagnosticClient = new BrokerClient(static fn (string $request): string => json_encode([
     'action' => 'diagnostics.dbsize', 'audit_logged' => true, 'command_class' => 'dbsize',
     'result' => ['database_keys' => 9_000_000_000_000_000],

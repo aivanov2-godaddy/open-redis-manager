@@ -27,6 +27,7 @@ my %RDB_CHECK_BINARIES = (
 my $MAX_MEMORY_BYTES = 64 * 1024 * 1024;
 my $MAX_INFO_BYTES = 32768;
 my $MAX_DIAGNOSTIC_INTEGER = 9_000_000_000_000_000;
+my $MAX_COMMANDSTAT_ROWS = 60;
 my $MAX_METRICS_AGE_SECONDS = 30 * 24 * 60 * 60;
 my $FLEET_METRICS_FRESH_SECONDS = 15 * 60;
 my $MAX_SECURITY_METRICS_AGE_SECONDS = 26 * 60 * 60;
@@ -770,7 +771,7 @@ sub read_diagnostic_command {
     my ($self, $account, $command_class) = @_;
     return _failure('invalid_request') if !_valid_account($account)
         || !defined($command_class) || ref($command_class)
-        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|dbsize)\z/;
+        || $command_class !~ /\A(?:ping|info_server|info_memory|info_clients|info_stats|info_commandstats|dbsize)\z/;
     my $status = $self->status($account);
     return $status if ref($status) ne 'HASH' || !$status->{success};
     return _failure('not_configured') if $status->{state} eq 'not_configured';
@@ -795,6 +796,10 @@ sub read_diagnostic_command {
             || $response !~ /\A(?:0|[1-9][0-9]{0,15})\n\z/
             || substr($response, 0, -1) > $MAX_DIAGNOSTIC_INTEGER;
         $result = { database_keys => 0 + substr($response, 0, -1) };
+    } elsif ($command_class eq 'info_commandstats') {
+        my $commandstats = _parse_commandstats($self->_run_redis_cli($backend, $socket, 'INFO', 'commandstats'));
+        return _failure('diagnostics_unavailable') if ref($commandstats) ne 'HASH';
+        $result = $commandstats;
     } else {
         my %sections = (
             info_server => ['server', { $version_field => 'version', uptime_in_seconds => 'integer' }],
@@ -2018,6 +2023,37 @@ sub _parse_info_fields {
     }
     return undef if grep { !exists($values{$_}) } keys %{$requested};
     return \%values;
+}
+
+sub _parse_commandstats {
+    my ($output) = @_;
+    return undef if !defined($output) || ref($output) || length($output) > $MAX_INFO_BYTES;
+    my @lines = split(/\r?\n/, $output);
+    return undef if @lines > 512;
+    my (@commands, %seen);
+    for my $line (@lines) {
+        next if $line eq '' || $line =~ /\A#/;
+        return undef if $line !~ /\Acmdstat_([A-Za-z0-9_.|]{1,64}):([A-Za-z0-9_=.,-]{1,512})\z/;
+        my ($command, $payload) = ($1, $2);
+        return undef if $seen{$command}++;
+        my (%fields, %seen_fields);
+        for my $field (split(/,/, $payload, 9)) {
+            return undef if $field !~ /\A([a-z_]+)=([0-9]+(?:\.[0-9]{1,6})?)\z/;
+            my ($name, $value) = ($1, $2);
+            return undef if $seen_fields{$name}++;
+            next if $name eq 'usec_per_call';
+            next if $name !~ /\A(?:calls|usec|rejected_calls|failed_calls|slowlog_count|slowlog_time_ms_sum|slowlog_time_ms_max)\z/;
+            return undef if $value !~ /\A(?:0|[1-9][0-9]{0,15})\z/ || $value > $MAX_DIAGNOSTIC_INTEGER;
+            $fields{$name} = 0 + $value;
+        }
+        return undef if !exists($fields{calls}) || !exists($fields{usec});
+        push @commands, { command => $command, calls => $fields{calls}, usec => $fields{usec} };
+        return undef if @commands > 256;
+    }
+    @commands = sort { $b->{calls} <=> $a->{calls} || $a->{command} cmp $b->{command} } @commands;
+    my $truncated = @commands > $MAX_COMMANDSTAT_ROWS ? 1 : 0;
+    splice(@commands, $MAX_COMMANDSTAT_ROWS) if $truncated;
+    return { commands => \@commands, truncated => $truncated };
 }
 
 sub metrics {
