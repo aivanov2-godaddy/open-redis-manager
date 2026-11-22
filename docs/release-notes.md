@@ -9,7 +9,7 @@
 - Both installed cPanel and WHM entry points reject POST requests without a valid-format `cpsess` route before platform API initialization or submitted-field processing. Authenticated SSO confirmed rejection of missing-token POSTs and a valid-token WHM policy round trip on one cPanel & WHM 138.0 build 27 test host; cPanel `cpsrvd` remains responsible for validating the token itself. Other mutations and host coverage remain open. See the [sanitized session-token record](validation/records/2026-11-21-cpanel-whm-session-token-csrf.md) and [WHM policy round-trip record](validation/records/2026-11-22-whm-valid-session-policy-roundtrip-live.md).
 
 **Updated:** 2026-11-22
-**Release:** `0.1.0-rc.12` is a source-matched validation candidate only; no public release is published and milestone 0.1.0 release gates remain open.
+**Release:** `0.1.0-rc.13` is a source-matched validation candidate for installed WHM ownership-recovery testing; no public release is published and milestone 0.1.0 release gates remain open.
 
 The cPanel instance launcher now validates the current version-three instance manifest as well as the retained version-one and version-two formats. This allows newly provisioned Redis and Valkey services to start with the manifest schema written by the broker.
 
