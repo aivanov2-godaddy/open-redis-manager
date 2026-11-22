@@ -112,6 +112,8 @@ jobs:
         run: php tests/backend-discovery.php
       - name: Check cPanel first-run setup policy
         run: php tests/cpanel-first-run-setup-policy.php
+      - name: Check live populated-data uninstall guard CLI
+        run: python tests/packaging-live-populated-data-uninstall.py --help
       - name: Check account-create hook input validation
         run: php tests/account-create-hook.php
       - name: Check provider package policy storage

@@ -23,6 +23,7 @@ These guides describe intended ORM behavior and the evidence used to shape it. S
 - [Live EA Podman security-report integration — 2026-11-22](validation/records/2026-11-22-ea-podman-security-report-live.md)
 - [Live WHM report-only form smoke — 2026-11-21](validation/records/2026-11-21-whm-security-report-live.md)
 - [Current-source install and uninstall lifecycle — 2026-11-22](validation/records/2026-11-22-current-source-install-lifecycle.md)
+- [Populated-data uninstall guard — 2026-11-22](validation/records/2026-11-22-populated-data-uninstall-guard-live.md)
 - [Valkey security-counter field probe — 2026-11-21](validation/records/2026-11-21-valkey-security-counter-probe.md)
 - [Installation, compatibility and lifecycle](guides/installation-lifecycle.md)
 - [WHM update lifecycle](guides/update-lifecycle.md)
