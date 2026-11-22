@@ -428,6 +428,127 @@ try {
         <p role="alert">The account identity could not be verified by the local ORM broker. Reload the page or contact the server administrator.</p>
       <?php else: ?>
         <p>Verified cPanel account: <code><?= htmlspecialchars($account->username(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></p>
+        <?php if ($instanceNotConfigured && $showSetupWizard): ?>
+        <section class="orm-card" id="orm-first-run-setup" aria-labelledby="orm-setup-title">
+          <h2 id="orm-setup-title">First-time setup</h2>
+          <p>Choose where this account’s Redis-compatible cache should run. ORM checks the selected path and guides you through the required setup.</p>
+          <?php if (!$podmanInventoryVerifiedAbsent): ?>
+            <p class="orm-setup-status" role="status">ORM could not safely verify whether this account already has an EA Podman cache. You can check native Redis/Valkey, but do not install another Podman cache until your hosting administrator confirms the account inventory.</p>
+          <?php endif; ?>
+          <?php if ($setupMode === 'choose'): ?>
+            <div class="orm-setup-options">
+              <a class="orm-setup-choice" href="?orm_setup=native" aria-label="Choose a native Redis or Valkey service">
+                <h3>Native service</h3>
+                <p>Use an ORM-managed Redis/Valkey process installed on the server. WHM controls which backend is approved for new instances.</p>
+              </a>
+              <a class="orm-setup-choice" href="?orm_setup=podman" aria-label="Choose a cPanel EA Podman container">
+                <h3>cPanel EA Podman</h3>
+                <p>Install a cPanel-provided Redis 6.2 or Valkey 7.2 container under this cPanel account.</p>
+              </a>
+            </div>
+          <p class="orm-note">If your account already has an EA Podman cache, it appears in the Podman section on this page.</p>
+          <?php elseif ($setupMode === 'native'): ?>
+            <h4>Native service readiness</h4>
+            <?php if (($nativeDiscovery['status'] ?? null) !== 'supported-platform'): ?>
+              <p class="orm-setup-status" role="status">Host discovery is unavailable or this platform is unsupported. Ask your hosting administrator to verify a supported Linux Redis/Valkey package and the WHM backend selection.</p>
+            <?php else: ?>
+              <?php $detectedNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => ($backend['status'] ?? null) === 'detected')); ?>
+              <?php $partialNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => in_array(($backend['status'] ?? null), ['server-only', 'client-only'], true))); ?>
+              <?php if ($detectedNativeBackends === []): ?>
+                <?php if ($partialNativeBackends !== []): ?>
+                  <p class="orm-setup-status" role="status">ORM found an incomplete native installation in its standard locations. A supported server and matching command-line client are both required:</p>
+                  <ul>
+                    <?php foreach ($partialNativeBackends as $backend): ?>
+                      <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>: <?= $backend['status'] === 'server-only' ? 'server binary found; matching CLI is missing' : 'CLI found; server binary is missing' ?></li>
+                    <?php endforeach; ?>
+                  </ul>
+                <?php else: ?>
+                  <p class="orm-setup-status" role="status">No Redis/Valkey server or CLI binary pair was found in ORM’s standard locations. That does not prove the host has no Redis-compatible service; ask your administrator to verify the package and WHM backend selection.</p>
+                <?php endif; ?>
+                <div class="orm-setup-step">
+                  <h4>Native package setup steps for your hosting administrator</h4>
+                  <ol>
+                    <li>Install a supported Redis or Valkey server package and its matching CLI from the host operating system’s trusted package repository.</li>
+                    <li>In WHM → Open Redis Manager → Redis-compatible backends, confirm both binaries are detected and select the approved default.</li>
+                    <li>Allow this cPanel package in provider policy, then return here and choose <a href="?orm_setup=native">Check again</a>.</li>
+                  </ol>
+                  <p>ORM launches isolated account-owned processes; do not expose a shared host service or open Redis TCP ports for this setup.</p>
+                </div>
+              <?php else: ?>
+                <p class="orm-setup-status" role="status">Host binary discovery found:</p>
+                <ul>
+                  <?php foreach ($detectedNativeBackends as $backend): ?>
+                    <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong><?= is_string($backend['version'] ?? null) ? ' ' . htmlspecialchars($backend['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?> — <?= htmlspecialchars($backend['server_binary'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li>
+                  <?php endforeach; ?>
+                </ul>
+              <?php endif; ?>
+              <p>New ORM-managed native instances use the default backend selected by your hosting provider in WHM. This page cannot install host packages or change that provider setting.</p>
+              <?php if ($detectedNativeBackends !== []): ?>
+              <form method="post" class="orm-preset-form">
+                <input type="hidden" name="orm_action" value="provision">
+                <?php if (!$developerExposure): ?>
+                <input type="hidden" name="orm_preset" value="generic">
+                <p class="orm-preset-help">The standard profile uses a private socket, a 64 MiB memory cap, and no persistence.</p>
+                <?php else: ?>
+                <label for="orm-preset">Configuration preset</label>
+                <select id="orm-preset" name="orm_preset" required>
+                  <option value="generic" selected>Generic — 64 MiB</option>
+                  <option value="wordpress">WordPress — 48 MiB</option>
+                  <option value="laravel">Laravel — 32 MiB</option>
+                  <option value="magento">Magento — 64 MiB</option>
+                  <option value="session">Session cache — 32 MiB</option>
+                </select>
+                <p class="orm-preset-help">The host applies package memory/client limits and provider defaults. ORM keeps this service account-scoped.</p>
+                <?php endif; ?>
+                <button type="submit">Initialize native cache</button>
+              </form>
+              <?php else: ?>
+                <p>Once your administrator installs a supported native Redis/Valkey server package and selects it in WHM, choose <a href="?orm_setup=native">Check again</a>.</p>
+              <?php endif; ?>
+            <?php endif; ?>
+            <div class="orm-setup-links"><a href="?orm_setup=choose">Back to setup choices</a></div>
+          <?php else: ?>
+            <h4>cPanel EA Podman readiness</h4>
+            <?php if (!$podmanInventoryVerifiedAbsent): ?>
+              <p class="orm-setup-status" role="status">ORM cannot verify whether this account already has an EA Podman cache, so it will not recommend installing another one. Ask your hosting administrator to verify the account inventory, then choose <a href="?orm_setup=podman">Check again</a>.</p>
+            <?php elseif (($podmanSetup['status'] ?? null) === 'ea-podman-unavailable'): ?>
+              <p class="orm-setup-status" role="status">The cPanel EA Podman tool is not available to this account. Ask your hosting administrator to enable EasyApache 4 containers, confirm the server is supported, and enable user namespaces. CloudLinux/CageFS container setups are not supported by cPanel’s EA Podman integration.</p>
+            <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-host'): ?>
+              <p class="orm-setup-status" role="status">This host is identified as <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>, which cPanel does not support for EA Podman Redis/Valkey containers. Choose the native service option or ask your administrator about supported host alternatives.</p>
+            <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-shell'): ?>
+              <p class="orm-setup-status" role="status">This account does not have a normal, non-jailed shell. Ask your hosting administrator to enable Normal Shell before using EA Podman.</p>
+            <?php elseif (($podmanSetup['status'] ?? null) === 'checked'): ?>
+              <p class="orm-setup-status" role="status">The account’s EA Podman package inventory was checked. Host platform: <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. <?php if ($podmanSetup['host_platform'] === 'unknown'): ?>The operating system could not be verified; ask the administrator to confirm it is AlmaLinux, Rocky Linux, or Ubuntu.<?php endif; ?></p>
+              <?php foreach (['redis' => ['label' => 'Redis 6.2', 'package' => 'ea-redis62'], 'valkey' => ['label' => 'Valkey 7.2', 'package' => 'ea-valkey72']] as $backendId => $packageInfo): ?>
+                <div class="orm-setup-step">
+                  <h4><?= htmlspecialchars($packageInfo['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
+                  <?php if (($podmanSetup[$backendId] ?? null) === 'available'): ?>
+                    <?php if (in_array($podmanSetup['host_platform'], ['AlmaLinux', 'Rocky Linux', 'Ubuntu'], true)): ?>
+                    <p>This fixed cPanel package is advertised for this account. In cPanel Terminal or SSH as this account, run:</p>
+                    <code class="orm-setup-command">/usr/local/cpanel/scripts/ea-podman install <?= htmlspecialchars($packageInfo['package'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code>
+                    <p>After it completes, return here and refresh. ORM will verify the account-owned container and socket.</p>
+                    <?php else: ?>
+                      <p>This fixed package is advertised, but the host operating system could not be verified. Ask the administrator to confirm the supported host and user-namespace prerequisites before installing.</p>
+                    <?php endif; ?>
+                  <?php elseif (($podmanSetup[$backendId] ?? null) === 'not-listed'): ?>
+                    <p>This package was not listed in the account inventory. Ask the administrator to confirm that the corresponding EasyApache container package is installed and available on the host.</p>
+                  <?php else: ?>
+                    <p>Package availability could not be confirmed. Ask the administrator to verify the host prerequisites before installing.</p>
+                  <?php endif; ?>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <p class="orm-setup-status" role="status">ORM could not verify EA Podman package availability for this account. The result is unknown; it does not mean Redis or Valkey is absent. Check account shell access and ask the administrator to verify the host setup.</p>
+            <?php endif; ?>
+            <p>cPanel EA Podman requires a supported AlmaLinux, Rocky Linux, or Ubuntu host with EasyApache 4 containers and user namespaces enabled. ORM does not probe the kernel namespace policy; the administrator must verify that prerequisite. ORM will not run a host package manager or accept custom images, package names, or shell commands.</p>
+            <div class="orm-setup-links">
+              <a href="?orm_setup=podman">Check again</a>
+              <a href="https://docs.cpanel.net/ea4/containers/easyapache-4-containers/" target="_blank" rel="noopener noreferrer">Administrator setup guide</a>
+              <a href="?orm_setup=choose">Back to setup choices</a>
+            </div>
+          <?php endif; ?>
+        </section>
+        <?php endif; ?>
         <section aria-labelledby="orm-ready-title">
           <h2 id="orm-ready-title">Your cache instance</h2>
           <?php if ($actionResult === null && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'): ?>
@@ -677,127 +798,7 @@ try {
               <?php endif; ?>
             <?php endif; ?>
             <?php if ($instanceStatus['state'] === 'not_configured'): ?>
-              <?php if ($showSetupWizard): ?>
-                <section class="orm-card" aria-labelledby="orm-setup-title">
-                  <h3 id="orm-setup-title">First-time setup</h3>
-                  <p>Choose where this account’s Redis-compatible cache should run. ORM checks the selected path and guides you through the required setup.</p>
-                  <?php if (!$podmanInventoryVerifiedAbsent): ?>
-                    <p class="orm-setup-status" role="status">ORM could not safely verify whether this account already has an EA Podman cache. You can check native Redis/Valkey, but do not install another Podman cache until your hosting administrator confirms the account inventory.</p>
-                  <?php endif; ?>
-                  <?php if ($setupMode === 'choose'): ?>
-                    <div class="orm-setup-options">
-                      <a class="orm-setup-choice" href="?orm_setup=native" aria-label="Choose a native Redis or Valkey service">
-                        <h3>Native service</h3>
-                        <p>Use an ORM-managed Redis/Valkey process installed on the server. WHM controls which backend is approved for new instances.</p>
-                      </a>
-                      <a class="orm-setup-choice" href="?orm_setup=podman" aria-label="Choose a cPanel EA Podman container">
-                        <h3>cPanel EA Podman</h3>
-                        <p>Install a cPanel-provided Redis 6.2 or Valkey 7.2 container under this cPanel account.</p>
-                      </a>
-                    </div>
-                    <p class="orm-note">If a cache is already installed for your account, it appears in the existing cPanel Podman section above.</p>
-                  <?php elseif ($setupMode === 'native'): ?>
-                    <h4>Native service readiness</h4>
-                    <?php if (($nativeDiscovery['status'] ?? null) !== 'supported-platform'): ?>
-                      <p class="orm-setup-status" role="status">Host discovery is unavailable or this platform is unsupported. Ask your hosting administrator to verify a supported Linux Redis/Valkey package and the WHM backend selection.</p>
-                    <?php else: ?>
-                      <?php $detectedNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => ($backend['status'] ?? null) === 'detected')); ?>
-                      <?php $partialNativeBackends = array_values(array_filter($nativeDiscovery['backends'], static fn (array $backend): bool => in_array(($backend['status'] ?? null), ['server-only', 'client-only'], true))); ?>
-                      <?php if ($detectedNativeBackends === []): ?>
-                        <?php if ($partialNativeBackends !== []): ?>
-                          <p class="orm-setup-status" role="status">ORM found an incomplete native installation in its standard locations. A supported server and matching command-line client are both required:</p>
-                          <ul>
-                            <?php foreach ($partialNativeBackends as $backend): ?>
-                              <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong>: <?= $backend['status'] === 'server-only' ? 'server binary found; matching CLI is missing' : 'CLI found; server binary is missing' ?></li>
-                            <?php endforeach; ?>
-                          </ul>
-                        <?php else: ?>
-                          <p class="orm-setup-status" role="status">No Redis/Valkey server or CLI binary pair was found in ORM’s standard locations. That does not prove the host has no Redis-compatible service; ask your administrator to verify the package and WHM backend selection.</p>
-                        <?php endif; ?>
-                        <div class="orm-setup-step">
-                          <h4>Native package setup steps for your hosting administrator</h4>
-                          <ol>
-                            <li>Install a supported Redis or Valkey server package and its matching CLI from the host operating system’s trusted package repository.</li>
-                            <li>In WHM → Open Redis Manager → Redis-compatible backends, confirm both binaries are detected and select the approved default.</li>
-                            <li>Allow this cPanel package in provider policy, then return here and choose <a href="?orm_setup=native">Check again</a>.</li>
-                          </ol>
-                          <p>ORM launches isolated account-owned processes; do not expose a shared host service or open Redis TCP ports for this setup.</p>
-                        </div>
-                      <?php else: ?>
-                        <p class="orm-setup-status" role="status">Host binary discovery found:</p>
-                        <ul>
-                          <?php foreach ($detectedNativeBackends as $backend): ?>
-                            <li><strong><?= htmlspecialchars($backend['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></strong><?= is_string($backend['version'] ?? null) ? ' ' . htmlspecialchars($backend['version'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : '' ?> — <?= htmlspecialchars($backend['server_binary'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></li>
-                          <?php endforeach; ?>
-                        </ul>
-                      <?php endif; ?>
-                      <p>New ORM-managed native instances use the default backend selected by your hosting provider in WHM. This page cannot install host packages or change that provider setting.</p>
-                      <?php if ($detectedNativeBackends !== []): ?>
-                      <form method="post" class="orm-preset-form">
-                        <input type="hidden" name="orm_action" value="provision">
-                        <?php if (!$developerExposure): ?>
-                        <input type="hidden" name="orm_preset" value="generic">
-                        <p class="orm-preset-help">The standard profile uses a private socket, a 64 MiB memory cap, and no persistence.</p>
-                        <?php else: ?>
-                        <label for="orm-preset">Configuration preset</label>
-                        <select id="orm-preset" name="orm_preset" required>
-                          <option value="generic" selected>Generic — 64 MiB</option>
-                          <option value="wordpress">WordPress — 48 MiB</option>
-                          <option value="laravel">Laravel — 32 MiB</option>
-                          <option value="magento">Magento — 64 MiB</option>
-                          <option value="session">Session cache — 32 MiB</option>
-                        </select>
-                        <p class="orm-preset-help">The host applies package memory/client limits and provider defaults. ORM keeps this service account-scoped.</p>
-                        <?php endif; ?>
-                        <button type="submit">Initialize native cache</button>
-                      </form>
-                      <?php else: ?>
-                        <p>Once your administrator installs a supported native Redis/Valkey server package and selects it in WHM, choose <a href="?orm_setup=native">Check again</a>.</p>
-                      <?php endif; ?>
-                    <?php endif; ?>
-                    <div class="orm-setup-links"><a href="?orm_setup=choose">Back to setup choices</a></div>
-                  <?php else: ?>
-                    <h4>cPanel EA Podman readiness</h4>
-                    <?php if (!$podmanInventoryVerifiedAbsent): ?>
-                      <p class="orm-setup-status" role="status">ORM cannot verify whether this account already has an EA Podman cache, so it will not recommend installing another one. Ask your hosting administrator to verify the account inventory, then choose <a href="?orm_setup=podman">Check again</a>.</p>
-                    <?php elseif (($podmanSetup['status'] ?? null) === 'ea-podman-unavailable'): ?>
-                      <p class="orm-setup-status" role="status">The cPanel EA Podman tool is not available to this account. Ask your hosting administrator to enable EasyApache 4 containers, confirm the server is supported, and enable user namespaces. CloudLinux/CageFS container setups are not supported by cPanel’s EA Podman integration.</p>
-                    <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-host'): ?>
-                      <p class="orm-setup-status" role="status">This host is identified as <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>, which cPanel does not support for EA Podman Redis/Valkey containers. Choose the native service option or ask your administrator about supported host alternatives.</p>
-                    <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-shell'): ?>
-                      <p class="orm-setup-status" role="status">This account does not have a normal, non-jailed shell. Ask your hosting administrator to enable Normal Shell before using EA Podman.</p>
-                    <?php elseif (($podmanSetup['status'] ?? null) === 'checked'): ?>
-                      <p class="orm-setup-status" role="status">The account’s EA Podman package inventory was checked. Host platform: <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>. <?php if ($podmanSetup['host_platform'] === 'unknown'): ?>The operating system could not be verified; ask the administrator to confirm it is AlmaLinux, Rocky Linux, or Ubuntu.<?php endif; ?></p>
-                      <?php foreach (['redis' => ['label' => 'Redis 6.2', 'package' => 'ea-redis62'], 'valkey' => ['label' => 'Valkey 7.2', 'package' => 'ea-valkey72']] as $backendId => $packageInfo): ?>
-                        <div class="orm-setup-step">
-                          <h4><?= htmlspecialchars($packageInfo['label'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></h4>
-                          <?php if (($podmanSetup[$backendId] ?? null) === 'available'): ?>
-                            <?php if (in_array($podmanSetup['host_platform'], ['AlmaLinux', 'Rocky Linux', 'Ubuntu'], true)): ?>
-                            <p>This fixed cPanel package is advertised for this account. In cPanel Terminal or SSH as this account, run:</p>
-                            <code class="orm-setup-command">/usr/local/cpanel/scripts/ea-podman install <?= htmlspecialchars($packageInfo['package'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code>
-                            <p>After it completes, return here and refresh. ORM will verify the account-owned container and socket.</p>
-                            <?php else: ?>
-                              <p>This fixed package is advertised, but the host operating system could not be verified. Ask the administrator to confirm the supported host and user-namespace prerequisites before installing.</p>
-                            <?php endif; ?>
-                          <?php elseif (($podmanSetup[$backendId] ?? null) === 'not-listed'): ?>
-                            <p>This package was not listed in the account inventory. Ask the administrator to confirm that the corresponding EasyApache container package is installed and available on the host.</p>
-                          <?php else: ?>
-                            <p>Package availability could not be confirmed. Ask the administrator to verify the host prerequisites before installing.</p>
-                          <?php endif; ?>
-                        </div>
-                      <?php endforeach; ?>
-                    <?php else: ?>
-                      <p class="orm-setup-status" role="status">ORM could not verify EA Podman package availability for this account. The result is unknown; it does not mean Redis or Valkey is absent. Check account shell access and ask the administrator to verify the host setup.</p>
-                    <?php endif; ?>
-                    <p>cPanel EA Podman requires a supported AlmaLinux, Rocky Linux, or Ubuntu host with EasyApache 4 containers and user namespaces enabled. ORM does not probe the kernel namespace policy; the administrator must verify that prerequisite. ORM will not run a host package manager or accept custom images, package names, or shell commands.</p>
-                    <div class="orm-setup-links">
-                      <a href="?orm_setup=podman">Check again</a>
-                      <a href="https://docs.cpanel.net/ea4/containers/easyapache-4-containers/" target="_blank" rel="noopener noreferrer">Administrator setup guide</a>
-                      <a href="?orm_setup=choose">Back to setup choices</a>
-                    </div>
-                  <?php endif; ?>
-                </section>
-              <?php elseif ($podmanCaches !== []): ?>
+              <?php if ($podmanCaches !== []): ?>
                 <p>An existing cPanel EA Podman cache is shown above. ORM-managed native service setup is not initialized for this account.</p>
               <?php elseif (($podmanInventory['status'] ?? null) === 'unavailable'): ?>
                 <p class="orm-setup-status" role="status">ORM could not safely verify this account’s cPanel container inventory. It will not assume a cache is absent. Contact your hosting administrator to check the account’s EA Podman setup.</p>

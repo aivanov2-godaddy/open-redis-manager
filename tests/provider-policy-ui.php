@@ -117,6 +117,12 @@ $assertions = [
         && str_contains($cpanelPage, 'server-only') && str_contains($cpanelPage, 'client-only')
         && str_contains($cpanelPage, 'Install a supported Redis or Valkey server package and its matching CLI')
         && str_contains($cpanelPage, 'ea-podman install <?= htmlspecialchars($packageInfo[\'package\']'),
+    is_string($cpanelPage) && str_contains($cpanelPage, 'if ($instanceNotConfigured && $showSetupWizard)')
+        && strpos($cpanelPage, 'id="orm-first-run-setup"') !== false
+        && strpos($cpanelPage, 'section aria-labelledby="orm-ready-title"') !== false
+        && strpos($cpanelPage, 'id="orm-preflight-title"') !== false
+        && strpos($cpanelPage, 'id="orm-first-run-setup"') < strpos($cpanelPage, 'section aria-labelledby="orm-ready-title"')
+        && strpos($cpanelPage, 'id="orm-first-run-setup"') < strpos($cpanelPage, 'id="orm-preflight-title"'),
 ];
 foreach ($assertions as $index => $passed) {
     if (!$passed) {
