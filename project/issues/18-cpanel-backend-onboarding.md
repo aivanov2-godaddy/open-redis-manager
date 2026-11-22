@@ -17,6 +17,8 @@ Let a cPanel account choose an ORM-managed native Redis/Valkey service or a cPan
 - Tests cover fixed invocation, account identity, package inventory parsing, timeouts, unsupported shell/host, and account-owned container inventory isolation.
 - Standalone guide added at `docs/guides/cpanel-first-run-setup.md`; README and catalog updated.
 
-## Validation remaining
+## Live validation (2026-11-22)
 
-The new cPanel page still needs screenshot review and source-matched live validation on the disposable cPanel host. This branch must not claim a supported host matrix or automatically installed packages.
+The merged `0.1.0-rc.13` entry point and its first-run discovery dependencies were checked against the exact `main` source on one disposable cPanel & WHM 11.138.0 host. A dedicated unconfigured account with no ORM instance and no EA Podman inventory showed the first-run choices; authenticated GET requests to both the native and EA Podman routes returned HTTP 200. Native discovery rendered its host-binary results. The Podman route showed only the fixed `ea-redis62` and `ea-valkey72` install commands, the rescan link, and administrator setup guidance. No package installation or state-changing request was made. See the [sanitized live validation record](../../docs/validation/records/2026-11-22-cpanel-first-run-wizard-live.md).
+
+This is a single-host functional route check. A live browser screenshot review, native-missing installation branch, and broader host/version matrix remain open; the static previews are not live captures. The wizard does not automatically install host packages or EA Podman containers.
