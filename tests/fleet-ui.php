@@ -44,9 +44,15 @@ $assert(str_contains($whm, "'security.report'") && str_contains($whm, 'WhmSecuri
 $assert(str_contains($whm, 'Generate report-only review') && str_contains($whm, 'Signals not evaluated')
     && str_contains($whm, 'does not inspect passwords'),
     'show report-only findings, unsupported evidence gaps, and privacy limits');
+$assert(str_contains($whm, 'class="orm-security-report"')
+    && str_contains($whm, 'class="orm-report-threshold-grid"')
+    && str_contains($whm, 'class="orm-report-findings"')
+    && str_contains($whm, '.orm-report-completeness')
+    && str_contains($whm, '@media(max-width:760px)'),
+    'render the WHM security report as a responsive, evidence-status UI');
 $fleetPageGuard = strpos($whm, '<?php if ($fleetPage === null): ?>');
 $summaryForm = strpos($whm, 'name="orm_action" value="fleet.summary"');
-$securitySection = strpos($whm, '<section aria-labelledby="orm-security-report-title">');
+$securitySection = strpos($whm, '<section class="orm-security-report" aria-labelledby="orm-security-report-title">');
 $securitySectionEnd = $securitySection === false ? false : strpos($whm, '</section>', $securitySection);
 $assert(is_int($fleetPageGuard) && is_int($summaryForm) && is_int($securitySection)
     && is_int($securitySectionEnd) && $summaryForm < $fleetPageGuard

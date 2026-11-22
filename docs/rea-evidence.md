@@ -31,6 +31,10 @@ REA opened only the public overview page in provider-owned Chromium 158.0.8127.3
 
 REA launched provider-owned Chromium 158.0.8127.36 to the public home, documentation, and upgrade pages, waited 1.2–1.5 seconds, and captured DOM/accessibility data plus page-scoped network metadata. All three scenarios completed; each page still displayed v2.6.11. The home capture also retained its final viewport screenshot. The documentation and upgrade rechecks did not request screenshots. No response bodies, credentials, authenticated product screens, purchase, download, install, update, or account actions were captured or performed. See the separate [Home](reference-site/home.md), [Documentation](reference-site/documentation.md), [Upgrade](reference-site/upgrade.md), [Screenshot Gallery](reference-site/screenshots.md), and [Roadmap](reference-site/roadmap.md) summaries.
 
+### Read-only page recheck on 2026-11-22
+
+REA captured the public home, documentation, and upgrade pages in provider-owned Chromium 158.0.4370.33. All three captures completed with DOM, accessibility, and viewport screenshot evidence; the pages continued to display v2.6.11. Accessibility captures measured 29,316 bytes for the home, 62,216 bytes for documentation, and 8,904 bytes for the upgrade page. These are public reference observations only; no authenticated product screens, response bodies, or account actions were involved. The page inventory and feature summaries did not require changes.
+
 ## Evidence records
 
 The complete REA records are retained in the active REA evidence session. Identifiers are included here so the observations can be revisited without relying on prose summaries.
@@ -48,6 +52,9 @@ The complete REA records are retained in the active REA evidence session. Identi
 | `https://cpanelredismanager.com/index.php` (2026-11-21 recheck) | `ev_a2982e6eb1f0445d33a3cea1c0cc296cca904e9bec85454d9b95ac5af5f2d5f3` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.8127.36; complete within the requested view; 29,316-byte accessibility tree, DOM, final viewport screenshot, and 9 page-scoped network transactions; no response bodies or interaction. |
 | `https://cpanelredismanager.com/documentation.php` (2026-11-21 recheck) | `ev_c15819e47192f23b2fa0e4404fcd0162afb8a14e50b0d0e78bc0397909c5f462` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.8127.36; complete within the requested view; 62,216-byte accessibility tree and DOM; no screenshot, response bodies, or interaction. |
 | `https://cpanelredismanager.com/upgrade.php` (2026-11-21 recheck) | `ev_697e908b472dcb9474366dddd4c6c8e272324edb037b9fb3f469555bc436ce84` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.8127.36; complete within the requested view; 8,904-byte accessibility tree and DOM; no screenshot, response bodies, or interaction. |
+| `https://cpanelredismanager.com/index.php` (2026-11-22 recheck) | `ev_1e6930ee95f563411b0e5e01f90a7eb9e9d4401ca6144430d14cce46b420e2ae` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.4370.33; complete; 29,316-byte accessibility tree, DOM, and viewport screenshot; page reports v2.6.11. |
+| `https://cpanelredismanager.com/documentation.php` (2026-11-22 recheck) | `ev_609d758796f6800cd7dbb3f16cbe068b3e594a4e9499a91e95fb866dcfd53ac0` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.4370.33; complete; 62,216-byte accessibility tree, DOM, and viewport screenshot; page reports v2.6.11. |
+| `https://cpanelredismanager.com/upgrade.php` (2026-11-22 recheck) | `ev_1ff2bca3b4e60ff819d73ac299e9bdd40b80bd7b7804f7c392b6c4908c22d9b9` | Controlled replay | Derived from captured DOM/accessibility | Chromium 158.0.4370.33; complete; 8,904-byte accessibility tree, DOM, and viewport screenshot; page reports v2.6.11. |
 
 ## What this does not establish
 
