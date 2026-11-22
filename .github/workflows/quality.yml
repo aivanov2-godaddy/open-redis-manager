@@ -74,6 +74,8 @@ jobs:
         run: python tests/cpanel-live-podman-web-isolation-smoke-checks.py
       - name: Check live WHM report-form smoke entry point
         run: php tests/whm-live-security-report-form.php --help >/dev/null
+      - name: Check live WHM partial Podman coverage smoke entry point
+        run: python tests/whm-live-partial-podman-coverage.py --help >/dev/null
       - name: Check live WHM diagnostics smoke entry point
         run: php tests/whm-live-diagnostics-form.php --help >/dev/null
       - name: Check live WHM recovery-form smoke entry point
