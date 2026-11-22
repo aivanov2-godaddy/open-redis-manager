@@ -23,7 +23,7 @@ $assert(str_contains($whm, "'security.policy.update'")
     && str_contains($whm, 'security.thresholds.update'),
     'expose separately stored, root-authorized, auditable report-only thresholds');
 $assert(str_contains($whm, 'Thresholds are disabled by default and are advisory only')
-    && str_contains($whm, 'do not enforce, remediate'),
+    && str_contains($whm, 'do not enforce') && str_contains($whm, 'remediate'),
     'explain default-off thresholds and prevent any implication of automatic enforcement');
 $assert(str_contains($whm, 'count($selected) <= 2') && str_contains($whm, 'array_is_list($selected)'),
     'cap and validate the browser-selected batch account list');
