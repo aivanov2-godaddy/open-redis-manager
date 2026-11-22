@@ -76,6 +76,8 @@ jobs:
         run: php tests/whm-live-security-report-form.php --help >/dev/null
       - name: Check live WHM diagnostics smoke entry point
         run: php tests/whm-live-diagnostics-form.php --help >/dev/null
+      - name: Check live WHM recovery-form smoke entry point
+        run: php tests/whm-live-recovery-form.php --help >/dev/null
       - name: Check live WHM diagnostics smoke assertions
         run: python tests/whm-live-diagnostics-form-checks.py
       - name: Check broker Perl syntax and tests
