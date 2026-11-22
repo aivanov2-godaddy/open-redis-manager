@@ -148,7 +148,8 @@ sub run {
                         || $request->{operation} eq 'fleet.diagnostics'
                         || $request->{operation} eq 'fleet.recovery.scan'
                         || $request->{operation} eq 'provider.resellers' ? 1
-                    : ($request->{operation} eq 'instance.metrics' || $request->{operation} eq 'metrics.history') ? 4
+                    : ($request->{operation} eq 'instance.status' || $request->{operation} eq 'instance.metrics'
+                        || $request->{operation} eq 'metrics.history') ? 4
                     : ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable'
                         || $request->{operation} eq 'backup.create' || $request->{operation} eq 'backup.restore'
                         || $request->{operation} eq 'fleet.control'
@@ -168,28 +169,7 @@ sub run {
                     || $request->{operation} eq 'fleet.backup.create' || $request->{operation} eq 'fleet.backup.restore'
                     || $request->{operation} eq 'fleet.migrate' || $request->{operation} eq 'fleet.recovery.repair') ? 60 : 1;
                 my $root_read = $request->{operation} =~ /\A(?:fleet\.list|fleet\.summary|fleet\.auto_provision|fleet\.diagnostics|fleet\.recovery\.(?:scan|repair)|fleet\.control|fleet\.backup\.(?:create|restore)|fleet\.backup\.batch\.(?:create|restore)|fleet\.migrate|provider\.resellers)\z/ ? 1 : 0;
-                my $rate_bucket = $request->{operation} eq 'fleet.control'
-                    ? 'fleet.control'
-                    : $request->{operation} eq 'fleet.auto_provision'
-                        ? 'fleet.auto_provision:' . $request->{username}
-                    : $request->{operation} eq 'fleet.list' ? 'fleet.list'
-                    : $request->{operation} eq 'fleet.summary' ? 'fleet.summary'
-                    : $request->{operation} =~ /\Afleet\.backup\.batch\./ ? 'fleet.backup.batch'
-                    : $request->{operation} eq 'provider.resellers' ? 'provider.resellers'
-                    : $request->{operation} eq 'provider.exposure' ? 'provider.exposure'
-                    : $request->{operation} eq 'provider.branding' ? 'provider.branding'
-                    : ($request->{operation} eq 'instance.auth.rotate' || $request->{operation} eq 'instance.auth.disable') ? 'instance.auth.change'
-                    : $request->{operation} eq 'fleet.diagnostics'
-                        ? 'fleet.diagnostics:' . $request->{username}
-                    : $request->{operation} eq 'fleet.recovery.scan'
-                        ? 'fleet.recovery.scan:' . $request->{username}
-                    : $request->{operation} eq 'fleet.recovery.repair'
-                        ? 'fleet.recovery.repair:' . $request->{username}
-                    : $request->{operation} =~ /\Afleet\.backup\./
-                        ? 'fleet.backup:' . $request->{username}
-                    : $request->{operation} eq 'fleet.migrate'
-                        ? 'fleet.migrate:' . $request->{username}
-                        : $rate_window;
+                my $rate_bucket = _rate_bucket_for($request, $rate_window);
                 if (!_rate_allowed(\%rates, $peer_uid, $now, $limit, $root_read, $rate_window, $rate_bucket)) {
                     if ($request->{operation} eq 'fleet.diagnostics') {
                         my $action = 'diagnostics.' . $request->{command_class};
@@ -266,6 +246,31 @@ sub _rate_allowed {
     return 0 if $window->{count} >= $limit;
     $window->{count}++;
     return 1;
+}
+
+sub _rate_bucket_for {
+    my ($request, $fallback_bucket) = @_;
+    return $fallback_bucket if ref($request) ne 'HASH';
+
+    my $operation = $request->{operation} // '';
+    my $username = $request->{username} // '';
+    return 'fleet.control' if $operation eq 'fleet.control';
+    return 'fleet.auto_provision:' . $username if $operation eq 'fleet.auto_provision';
+    return 'fleet.list' if $operation eq 'fleet.list';
+    return 'fleet.summary' if $operation eq 'fleet.summary';
+    return 'fleet.backup.batch' if $operation =~ /\Afleet\.backup\.batch\./;
+    return 'provider.resellers' if $operation eq 'provider.resellers';
+    return 'provider.exposure' if $operation eq 'provider.exposure';
+    return 'provider.branding' if $operation eq 'provider.branding';
+    return 'instance.status:' . $username if $operation eq 'instance.status';
+    return 'instance.auth.change'
+        if $operation eq 'instance.auth.rotate' || $operation eq 'instance.auth.disable';
+    return 'fleet.diagnostics:' . $username if $operation eq 'fleet.diagnostics';
+    return 'fleet.recovery.scan:' . $username if $operation eq 'fleet.recovery.scan';
+    return 'fleet.recovery.repair:' . $username if $operation eq 'fleet.recovery.repair';
+    return 'fleet.backup:' . $username if $operation =~ /\Afleet\.backup\./;
+    return 'fleet.migrate:' . $username if $operation eq 'fleet.migrate';
+    return $fallback_bucket;
 }
 
 sub _write_and_close {
