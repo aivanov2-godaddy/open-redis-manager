@@ -89,6 +89,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: php-release-apply-job
+        name: WHM signed release apply job checks
+        entry: php tests/release-apply-job.php
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: cpanel-icon-assets
         name: cPanel icon asset checks
         entry: python tests/cpanel-icon-assets.py

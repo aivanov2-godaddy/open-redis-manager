@@ -4,6 +4,7 @@ set -Eeuo pipefail
 [[ "$(id -u)" -eq 0 ]] || { printf 'packaging guard tests must run as root.\n' >&2; exit 1; }
 
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../packaging" && pwd -P)/lib.sh"
+source "$ORM_PACKAGE_ROOT/release-lib.sh"
 grep -Fxq 'ReadWritePaths=/etc/orm-instances /var/lib/orm-instances -/var/lib/orm-events' "$ORM_PACKAGE_ROOT/systemd/orm-broker.service" || {
     printf 'broker writable paths must be limited to ORM instance and provider event state.\n' >&2
     exit 1
@@ -50,6 +51,31 @@ grep -Fq 'metrics_timer "$ORM_PACKAGE_ROOT/systemd/orm-metrics-collect@.timer" "
 }
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/orm-packaging-guards.XXXXXXXX")"
 trap 'rm -rf -- "$test_root"' EXIT
+
+orm_release_file_requires_maintenance broker_handler replace /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm || {
+    printf 'changed broker code must require maintenance.\n' >&2
+    exit 1
+}
+orm_release_file_requires_maintenance whm_cgi replace /etc/systemd/system/orm-broker.service || {
+    printf 'a broker service target must require maintenance regardless of its manifest key.\n' >&2
+    exit 1
+}
+orm_release_file_requires_maintenance application_file add /etc/systemd/system/orm-podman-metrics.service || {
+    printf 'an ORM systemd unit target must require maintenance.\n' >&2
+    exit 1
+}
+orm_release_file_requires_maintenance application_file replace /usr/local/cpanel/3rdparty/orm/src/Orm/Cpanel/BrokerInventory.php || {
+    printf 'broker source targets must require maintenance regardless of their extension.\n' >&2
+    exit 1
+}
+if orm_release_file_requires_maintenance broker_handler unchanged /usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/Handler.pm; then
+    printf 'unchanged broker files must not require maintenance.\n' >&2
+    exit 1
+fi
+if orm_release_file_requires_maintenance application_file add /usr/local/cpanel/whostmgr/docroot/cgi/addon_open_redis_manager.php; then
+    printf 'unrelated WHM files must not require broker maintenance.\n' >&2
+    exit 1
+fi
 
 # The release updater checks that the broker retains its pre-update state and,
 # when active, still exposes the correctly owned runtime socket.
