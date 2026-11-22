@@ -151,7 +151,8 @@ sub handle_frame {
             || $request->{operation} eq 'fleet.recovery.repair') {
             my $action = $request->{operation} eq 'fleet.recovery.scan' ? 'recovery.scan'
                 : $request->{repair} eq 'config_rebuild' ? 'recovery.config_rebuild'
-                : $request->{repair} eq 'config_reset' ? 'recovery.config_reset' : 'recovery.start';
+                : $request->{repair} eq 'config_reset' ? 'recovery.config_reset'
+                : $request->{repair} eq 'ownership_fix' ? 'recovery.ownership_fix' : 'recovery.start';
             if ($peer_uid != 0) {
                 eval { $fleet_inventory->audit_denial($peer_uid, $request->{username}, $action) }
                     if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_denial') };

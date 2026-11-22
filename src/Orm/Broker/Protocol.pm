@@ -30,7 +30,7 @@ sub parse_request {
     if ($frame =~ /\A\{"operation":"fleet\.recovery\.scan","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.recovery.scan', username => $1, version => 1 };
     }
-    if ($frame =~ /\A\{"operation":"fleet\.recovery\.repair","repair":"(start|config_rebuild|config_reset)","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
+    if ($frame =~ /\A\{"operation":"fleet\.recovery\.repair","repair":"(start|config_rebuild|config_reset|ownership_fix)","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {
         return { operation => 'fleet.recovery.repair', repair => $1, username => $2, version => 1 };
     }
     if ($frame =~ /\A\{"operation":"fleet\.auth\.rotate","username":"([a-zA-Z0-9_-]{1,16})","version":1\}\n\z/) {

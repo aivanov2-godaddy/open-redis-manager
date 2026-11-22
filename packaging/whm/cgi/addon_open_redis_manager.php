@@ -217,13 +217,14 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
             'config_drift' => 'The root-owned config contains valid bounded ORM settings plus noncanonical directives. A rebuild can remove the unrecognized additions while preserving those settings and AUTH. It is available only while the service is stopped or failed.',
             'config_missing' => 'The config file is missing. A reset can recreate it with a small safe profile and a new AUTH password. Existing Redis data will be left in place; update applications before starting the service.',
             'config_malformed' => 'The config file is malformed. A reset will replace it with a small safe profile and a new AUTH password. Existing Redis data will be left in place; update applications before starting the service.',
+            'data_directory_ownership' => 'The managed Redis data tree has incorrect ownership or permissions. A repair can restore account ownership and private modes on supported directories, regular files, and the canonical Redis socket while preserving file contents. Symlinks, hard-linked files, special files, unexpected owners, cross-device paths, and trees beyond the scan limit are refused. It is available only while the service is stopped or failed.',
             'service_failed' => 'The service is failed. ORM verified the instance manifest; the fixed Start service repair is available.',
             'service_healthy' => 'The service is running and passed the fixed read-only health probes.',
             'service_stopped' => 'The service is stopped. ORM verified the instance manifest; the fixed Start service repair is available.',
             'service_transitioning' => 'The service is changing state. Wait for it to settle, then scan again.',
         ];
         $fleetRecoveryMessage = [
-            'type' => in_array($recovery['finding'], ['config_drift', 'service_healthy', 'service_stopped', 'service_failed'], true) ? 'success' : 'error',
+            'type' => in_array($recovery['finding'], ['config_drift', 'data_directory_ownership', 'service_healthy', 'service_stopped', 'service_failed'], true) ? 'success' : 'error',
             'text' => 'Recovery scan for ' . $recovery['username'] . ': '
                 . ($findingMessages[$recovery['finding']] ?? 'The scan returned an unknown finding.')
                 . ($recovery['audit_logged'] ? ' The scan was recorded in the system authentication log.'
@@ -232,16 +233,17 @@ if ($rootAuthorized && \Orm\Security\SessionRequestGuard::allowsMutation($_SERVE
     } elseif ($recovery['success']) {
         $isConfigRebuild = ($recovery['action'] ?? null) === 'recovery.config_rebuild';
         $isConfigReset = ($recovery['action'] ?? null) === 'recovery.config_reset';
+        $isOwnershipFix = ($recovery['action'] ?? null) === 'recovery.ownership_fix';
         if ($isConfigReset) {
             $fleetRecoveryCredentialResult = $recovery;
         }
         $fleetRecoveryMessage = [
             'type' => 'success',
-            'text' => ($isConfigReset ? 'Configuration reset and verified for ' : ($isConfigRebuild ? 'Configuration rebuilt and verified for ' : 'Start requested for '))
+            'text' => ($isConfigReset ? 'Configuration reset and verified for ' : ($isConfigRebuild ? 'Configuration rebuilt and verified for ' : ($isOwnershipFix ? 'Data ownership and private modes restored and verified for ' : 'Start requested for ')))
                 . $recovery['username'] . '. Current state: ' . $recovery['state'] . '.'
-                . ($isConfigRebuild || $isConfigReset ? ' The service was not started.' : '')
+                . ($isConfigRebuild || $isConfigReset || $isOwnershipFix ? ' The service was not started.' : '')
                 . ($recovery['audit_logged'] ? ' The repair was recorded in the system authentication log.'
-                    : ($isConfigRebuild || $isConfigReset ? ' Warning: the config was verified, but its audit record could not be confirmed.'
+                    : ($isConfigRebuild || $isConfigReset || $isOwnershipFix ? ' Warning: the repair was verified, but its audit record could not be confirmed.'
                         : ' Warning: the service may have started, but its audit record could not be confirmed.')),
         ];
     } else {
@@ -1169,7 +1171,7 @@ WHM::header('Open Redis Manager', 0, 0);
                     <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
                     <button type="submit">Read-only scan</button>
                   </form>
-                  <?php if ($fleetRecoveryResult !== null && $fleetRecoveryResult['username'] === $entry['username'] && in_array($fleetRecoveryResult['repair'] ?? null, ['start', 'config_rebuild', 'config_reset'], true)): ?>
+                  <?php if ($fleetRecoveryResult !== null && $fleetRecoveryResult['username'] === $entry['username'] && in_array($fleetRecoveryResult['repair'] ?? null, ['start', 'config_rebuild', 'config_reset', 'ownership_fix'], true)): ?>
                     <form method="post" class="orm-fleet-actions">
                       <input type="hidden" name="orm_action" value="fleet.recovery.repair">
                       <input type="hidden" name="username" value="<?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">
@@ -1178,6 +1180,8 @@ WHM::header('Open Redis Manager', 0, 0);
                         <button type="submit" onclick="return confirm('Replace the noncanonical config for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> with ORM’s canonical config, preserving the validated settings and AUTH secret? ORM will not start the service.')">Rebuild config</button>
                       <?php elseif ($fleetRecoveryResult['repair'] === 'config_reset'): ?>
                         <button type="submit" onclick="return confirm('Reset the malformed or missing config for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> to an 8 MiB safe profile and a new AUTH password? Existing Redis data will remain, the old password will be lost, and the service will stay stopped. Update applications with the one-time password before starting it.')">Reset config and replace AUTH</button>
+                      <?php elseif ($fleetRecoveryResult['repair'] === 'ownership_fix'): ?>
+                        <button type="submit" onclick="return confirm('Restore ownership and private modes for supported directories, regular files, and the canonical Redis socket under <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>? File contents will be preserved and the service will stay stopped. Symlinks, hard-linked files, and special files will block repair.')">Repair data tree ownership</button>
                       <?php else: ?>
                         <button type="submit" onclick="return confirm('Start the verified stopped or failed ORM service for <?= htmlspecialchars($entry['username'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>?')">Start service</button>
                       <?php endif; ?>
@@ -1668,7 +1672,7 @@ WHM::header('Open Redis Manager', 0, 0);
         <label for="orm-audit-action">Action</label>
         <select id="orm-audit-action" name="audit_action">
           <option value="">All actions</option>
-          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
+          <?php foreach (['start','stop','restart','instance.provision','instance.configure','instance.start','instance.stop','backup.create','backup.restore','migration.to-valkey','diagnostics.read','diagnostics.ping','diagnostics.info_server','diagnostics.info_memory','diagnostics.info_clients','diagnostics.info_stats','diagnostics.dbsize','recovery.scan','recovery.start','recovery.config_rebuild','recovery.config_reset','recovery.ownership_fix','auth.rotate','auth.disable','provider.default','provider.package.save','provider.package.remove','provider.reseller.save','provider.reseller.remove','provider.branding.save','backend.select','policy.violation','security.report','security.thresholds.update'] as $action): ?>
             <option value="<?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"<?= $auditForm['action'] === $action ? ' selected' : '' ?>><?= htmlspecialchars($action, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></option>
           <?php endforeach; ?>
         </select>

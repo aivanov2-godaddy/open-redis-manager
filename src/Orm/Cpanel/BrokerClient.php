@@ -1258,7 +1258,7 @@ final class BrokerClient
                 || ($decoded['action'] ?? null) !== 'recovery.scan'
                 || ($decoded['username'] ?? null) !== $username || !is_bool($decoded['audit_logged'] ?? null)
                 || !in_array($decoded['finding'] ?? null, [
-                    'config_drift', 'config_malformed', 'config_missing', 'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
+                    'config_drift', 'config_malformed', 'config_missing', 'data_directory_ownership', 'health_probe_failed', 'not_configured', 'service_failed', 'service_healthy',
                     'service_stopped', 'service_transitioning',
                 ], true)
                 || !in_array($decoded['state'] ?? null, [
@@ -1276,6 +1276,7 @@ final class BrokerClient
                 'service_transitioning' => [in_array($decoded['state'], ['starting', 'stopping'], true) ? $decoded['state'] : '', null],
                 'config_drift' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'config_rebuild' : null],
                 'config_missing', 'config_malformed' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'config_reset' : null],
+                'data_directory_ownership' => [$decoded['state'], in_array($decoded['state'], ['stopped', 'failed'], true) ? 'ownership_fix' : null],
                 'service_healthy', 'health_probe_failed' => ['running', null],
                 'not_configured' => ['not_configured', null],
             };
@@ -1315,13 +1316,14 @@ final class BrokerClient
     public function repairFleetAccount(string $username, string $repair): ?array
     {
         if (preg_match('/\A[a-zA-Z0-9_-]{1,16}\z/', $username) !== 1
-            || !in_array($repair, ['start', 'config_rebuild', 'config_reset'], true)) {
+            || !in_array($repair, ['start', 'config_rebuild', 'config_reset', 'ownership_fix'], true)) {
             return null;
         }
         $action = match ($repair) {
             'start' => 'recovery.start',
             'config_rebuild' => 'recovery.config_rebuild',
-            default => 'recovery.config_reset',
+            'config_reset' => 'recovery.config_reset',
+            default => 'recovery.ownership_fix',
         };
         $request = json_encode(
             ['operation' => 'fleet.recovery.repair', 'repair' => $repair, 'username' => $username, 'version' => 1],

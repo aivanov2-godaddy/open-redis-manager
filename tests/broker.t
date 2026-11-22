@@ -6,6 +6,7 @@ use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Fcntl qw(:mode :flock);
 use MIME::Base64 qw(encode_base64);
+use POSIX qw(mkfifo);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use lib 'src';
 use Orm::Broker::AccountResolver;
@@ -745,6 +746,93 @@ like($drift_content, qr/^maxclients 10$/m, 'reset config uses the fixed low reco
 like($drift_content, qr/^requirepass \Q$reset_secret\E$/m, 'reset config installs the returned AUTH credential');
 is($manager->recovery_config_scan($account), undef,
     'do not offer config recovery after writing a canonical reset config');
+my $ownership_directory = $recovery_manifest->{data};
+if ($test_uid != $<) {
+    chown($<, $<, $ownership_directory) == 1 or die "damage data directory ownership fixture: $!";
+} else {
+    chmod(0710, $ownership_directory) or die "damage data directory mode fixture: $!";
+}
+my $ownership_sentinel = "$ownership_directory/ownership-recovery-sentinel.rdb";
+open(my $ownership_sentinel_handle, '>', $ownership_sentinel) or die "create ownership sentinel: $!";
+print {$ownership_sentinel_handle} "preserve redis data\n";
+close($ownership_sentinel_handle) or die "close ownership sentinel: $!";
+my $ownership_nested_directory = "$ownership_directory/appendonlydir";
+mkdir($ownership_nested_directory, 0777) or die "create nested ownership fixture: $!";
+my $ownership_nested_file = "$ownership_nested_directory/appendonly.aof.1.base.rdb";
+open(my $ownership_nested_handle, '>', $ownership_nested_file) or die "create nested ownership data: $!";
+print {$ownership_nested_handle} "preserve nested redis data\n";
+close($ownership_nested_handle) or die "close nested ownership data: $!";
+chmod(0644, $ownership_nested_file) or die "damage nested ownership mode: $!";
+my $ownership_scan = $manager->recovery_ownership_scan($account);
+ok($ownership_scan && $ownership_scan->{success}
+    && $ownership_scan->{finding} eq 'data_directory_ownership'
+    && $ownership_scan->{repair} eq 'ownership_fix' && $ownership_scan->{state} eq 'stopped',
+    'offer data-directory ownership repair only for a stopped service and trusted manifest');
+my $ownership_saved_state = $unit_state;
+$unit_state = 'active';
+my $running_ownership_scan = $manager->recovery_ownership_scan($account);
+ok($running_ownership_scan && $running_ownership_scan->{state} eq 'running'
+    && !exists($running_ownership_scan->{repair}), 'never offer data-directory ownership repair while the service is running');
+is($manager->recovery_fix_ownership($account)->{error}, 'repair_not_applicable',
+    'refuse data-directory ownership changes while the service is running');
+$unit_state = $ownership_saved_state;
+my $ownership_repair = $manager->recovery_fix_ownership($account);
+ok($ownership_repair->{success} && $ownership_repair->{state} eq 'stopped',
+    'restore canonical account ownership and private mode without starting the service');
+my @repaired_directory_stat = lstat($ownership_directory);
+ok(@repaired_directory_stat && $repaired_directory_stat[4] == $account->{uid}
+    && $repaired_directory_stat[5] == $account->{gid} && ($repaired_directory_stat[2] & 07777) == 0700,
+    'verify repaired directory ownership and 0700 mode');
+my @repaired_nested_directory_stat = lstat($ownership_nested_directory);
+my @repaired_nested_file_stat = lstat($ownership_nested_file);
+ok(@repaired_nested_directory_stat && $repaired_nested_directory_stat[4] == $account->{uid}
+    && $repaired_nested_directory_stat[5] == $account->{gid}
+    && ($repaired_nested_directory_stat[2] & 07777) == 0700
+    && @repaired_nested_file_stat && $repaired_nested_file_stat[4] == $account->{uid}
+    && $repaired_nested_file_stat[5] == $account->{gid}
+    && ($repaired_nested_file_stat[2] & 07777) == 0600,
+    'repair nested directories and regular-file ownership with private modes');
+open($ownership_sentinel_handle, '<', $ownership_sentinel) or die "read ownership sentinel: $!";
+my $ownership_sentinel_content = do { local $/; <$ownership_sentinel_handle> };
+close($ownership_sentinel_handle) or die "close ownership sentinel: $!";
+is($ownership_sentinel_content, "preserve redis data\n", 'preserve the data-directory contents during ownership repair');
+open($ownership_nested_handle, '<', $ownership_nested_file) or die "read nested ownership data: $!";
+my $ownership_nested_content = do { local $/; <$ownership_nested_handle> };
+close($ownership_nested_handle) or die "close nested ownership data: $!";
+is($ownership_nested_content, "preserve nested redis data\n", 'preserve nested Redis file bytes during ownership repair');
+my $ownership_link = "$ownership_directory/hardlink.rdb";
+ok(link($ownership_sentinel, $ownership_link), 'create hard-linked data fixture');
+is($manager->recovery_ownership_scan($account), undef, 'refuse ownership recovery when a data file has multiple hard links');
+ok(unlink($ownership_link), 'remove hard-linked data fixture');
+my $ownership_symlink = "$ownership_directory/unsafe.rdb";
+ok(symlink($ownership_sentinel, $ownership_symlink), 'create symlinked data fixture');
+is($manager->recovery_ownership_scan($account), undef, 'refuse ownership recovery when a managed data tree contains a symlink');
+ok(unlink($ownership_symlink), 'remove symlinked data fixture');
+my $ownership_fifo = "$ownership_directory/unsafe.fifo";
+ok(mkfifo($ownership_fifo, 0600), 'create special-file ownership fixture');
+is($manager->recovery_ownership_scan($account), undef, 'refuse ownership recovery when a managed data tree contains an unsupported special file');
+ok(unlink($ownership_fifo), 'remove special-file ownership fixture');
+my @ownership_deep_paths;
+my $ownership_deep_parent = $ownership_directory;
+for my $depth (1 .. 65) {
+    $ownership_deep_parent = "$ownership_deep_parent/depth-$depth";
+    mkdir($ownership_deep_parent, 0700) or die "create deep ownership fixture: $!";
+    push @ownership_deep_paths, $ownership_deep_parent;
+}
+is($manager->recovery_ownership_scan($account), undef,
+    'refuse ownership recovery when the data tree exceeds its depth limit');
+for my $path (reverse @ownership_deep_paths) {
+    rmdir($path) or die "remove deep ownership fixture: $!";
+}
+my $ownership_target = "$ownership_directory.ownership-target";
+ok(rename($ownership_directory, $ownership_target), 'move managed data directory for symlink recovery test');
+ok(symlink($ownership_target, $ownership_directory), 'replace managed data directory with a symlink');
+is($manager->recovery_ownership_scan($account), undef, 'do not offer ownership recovery through a symlink');
+ok(unlink($ownership_directory), 'remove data-directory symlink after rejection');
+ok(rename($ownership_target, $ownership_directory), 'restore managed data directory after symlink rejection');
+unlink($ownership_sentinel) or die "remove ownership sentinel: $!";
+unlink($ownership_nested_file) or die "remove nested ownership file: $!";
+rmdir($ownership_nested_directory) or die "remove nested ownership directory: $!";
 ok(unlink($recovery_config_path), 'remove reset config before restoring the original fixture');
 ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
     'restore the validated config before unsafe-path checks');
