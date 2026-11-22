@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Exercise the live WHM report with a temporary synthetic partial snapshot.
+"""Exercise live WHM reports with partial and unavailable Podman snapshots.
 
 Run as root on a disposable cPanel & WHM host from the exact ORM source tree:
   python3 tests/whm-live-partial-podman-coverage.py --confirm-live-operation
+  python3 tests/whm-live-partial-podman-coverage.py --confirm-live-operation --scenario unavailable
 
 The check requires an inactive, disabled EA Podman sampler and no counter
-baseline. It preserves any existing stale summary by hard-linking its original
-inode in the private sampler directory, submits a root-owned synthetic
-incomplete-scan summary through the authenticated WHM report flow, then removes
-only the unchanged test file and restores the original inode and contents. A
-forced kill or host failure cannot run cleanup; the original then remains at a
-hidden root-private backup path and needs manual restore.
+baseline. The default partial scenario submits a root-owned synthetic
+incomplete-scan summary. The unavailable scenario submits the report with no
+summary present. Both preserve any existing stale summary by hard-linking its
+original inode in the private sampler directory, then restore and verify it.
+A forced kill or host failure cannot run cleanup; the original then remains at
+a hidden root-private backup path and needs manual restore.
 """
 
 from __future__ import annotations
@@ -192,8 +193,9 @@ def stage_existing_snapshot(*, allow_existing_stale: bool,
     """Temporarily move a stale summary out of the live pathname, preserving its inode."""
     verify_snapshot_directory()
     if path_exists_without_following(BASELINE_PATH):
-        raise LiveCheckError("a Podman counter baseline exists; refusing to run the partial-coverage check")
+        raise LiveCheckError("a Podman counter baseline exists; refusing to run the coverage check")
     if not path_exists_without_following(SNAPSHOT_PATH):
+        recovery_state["snapshot_initially_absent"] = True
         return None
     if not allow_existing_stale:
         raise LiveCheckError("an existing stale summary requires explicit replacement confirmation")
@@ -421,20 +423,37 @@ def run_partial_report() -> None:
                              + suffix)
 
 
+def run_unavailable_report() -> None:
+    if path_exists_without_following(SNAPSHOT_PATH):
+        raise LiveCheckError("a Podman summary exists; refusing to claim unavailable coverage")
+    env = os.environ.copy()
+    env["ORM_LIVE_REQUIRE_UNAVAILABLE_PODMAN_EVIDENCE"] = "1"
+    env.pop("ORM_LIVE_REQUIRE_PODMAN_EVIDENCE", None)
+    env.pop("ORM_LIVE_REQUIRE_PARTIAL_PODMAN_EVIDENCE", None)
+    env.pop("ORM_LIVE_REQUIRE_VALKEY_EVIDENCE", None)
+    result = run([str(CPANEL_PHP), str(REPORT_FORM), "--confirm-report-write"], timeout=90, env=env)
+    if result.returncode != 0 or "Live WHM unavailable Podman report passed:" not in result.stdout:
+        finding = re.search(r"\bunavailable_podman_findings=(yes|no)\b", result.stderr)
+        suffix = f" (unavailable findings rendered: {finding.group(1)})" if finding else ""
+        raise LiveCheckError("the authenticated WHM report did not render unavailable Podman findings" + suffix)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--confirm-live-operation", action="store_true",
-                        help="confirm a temporary synthetic snapshot and one report-only audit event")
+                        help="confirm a report-only audit event and temporary sampler-state change")
     parser.add_argument("--confirm-existing-stale-snapshot-replacement", action="store_true",
                         help="allow a stale summary to be staged briefly and restored with its original inode")
+    parser.add_argument("--scenario", choices=("partial", "unavailable"), default="partial",
+                        help="report fixture to exercise (default: partial)")
     args = parser.parse_args()
     if not args.confirm_live_operation:
         parser.error("pass --confirm-live-operation only on a disposable cPanel test host")
     if os.name != "posix" or not sys.platform.startswith("linux") or os.geteuid() != 0:
-        print("Live partial Podman report check requires root on Linux.", file=sys.stderr)
+        print("Live Podman report check requires root on Linux.", file=sys.stderr)
         return 2
     if not (Path("/var/cpanel/users").is_dir() and (CPANEL_ROOT / "bin" / "whmapi1").is_file()):
-        print("Live partial Podman report check requires cPanel & WHM.", file=sys.stderr)
+        print("Live Podman report check requires cPanel & WHM.", file=sys.stderr)
         return 2
 
     interrupt_requested = False
@@ -454,26 +473,32 @@ def main() -> int:
         if state("is-active", "orm-podman-metrics.timer") != "inactive" \
                 or state("is-enabled", "orm-podman-metrics.timer") != "disabled" \
                 or state("is-active", "orm-podman-metrics.service") != "inactive":
-            raise LiveCheckError("the EA Podman sampler is enabled or active; refusing to inject test data")
+            raise LiveCheckError("the EA Podman sampler is enabled or active; refusing to change sampler state")
         if interrupt_requested:
             raise LiveCheckError("the live report check was interrupted before staging")
         if path_exists_without_following(SNAPSHOT_PATH) and not args.confirm_existing_stale_snapshot_replacement:
             raise LiveCheckError("a stale summary exists; explicitly confirm that it may be restored after this check")
+        recovery_state["baseline_initially_absent"] = not path_exists_without_following(BASELINE_PATH)
         stage_existing_snapshot(allow_existing_stale=args.confirm_existing_stale_snapshot_replacement,
                                 recovery_state=recovery_state)
         if interrupt_requested:
             raise LiveCheckError("the live report check was interrupted; cleanup will be attempted")
-        create_snapshot(recovery_state)
-        if interrupt_requested:
-            raise LiveCheckError("the live report check was interrupted; cleanup will be attempted")
-        run_partial_report()
+        if args.scenario == "partial":
+            create_snapshot(recovery_state)
+            if interrupt_requested:
+                raise LiveCheckError("the live report check was interrupted; cleanup will be attempted")
+            run_partial_report()
+        else:
+            if path_exists_without_following(SNAPSHOT_PATH):
+                raise LiveCheckError("the Podman summary path did not clear before the unavailable report")
+            run_unavailable_report()
         if interrupt_requested:
             raise LiveCheckError("the live report check was interrupted; cleanup will be attempted")
         outcome = True
     except LiveCheckError as error:
-        print(f"Live partial Podman report check failed: {error}.", file=sys.stderr)
+        print(f"Live Podman report check failed: {error}.", file=sys.stderr)
     except Exception as error:  # Never echo paths, account data, report output, or host state.
-        print(f"Live partial Podman report check failed ({type(error).__name__}).", file=sys.stderr)
+        print(f"Live Podman report check failed ({type(error).__name__}).", file=sys.stderr)
     finally:
         synthetic = recovery_state.get("synthetic_snapshot")
         if isinstance(synthetic, tuple) and len(synthetic) == 2:
@@ -488,7 +513,11 @@ def main() -> int:
             except Exception:
                 cleanup_ok = False
         try:
-            if path_exists_without_following(BASELINE_PATH):
+            if recovery_state.get("baseline_initially_absent") \
+                    and path_exists_without_following(BASELINE_PATH):
+                cleanup_ok = False
+            if recovery_state.get("snapshot_initially_absent") \
+                    and path_exists_without_following(SNAPSHOT_PATH):
                 cleanup_ok = False
             if state("is-active", "orm-podman-metrics.timer") != "inactive" \
                     or state("is-enabled", "orm-podman-metrics.timer") != "disabled" \
@@ -498,19 +527,26 @@ def main() -> int:
             cleanup_ok = False
 
     if not cleanup_ok:
-        print("Live partial Podman report cleanup could not verify restored Podman sampler state; manual review is required.",
+        print("Live Podman report cleanup could not verify restored sampler state; manual review is required.",
               file=sys.stderr)
         return 1
     if interrupt_requested:
-        print("Live partial Podman report check was interrupted; cleanup completed and verified.", file=sys.stderr)
+        print("Live Podman report check was interrupted; cleanup completed and verified.", file=sys.stderr)
         return 1
     if not outcome:
         return 1
-    print("Live WHM partial Podman report passed: authenticated report rendered a synthetic incomplete scan as unknown.")
-    if recovery_state.get("preserved_snapshot") is None:
-        print("The synthetic snapshot was removed; the EA Podman sampler remained inactive and disabled.")
+    if args.scenario == "unavailable":
+        print("Live WHM unavailable Podman report passed: authenticated report rendered missing-snapshot coverage and counter rates as unknown.")
     else:
-        print("The synthetic snapshot was removed and the original stale summary was restored; the EA Podman sampler remained inactive and disabled.")
+        print("Live WHM partial Podman report passed: authenticated report rendered a synthetic incomplete scan as unknown.")
+    if args.scenario == "partial":
+        print("The synthetic snapshot was removed.")
+    else:
+        print("The Podman summary was absent during the report request.")
+    if recovery_state.get("preserved_snapshot") is not None:
+        print("The original stale summary was restored; the EA Podman sampler remained inactive and disabled.")
+    else:
+        print("The EA Podman sampler remained inactive and disabled; the summary remains absent as before the check.")
     print("The report-only run wrote its normal metadata audit event and consumed the one-minute report throttle.")
     return 0
 
