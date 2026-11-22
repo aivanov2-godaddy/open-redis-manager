@@ -3,7 +3,6 @@ use warnings;
 use Test::More;
 use lib 'src';
 use Orm::Broker::InstanceManager;
-use Orm::Broker::SlowLogReader;
 
 sub resp_int { return ':' . $_[0] . "\r\n"; }
 sub resp_bulk {

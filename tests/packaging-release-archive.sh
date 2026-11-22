@@ -59,15 +59,14 @@ done < <(orm_package_file_map) >"$test_root/expected-install-map"
 cmp -s -- "$test_root/expected-install-map" "$repo_root/packaging/release-install-map.txt" \
     || { printf 'signed release install map is out of sync with the package file map.\n' >&2; exit 1; }
 
-slow_log_reader_source='src/Orm/Broker/SlowLogReader.pm'
-slow_log_reader_map='broker_slow_log_reader|src/Orm/Broker/SlowLogReader.pm|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/SlowLogReader.pm|644'
-grep -Fxq -- "$slow_log_reader_source" "$repo_root/packaging/release-required-files.txt" \
-    || { printf 'slow-log parser module is missing from the signed release file manifest.\n' >&2; exit 1; }
-grep -Fxq -- "$slow_log_reader_map" "$repo_root/packaging/release-install-map.txt" \
-    || { printf 'slow-log parser module is missing from the signed release install map.\n' >&2; exit 1; }
-grep -Fxq -- "broker_slow_log_reader|$repo_root/$slow_log_reader_source|/usr/local/cpanel/3rdparty/orm/lib/Orm/Broker/SlowLogReader.pm|644" \
-    < <(orm_package_file_map) \
-    || { printf 'slow-log parser module is missing from the manual package file map.\n' >&2; exit 1; }
+grep -Fq -- 'package Orm::Broker::SlowLogReader;' "$repo_root/src/Orm/Broker/InstanceManager.pm" \
+    || { printf 'slow-log parser is not embedded in the existing broker package target.\n' >&2; exit 1; }
+if grep -Fq -- 'SlowLogReader.pm' "$repo_root/packaging/release-install-map.txt" \
+    || grep -Fq -- 'SlowLogReader.pm' "$repo_root/packaging/release-required-files.txt" \
+    || orm_package_file_map | grep -Fq -- 'SlowLogReader.pm'; then
+    printf 'slow-log parser must remain inside the existing broker package target.\n' >&2
+    exit 1
+fi
 
 prepare_release
 make_archive
