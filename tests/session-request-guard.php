@@ -84,6 +84,78 @@ foreach (['cPanel' => $cpanelPage, 'WHM' => $whmPage] as $surface => $page) {
         "{$surface} rejects un-tokenized POSTs before initializing the platform API.");
 }
 
+$actionsForInput = static function (string $page, string $inputName): array {
+    preg_match_all('/\bname="' . preg_quote($inputName, '/') . '"\s+value="([^"]+)"/i', $page, $matches);
+    $values = array_values(array_unique($matches[1] ?? []));
+    sort($values);
+    return $values;
+};
+$stringLiterals = static function (string $source): array {
+    preg_match_all("/'([a-z][a-z0-9_.-]*)'/", $source, $matches);
+    $values = array_values(array_unique($matches[1] ?? []));
+    sort($values);
+    return $values;
+};
+$cpanelActions = $actionsForInput($cpanelPage, 'orm_action');
+$assert($cpanelActions === ['auth.disable', 'auth.rotate', 'backup.create', 'backup.restore', 'configure', 'provision', 'start', 'stop'],
+    'keep cPanel mutation forms on the reviewed fixed action set');
+$cpanelAllowlistMatch = [];
+$cpanelAllowlistFound = preg_match('/\$allowedActions\s*=\s*\[([^\]]*)\]/s', $cpanelPage, $cpanelAllowlistMatch);
+$cpanelAllowedActions = $cpanelAllowlistFound === 1 ? $stringLiterals($cpanelAllowlistMatch[1]) : [];
+$assert($cpanelAllowedActions === $cpanelActions,
+    'dispatch every cPanel mutation form only through the exact UI action allowlist');
+$podmanActions = $actionsForInput($cpanelPage, 'orm_podman_action');
+$podmanAllowlistMatch = [];
+$podmanAllowlistFound = preg_match('/in_array\(\$podmanAction,\s*\[([^\]]*)\],\s*true\)/s', $cpanelPage, $podmanAllowlistMatch);
+$podmanAllowedActions = $podmanAllowlistFound === 1 ? $stringLiterals($podmanAllowlistMatch[1]) : [];
+$assert($podmanActions === ['restart', 'start', 'stop'] && $podmanAllowedActions === $podmanActions,
+    'keep cPanel EA Podman controls to fixed current-account lifecycle actions');
+$assert(str_contains($cpanelPage, "if (\$brokerVerified && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)\n    && is_string(\$podmanAction) && in_array(\$podmanAction, ['start', 'stop', 'restart'], true))"),
+    'require verified account identity and the cPanel session guard for every EA Podman action');
+$assert(str_contains($cpanelPage, "if (\$brokerVerified && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)) {\n    \$allowedActions ="),
+    'place the cPanel action allowlist behind verified-account and cPanel-session authorization');
+
+$whmActions = $actionsForInput($whmPage, 'orm_action');
+$assert($whmActions === [
+    'backend.select', 'fleet.backup', 'fleet.backup.batch', 'fleet.control', 'fleet.diagnostics',
+    'fleet.migrate', 'fleet.recovery.repair', 'fleet.recovery.scan', 'fleet.summary',
+    'provider.events.configure', 'provider.policy.update', 'security.policy.update', 'security.report',
+    'update.apply', 'update.preview', 'update.status',
+], 'keep WHM mutation forms on the reviewed fixed action set');
+$guardedActions = [
+    'fleet.summary' => 'if',
+    'security.policy.update' => 'if',
+    'security.report' => 'if',
+    'fleet.control' => '$controlRequest',
+    'fleet.backup' => '$fleetBackupRequest',
+    'fleet.backup.batch' => '$fleetBatchRequest',
+    'fleet.migrate' => '$fleetMigrationRequest',
+    'backend.select' => 'if',
+    'provider.events.configure' => 'if',
+    'provider.policy.update' => 'if',
+];
+foreach ($guardedActions as $guardedAction => $guardedRequest) {
+    $guardedPrefix = $guardedRequest === 'if'
+        ? 'if ($rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)'
+        : "{$guardedRequest} = \$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)";
+    $guardedCondition = $guardedPrefix . "\n    && (\$_POST['orm_action'] ?? null) === '{$guardedAction}'";
+    $assert(str_contains($whmPage, $guardedCondition),
+        "require root authorization and the WHM session guard for {$guardedAction}");
+}
+$assert(str_contains($whmPage, '$fleetDiagnosticsRequest = $rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation($_SERVER)')
+    && str_contains($whmPage, "&& (\$_POST['orm_action'] ?? null) === 'fleet.diagnostics'"),
+    'require root authorization and the WHM session guard for fleet.diagnostics');
+$assert(str_contains($whmPage, "if (\$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)) {\n    \$updateAction = \$_POST['orm_action'] ?? null;")
+    && str_contains($whmPage, "in_array(\$updateAction, ['update.preview', 'update.apply', 'update.status'], true)"),
+    'guard every signed-update action behind root authorization and the WHM session guard');
+$assert(str_contains($whmPage, "\$fleetRecoveryAction = \$_POST['orm_action'] ?? null;\nif (\$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)")
+    && str_contains($whmPage, "in_array(\$fleetRecoveryAction, ['fleet.recovery.scan', 'fleet.recovery.repair'], true)"),
+    'guard both fleet recovery actions behind root authorization and the WHM session guard');
+$auditActions = $actionsForInput($whmPage, 'orm_audit_action');
+$assert($auditActions === ['export', 'search']
+    && str_contains($whmPage, "\$auditRequest = \$rootAuthorized && \\Orm\\Security\\SessionRequestGuard::allowsMutation(\$_SERVER)\n    && in_array(\$_POST['orm_audit_action'] ?? null, ['search', 'export'], true)"),
+    'guard the fixed WHM audit search/export actions behind root authorization and the WHM session guard');
+
 $liveHarness = file_get_contents(__DIR__ . '/cpanel-live-session-token-smoke.py');
 $assert(is_string($liveHarness)
     && str_contains($liveHarness, 'INVALID_ACTION = "orm-csrf-probe-unsupported"')
