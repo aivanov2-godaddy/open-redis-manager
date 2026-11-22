@@ -44,6 +44,8 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
     our @RECOVERY_CONFIG_SCAN_CALLS;
     our @RECOVERY_CONFIG_REBUILD_CALLS;
     our @RECOVERY_CONFIG_RESET_CALLS;
+    our %RECOVERY_OWNERSHIP;
+    our @RECOVERY_OWNERSHIP_FIX_CALLS;
     sub new { return bless {}, $_[0]; }
     sub status {
         my ($self, $account) = @_;
@@ -84,6 +86,22 @@ plan skip_all => 'fleet inventory filesystem permission tests require Linux mode
         $result->{repair} = 'config_rebuild' if $state eq 'stopped' || $state eq 'failed'
             || $account->{name} eq 'acct08';
         return $result;
+    }
+    sub recovery_ownership_scan {
+        my ($self, $account) = @_;
+        return undef if !$RECOVERY_OWNERSHIP{$account->{name}};
+        my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+        my $result = { success => 1, finding => 'data_directory_ownership', state => $state };
+        $result->{repair} = 'ownership_fix' if $state eq 'stopped' || $state eq 'failed';
+        return $result;
+    }
+    sub recovery_fix_ownership {
+        my ($self, $account) = @_;
+        push @RECOVERY_OWNERSHIP_FIX_CALLS, $account->{name};
+        my $state = $CONTROL_STATES{$account->{name}} // 'stopped';
+        return { success => 0, error => 'repair_not_applicable' }
+            if $state ne 'stopped' && $state ne 'failed';
+        return { success => 1, state => $state };
     }
     sub recovery_rebuild_config {
         my ($self, $account) = @_;
@@ -319,11 +337,13 @@ my $recoveryConfigScanRequest = '{"operation":"fleet.recovery.scan","username":"
 my $recoveryRepairRequest = '{"operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n";
 my $recoveryConfigRepairRequest = '{"operation":"fleet.recovery.repair","repair":"config_rebuild","username":"acct07","version":1}' . "\n";
 my $recoveryConfigResetRequest = '{"operation":"fleet.recovery.repair","repair":"config_reset","username":"acct09","version":1}' . "\n";
+my $recoveryOwnershipRepairRequest = '{"operation":"fleet.recovery.repair","repair":"ownership_fix","username":"acct10","version":1}' . "\n";
 my $authRotateRequest = '{"operation":"fleet.auth.rotate","username":"acct02","version":1}' . "\n";
 is(parse_request($recoveryScanRequest)->{operation}, 'fleet.recovery.scan', 'parse the fixed read-only recovery scan request');
 is(parse_request($recoveryRepairRequest)->{repair}, 'start', 'parse only the fixed start repair');
 is(parse_request($recoveryConfigRepairRequest)->{repair}, 'config_rebuild', 'parse the fixed configuration rebuild repair');
 is(parse_request($recoveryConfigResetRequest)->{repair}, 'config_reset', 'parse the fixed malformed-config reset repair');
+is(parse_request($recoveryOwnershipRepairRequest)->{repair}, 'ownership_fix', 'parse the fixed data-directory ownership repair');
 ok(!parse_request('{"command":"systemctl start","operation":"fleet.recovery.repair","repair":"start","username":"acct02","version":1}' . "\n"),
     'reject arbitrary commands from recovery requests');
 ok(!parse_request('{"operation":"fleet.recovery.repair","repair":"chmod","username":"acct02","version":1}' . "\n"),
@@ -368,6 +388,11 @@ $Local::FleetManager::CONTROL_STATES{acct03} = 'failed';
 my $failedScan = $inventory->recovery_scan('acct03');
 ok($failedScan->{success} && $failedScan->{finding} eq 'service_failed' && $failedScan->{repair} eq 'start',
     'offer the fixed start repair for a verified failed service');
+$Local::FleetManager::RECOVERY_OWNERSHIP{acct11} = 1;
+$Local::FleetManager::CONTROL_STATES{acct11} = 'running';
+my $runningOwnershipScan = $inventory->recovery_scan('acct11');
+ok($runningOwnershipScan->{success} && $runningOwnershipScan->{finding} eq 'data_directory_ownership'
+    && !exists($runningOwnershipScan->{repair}), 'never offer ownership repair while the service is running');
 my $healthyScan = $inventory->recovery_scan('acct01');
 ok($healthyScan->{success} && $healthyScan->{finding} eq 'service_healthy' && !exists($healthyScan->{repair}),
     'confirm running instances with the existing fixed read-only probes');
@@ -415,6 +440,19 @@ is_deeply($Local::FleetManager::RECOVERY_CONFIG_RESET_CALLS[-1], 'acct09',
     'scope malformed-config reset to the account selected by WHM');
 is_deeply($audit[-1], [0, 'acct09', 'recovery.config_reset', 'success', 'stopped'],
     'audit config reset without recording the one-time password');
+$Local::FleetManager::RECOVERY_OWNERSHIP{acct10} = 1;
+$Local::FleetManager::CONTROL_STATES{acct10} = 'failed';
+my $ownershipScan = $inventory->recovery_scan('acct10');
+ok($ownershipScan->{success} && $ownershipScan->{finding} eq 'data_directory_ownership'
+    && $ownershipScan->{repair} eq 'ownership_fix' && $ownershipScan->{state} eq 'failed',
+    'offer ownership repair only for a verified failed instance with an ownership finding');
+my $ownershipRepair = $inventory->recovery_repair('acct10', 'ownership_fix');
+ok($ownershipRepair->{success} && $ownershipRepair->{action} eq 'recovery.ownership_fix'
+    && $ownershipRepair->{state} eq 'failed', 'repair only the selected account data-directory ownership');
+is_deeply($Local::FleetManager::RECOVERY_OWNERSHIP_FIX_CALLS[-1], 'acct10',
+    'scope ownership repair to the account selected by WHM');
+is_deeply($audit[-1], [0, 'acct10', 'recovery.ownership_fix', 'success', 'failed'],
+    'audit ownership repair with its fixed action and no data details');
 $Local::FleetManager::CONTROL_STATES{acct05} = { unexpected => 'state' };
 is($inventory->recovery_scan('acct05')->{error}, 'instance_unavailable',
     'reject non-scalar service states from the status provider');
@@ -461,6 +499,15 @@ like($rootConfigResetScan, qr/"repair":"config_reset"/, 'allow root to scan and 
 my $rootConfigReset = Orm::Broker::Handler->handle_frame($recoveryConfigResetRequest, 0, undef, undef, $inventory);
 like($rootConfigReset, qr/"action":"recovery\.config_reset".*"secret":"A{43}"/,
     'allow root to receive the one-time password from the fixed reset repair');
+$Local::FleetManager::RECOVERY_OWNERSHIP{acct10} = 1;
+$Local::FleetManager::CONTROL_STATES{acct10} = 'failed';
+my $rootOwnershipScan = Orm::Broker::Handler->handle_frame(
+    '{"operation":"fleet.recovery.scan","username":"acct10","version":1}' . "\n", 0, undef, undef, $inventory);
+like($rootOwnershipScan, qr/"finding":"data_directory_ownership".*"repair":"ownership_fix"/,
+    'allow root to scan and receive the fixed ownership-repair action');
+my $rootOwnershipFix = Orm::Broker::Handler->handle_frame($recoveryOwnershipRepairRequest, 0, undef, undef, $inventory);
+like($rootOwnershipFix, qr/"action":"recovery\.ownership_fix"/,
+    'allow root peers to invoke the fixed ownership repair');
 
 my $controlRequest = '{"action":"start","operation":"fleet.control","username":"acct01","version":1}' . "\n";
 is(parse_request($controlRequest)->{operation}, 'fleet.control', 'accept the fixed root fleet-control request');

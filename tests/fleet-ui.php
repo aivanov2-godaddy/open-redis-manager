@@ -87,6 +87,11 @@ $assert(str_contains($whm, "'config_drift' =>") && str_contains($whm, "'config_m
     && str_contains($whm, 'Reset config and replace AUTH') && str_contains($whm, 'recovery.config_reset')
     && str_contains($whm, 'One-time replacement AUTH password') && str_contains($whm, 'private, no-store'),
     'show scan-gated config rebuild/reset with explicit confirmation, one-time password and audit action');
+$assert(str_contains($whm, "'data_directory_ownership' =>")
+    && str_contains($whm, 'Repair data tree ownership')
+    && str_contains($whm, 'data_directory_ownership')
+    && str_contains($whm, 'recovery.ownership_fix') && str_contains($whm, 'hard-linked files'),
+    'show scan-gated ownership repair with explicit stopped-service confirmation and fixed audit action');
 $assert(str_contains($whm, "\$finding['window_start_utc']")
     && str_contains($whm, "\$finding['window_end_utc']") && str_contains($whm, 'Evidence window:'),
     'render escaped UTC evidence bounds on each WHM security report finding');

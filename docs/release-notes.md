@@ -1,5 +1,7 @@
 # Unreleased development notes
 
+- WHM recovery can scan the bounded ORM account data tree and restore account ownership and private modes for directories, single-link regular files, and the canonical Redis socket while the service is stopped or failed. It preserves file bytes and refuses symlinks, hard links, other special files, unexpected owners/groups, cross-device paths, and resource-limit overflow. Live cPanel validation remains open.
+
 - EA Podman WHM reporting now computes report-only maximum per-process eviction, operation, and optional authentication-failure deltas after complete scans confirm the exact same Redis/Valkey server-ID set and monotonic counters. A separate root-only baseline stores SHA-256 server-ID digests and allowlisted counters; digests are linkable pseudonymous state and never leave that file. Process changes, resets, partial scans, invalid state, and gaps beyond 26 hours remain explicitly unknown.
 - WHM recovery can now reset a safely owned missing or malformed managed config from a trusted manifest. The repair uses an 8 MiB / 10-client profile, creates a new AUTH password shown once in a private no-store response, preserves Redis data, and leaves the service stopped; unsafe ownership, modes, symlinks, or account paths still block repair.
 - The idempotent installer verifies the cPanel account-create hook using the action-suffixed script path returned by `manage_hooks list`.

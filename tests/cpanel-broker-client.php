@@ -563,6 +563,18 @@ $missingConfigScan = $missingConfigScanClient->scanFleetRecovery('demo');
 $assert(($missingConfigScan['finding'] ?? null) === 'config_missing'
     && ($missingConfigScan['repair'] ?? null) === 'config_reset',
     'Accept scan findings for safely missing config with the explicit reset repair.');
+$ownershipScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"data_directory_ownership\",\"repair\":\"ownership_fix\",\"state\":\"failed\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$ownershipScan = $ownershipScanClient->scanFleetRecovery('demo');
+$assert(($ownershipScan['finding'] ?? null) === 'data_directory_ownership'
+    && ($ownershipScan['repair'] ?? null) === 'ownership_fix' && ($ownershipScan['state'] ?? null) === 'failed',
+    'Accept the fixed ownership-repair finding only for a stopped or failed service.');
+$runningOwnershipScanClient = new BrokerClient(static fn (string $request): string =>
+    "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"data_directory_ownership\",\"state\":\"running\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
+);
+$assert(($runningOwnershipScanClient->scanFleetRecovery('demo')['repair'] ?? null) === null,
+    'Accept an ownership finding without a repair while the service is running.');
 $invalidConfigRecoveryScanClient = new BrokerClient(static fn (string $request): string =>
     "{\"action\":\"recovery.scan\",\"audit_logged\":true,\"finding\":\"config_drift\",\"repair\":null,\"state\":\"not_configured\",\"success\":true,\"username\":\"demo\",\"version\":1}\n"
 );
@@ -629,6 +641,18 @@ $malformedConfigResetClient = new BrokerClient(static fn (string $request): stri
 );
 $assert($malformedConfigResetClient->repairFleetAccount('demo', 'config_reset') === null,
     'Reject a config reset receipt with a malformed credential.');
+$ownershipRepairRequests = [];
+$ownershipRepairClient = new BrokerClient(static function (string $request) use (&$ownershipRepairRequests): string {
+    $ownershipRepairRequests[] = $request;
+    return "{\"action\":\"recovery.ownership_fix\",\"audit_logged\":true,\"state\":\"stopped\",\"success\":true,\"username\":\"demo\",\"version\":1}\n";
+});
+$ownershipRepairResult = $ownershipRepairClient->repairFleetAccount('demo', 'ownership_fix');
+$assert($ownershipRepairRequests[0] === "{\"operation\":\"fleet.recovery.repair\",\"repair\":\"ownership_fix\",\"username\":\"demo\",\"version\":1}\n"
+    && ($ownershipRepairResult['action'] ?? null) === 'recovery.ownership_fix'
+    && ($ownershipRepairResult['state'] ?? null) === 'stopped',
+    'Send and parse only the fixed data-directory ownership repair receipt.');
+$assert($ownershipRepairClient->repairFleetAccount('demo', 'chown') === null && count($ownershipRepairRequests) === 1,
+    'Reject free-form ownership actions before broker I/O.');
 $rotationRequests = [];
 $rotationSecret = str_repeat('A', 43);
 $rotationClient = new BrokerClient(static function (string $request) use (&$rotationRequests, $rotationSecret): string {

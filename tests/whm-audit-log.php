@@ -81,6 +81,14 @@ $autoProvisionReader = new WhmAuditLog(static fn (): array => [
 $autoProvisionAudit = $autoProvisionReader->read($now - 60, $now, ['account' => 'acct02', 'action' => 'auto_provision']);
 $assert($autoProvisionAudit['record_count'] === 1 && $autoProvisionAudit['records'][0]['action'] === 'auto_provision',
     'Recognize and filter metadata-only automatic provisioning audit events.');
+$ownershipRecoveryReader = new WhmAuditLog(static fn (): array => [
+    'status' => 'ok',
+    'lines' => [$journal('orm-broker', 'fleet_operation actor_uid=0 account=acct02 action=recovery.ownership_fix result=success state=stopped', $now - 1)],
+]);
+$ownershipRecoveryAudit = $ownershipRecoveryReader->read($now - 60, $now, ['action' => 'recovery.ownership_fix']);
+$assert($ownershipRecoveryAudit['record_count'] === 1
+    && $ownershipRecoveryAudit['records'][0]['state'] === 'stopped',
+    'Recognize and filter metadata-only ownership repair audit events.');
 $assert(WhmAuditLog::normalizeFilters(['account' => '../root']) === null
     && WhmAuditLog::normalizeFilters(['action' => 'redis-cli']) === null
     && WhmAuditLog::normalizeFilters(['arbitrary' => 'value']) === null, 'Reject unsafe and unknown filters.');

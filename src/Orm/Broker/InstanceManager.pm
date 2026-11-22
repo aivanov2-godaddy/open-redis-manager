@@ -72,6 +72,7 @@ sub new {
         quota_lock_path => $args{quota_lock_path}
             // File::Spec->catfile($args{etc_root} // '/etc/orm-instances', '.orm-reseller-quota.lock'),
         expected_owner_uid => defined($args{expected_owner_uid}) ? $args{expected_owner_uid} : 0,
+        expected_owner_gid => defined($args{expected_owner_gid}) ? $args{expected_owner_gid} : 0 + $<,
         systemctl => $args{systemctl} // '/usr/bin/systemctl',
         systemctl_call => $args{systemctl_call},
         systemctl_states_call => $args{systemctl_states_call},
@@ -1069,6 +1070,167 @@ sub recovery_config_scan {
     $response->{repair} = $reset_kind ? 'config_reset' : 'config_rebuild'
         if $normalized_state eq 'stopped' || $normalized_state eq 'failed';
     return $response;
+}
+
+sub recovery_ownership_scan {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account);
+    my $tree = $self->_inspect_data_directory_ownership($account);
+    return undef if ref($tree) ne 'HASH' || !$tree->{needs_repair};
+    my $manifest = $self->_read_manifest($account, 1, 0, 1);
+    return undef if ref($manifest) ne 'HASH';
+    my (undef, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+    return undef if !defined($state) || ref($state);
+    my $normalized_state = $state eq 'active' ? 'running'
+        : $state eq 'activating' ? 'starting'
+        : $state eq 'deactivating' ? 'stopping'
+        : $state eq 'failed' ? 'failed'
+        : $state eq 'inactive' ? 'stopped' : undef;
+    return undef if !defined($normalized_state);
+    my $response = {
+        finding => 'data_directory_ownership',
+        state => $normalized_state,
+        success => JSON::PP::true,
+        version => 1,
+    };
+    $response->{repair} = 'ownership_fix'
+        if $normalized_state eq 'stopped' || $normalized_state eq 'failed';
+    return $response;
+}
+
+sub recovery_fix_ownership {
+    my ($self, $account) = @_;
+    return _failure('invalid_request') if !_valid_account($account);
+    my $lock = $self->_acquire_instance_lock($account);
+    return _failure('operation_in_progress') if !defined($lock);
+    my $manifest = $self->_read_manifest($account, 1, 0, 1);
+    my $response;
+    my $tree = $self->_inspect_data_directory_ownership($account);
+    if (ref($manifest) ne 'HASH' || ref($tree) ne 'HASH' || !$tree->{needs_repair}) {
+        $response = _failure('repair_not_applicable');
+    } else {
+        my ($active, $state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+        if ($active || !defined($state) || ref($state) || ($state ne 'inactive' && $state ne 'failed')) {
+            $response = _failure('repair_not_applicable');
+        } else {
+            my $directory = $manifest->{data};
+            my $verified = $self->_repair_data_directory_ownership($account, $tree)
+                && ref($self->_read_manifest($account)) eq 'HASH';
+            my (undef, $final_state) = $self->_systemctl('is-active', $self->_unit_name($account->{name}));
+            if ($verified && defined($final_state) && !ref($final_state)
+                && ($final_state eq 'inactive' || $final_state eq 'failed')) {
+                $response = {
+                    state => $final_state eq 'failed' ? 'failed' : 'stopped',
+                    success => JSON::PP::true,
+                    version => 1,
+                };
+            } else {
+                $response = _failure('repair_not_applicable');
+            }
+        }
+    }
+    close($lock);
+    return $response;
+}
+
+sub _inspect_data_directory_ownership {
+    my ($self, $account) = @_;
+    return undef if !_valid_account($account) || !$self->_trusted_directory($self->{data_root});
+    my @root_stat = lstat($self->{data_root});
+    my $directory = $self->_account_data_dir($account->{name});
+    my @directory_stat = lstat($directory);
+    return undef if !@root_stat || !@directory_stat || !S_ISDIR($directory_stat[2])
+        || $root_stat[5] != $self->{expected_owner_gid}
+        || $directory_stat[0] != $root_stat[0];
+    my $root_gid = $root_stat[5];
+    my @entries;
+    my $needs_repair = 0;
+    my $visit;
+    $visit = sub {
+        my ($path, $is_socket_allowed, $depth) = @_;
+        $depth //= 0;
+        return 0 if @entries >= 10_000 || $depth > 64;
+        my @stat = lstat($path);
+        return 0 if !@stat || $stat[0] != $root_stat[0]
+            || ($stat[4] != $account->{uid} && $stat[4] != $self->{expected_owner_uid})
+            || ($stat[5] != $account->{gid} && $stat[5] != $root_gid);
+        my $type = S_ISDIR($stat[2]) ? 'directory'
+            : S_ISREG($stat[2]) ? 'file'
+            : S_ISSOCK($stat[2]) && $is_socket_allowed ? 'socket' : undef;
+        return 0 if !defined($type) || ($type eq 'file' && $stat[3] != 1);
+        my $expected_mode = $type eq 'directory' ? 0700 : 0600;
+        $needs_repair = 1 if $stat[4] != $account->{uid} || $stat[5] != $account->{gid}
+            || ($stat[2] & 07777) != $expected_mode;
+        push @entries, { path => $path, device => $stat[0], inode => $stat[1], type => $type };
+        if ($type eq 'directory') {
+            opendir(my $handle, $path) or return 0;
+            my @children;
+            while (defined(my $child = readdir($handle))) {
+                next if $child eq '.' || $child eq '..';
+                if (@entries + @children >= 10_000) {
+                    closedir($handle);
+                    return 0;
+                }
+                push @children, $child;
+            }
+            @children = sort @children;
+            my $read_ok = closedir($handle);
+            return 0 if !$read_ok;
+            for my $child (@children) {
+                return 0 if $child eq '' || $child eq '..' || $child =~ m{/};
+                my $child_path = File::Spec->catfile($path, $child);
+                my $is_socket = $path eq $directory && $child eq 'redis.sock';
+                return 0 if !$visit->($child_path, $is_socket, $depth + 1);
+            }
+        }
+        return 1;
+    };
+    return undef if !$visit->($directory, 0, 0);
+    return { entries => \@entries, needs_repair => $needs_repair ? 1 : 0, root_gid => $root_gid };
+}
+
+sub _repair_data_directory_ownership {
+    my ($self, $account, $tree) = @_;
+    return 0 if ref($tree) ne 'HASH' || ref($tree->{entries}) ne 'ARRAY' || !@{$tree->{entries}};
+    my $directory = $self->_account_data_dir($account->{name});
+    my $root = $tree->{entries}[0];
+    return 0 if $root->{path} ne $directory || $root->{type} ne 'directory';
+    my @current = lstat($directory);
+    return 0 if !@current || $current[0] != $root->{device} || $current[1] != $root->{inode}
+        || !chmod(0700, $directory)
+        || !chown($self->{expected_owner_uid}, $tree->{root_gid}, $directory)
+        || !chmod(0700, $directory);
+    for my $entry (@{$tree->{entries}}[1 .. $#{$tree->{entries}}]) {
+        my @before = lstat($entry->{path});
+        return 0 if !@before || $before[0] != $entry->{device} || $before[1] != $entry->{inode}
+            || ($entry->{type} eq 'directory' && !S_ISDIR($before[2]))
+            || ($entry->{type} eq 'file' && (!S_ISREG($before[2]) || $before[3] != 1))
+            || ($entry->{type} eq 'socket' && !S_ISSOCK($before[2]))
+            || !chown($account->{uid}, $account->{gid}, $entry->{path})
+            || !chmod($entry->{type} eq 'directory' ? 0700 : 0600, $entry->{path});
+        my @after = lstat($entry->{path});
+        return 0 if !@after || $after[0] != $entry->{device} || $after[1] != $entry->{inode}
+            || $after[4] != $account->{uid} || $after[5] != $account->{gid}
+            || ($after[2] & 07777) != ($entry->{type} eq 'directory' ? 0700 : 0600);
+    }
+    my @root_after = lstat($directory);
+    return 0 if !@root_after || $root_after[0] != $root->{device} || $root_after[1] != $root->{inode}
+        || !chown($account->{uid}, $account->{gid}, $directory)
+        || !chmod(0700, $directory);
+    my @verified = lstat($directory);
+    return 0 if !@verified || $verified[0] != $root->{device} || $verified[1] != $root->{inode}
+        || $verified[4] != $account->{uid} || $verified[5] != $account->{gid}
+        || ($verified[2] & 07777) != 0700;
+    my $final_tree = $self->_inspect_data_directory_ownership($account);
+    return 0 if ref($final_tree) ne 'HASH' || $final_tree->{needs_repair}
+        || @{$final_tree->{entries}} != @{$tree->{entries}};
+    for my $index (0 .. $#{$tree->{entries}}) {
+        my $before = $tree->{entries}[$index];
+        my $after = $final_tree->{entries}[$index];
+        return 0 if $before->{path} ne $after->{path} || $before->{device} != $after->{device}
+            || $before->{inode} != $after->{inode} || $before->{type} ne $after->{type};
+    }
+    return 1;
 }
 
 sub recovery_reset_config {
@@ -2912,7 +3074,7 @@ sub validate_instance_manifest {
 }
 
 sub _read_manifest {
-    my ($self, $account, $allow_config_drift, $allow_config_recovery) = @_;
+    my ($self, $account, $allow_config_drift, $allow_config_recovery, $allow_data_directory_ownership_recovery) = @_;
     return undef if !$self->_trusted_directory($self->{etc_root});
     my $directory = $self->_account_config_dir($account->{name});
     my @dir_stat = lstat($directory);
@@ -2941,7 +3103,9 @@ sub _read_manifest {
         $manifest->{preset} = 'generic';
     }
     return undef if !defined($self->_available_binary($manifest->{backend}));
-    my ($settings, $auth_secret, $canonical) = $self->_valid_config($account, $manifest, $allow_config_drift);
+    my ($settings, $auth_secret, $canonical) = $self->_valid_config(
+        $account, $manifest, $allow_config_drift, $allow_data_directory_ownership_recovery
+    );
     if (!$settings) {
         return undef if !$allow_config_recovery;
         my $reset_kind = $self->_recovery_config_kind($account, $manifest);
@@ -2975,7 +3139,7 @@ sub _recovery_config_kind {
 }
 
 sub _valid_config {
-    my ($self, $account, $manifest, $allow_config_drift) = @_;
+    my ($self, $account, $manifest, $allow_config_drift, $allow_data_directory_ownership_recovery) = @_;
     my $path = $manifest->{config};
     return undef if !sysopen(my $handle, $path, O_RDONLY | O_NOFOLLOW);
     my @stat = stat($handle);
@@ -2990,9 +3154,16 @@ sub _valid_config {
     close($handle) or return undef;
     return undef if !defined($read) || $read > 16384;
     my @data_stat = lstat($manifest->{data});
-    return undef if !@data_stat || !S_ISDIR($data_stat[2])
-        || $data_stat[4] != $account->{uid} || $data_stat[5] != $account->{gid}
-        || ($data_stat[2] & 0077) != 0;
+    return undef if !@data_stat || !S_ISDIR($data_stat[2]);
+    if ($allow_data_directory_ownership_recovery) {
+        my @root_stat = lstat($self->{data_root});
+        return undef if !@root_stat;
+        return undef if ($data_stat[4] != $account->{uid} && $data_stat[4] != $self->{expected_owner_uid})
+            || ($data_stat[5] != $account->{gid} && $data_stat[5] != $root_stat[5]);
+    } else {
+        return undef if $data_stat[4] != $account->{uid} || $data_stat[5] != $account->{gid}
+            || ($data_stat[2] & 0077) != 0;
+    }
     my ($memory_bytes) = $content =~ /^maxmemory ([0-9]+)$/m;
     my $memory_count = scalar(() = $content =~ /^maxmemory [0-9]+$/mg);
     my ($memory_policy) = $content =~ /^maxmemory-policy ([a-z-]+)$/m;

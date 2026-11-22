@@ -182,7 +182,8 @@ sub run {
                         my $action = $request->{operation} eq 'fleet.recovery.scan'
                             ? 'recovery.scan'
                             : $request->{repair} eq 'config_rebuild' ? 'recovery.config_rebuild'
-                            : $request->{repair} eq 'config_reset' ? 'recovery.config_reset' : 'recovery.start';
+                            : $request->{repair} eq 'config_reset' ? 'recovery.config_reset'
+                            : $request->{repair} eq 'ownership_fix' ? 'recovery.ownership_fix' : 'recovery.start';
                         eval { $fleet_inventory->audit_rate_limited($peer_uid, $request->{username}, $action) }
                             if defined($fleet_inventory) && eval { $fleet_inventory->can('audit_rate_limited') };
                     } elsif ($request->{operation} eq 'fleet.auth.rotate') {
