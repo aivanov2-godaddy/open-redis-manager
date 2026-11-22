@@ -834,13 +834,13 @@ unlink($ownership_sentinel) or die "remove ownership sentinel: $!";
 unlink($ownership_nested_file) or die "remove nested ownership file: $!";
 rmdir($ownership_nested_directory) or die "remove nested ownership directory: $!";
 ok(unlink($recovery_config_path), 'remove reset config before restoring the original fixture');
-ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
+ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $<, $test_gid),
     'restore the validated config before unsafe-path checks');
 ok(chmod(0660, $recovery_config_path), 'make config group-writable for the unsafe-mode recovery test');
 is($manager->recovery_config_scan($account), undef, 'do not offer config recovery for an unsafe config mode');
 is($manager->recovery_rebuild_config($account)->{error}, 'repair_not_applicable',
     'refuse to replace config with unsafe permissions');
-ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $test_uid, $test_gid),
+ok($manager->_atomic_write($recovery_config_path, $auth_config, 0640, $<, $test_gid),
     'restore safe ownership and mode before symlink checks');
 my $recovery_config_target = "$recovery_config_path.recovery-target";
 ok(rename($recovery_config_path, $recovery_config_target), 'move config aside for symlink recovery test');
@@ -853,7 +853,7 @@ ok(rename($recovery_config_target, $recovery_config_path), 'restore the regular 
 my $original_config = Orm::Broker::InstanceManager::_redis_config(
     $recovery_manifest->{data}, $recovery_manifest->{socket}, $recovery_manifest->{settings}, undef,
     Orm::Broker::InstanceManager::_manifest_database_count($recovery_manifest));
-ok($manager->_atomic_write($recovery_config_path, $original_config, 0640, $test_uid, $test_gid),
+ok($manager->_atomic_write($recovery_config_path, $original_config, 0640, $<, $test_gid),
     'restore the original no-AUTH fixture for subsequent broker tests');
 ok($manager->start($account)->{success}, 'start the instance again after config recovery checks');
 {
