@@ -283,6 +283,7 @@ orm_package_file_map() {
         broker_backend_policy "$ORM_REPO_ROOT/src/Orm/Broker/BackendPolicy.pm" "$ORM_BROKER_LIB/BackendPolicy.pm" 644 \
         broker_handler "$ORM_REPO_ROOT/src/Orm/Broker/Handler.pm" "$ORM_BROKER_LIB/Handler.pm" 644 \
         broker_instance_manager "$ORM_REPO_ROOT/src/Orm/Broker/InstanceManager.pm" "$ORM_BROKER_LIB/InstanceManager.pm" 644 \
+        broker_slow_log_reader "$ORM_REPO_ROOT/src/Orm/Broker/SlowLogReader.pm" "$ORM_BROKER_LIB/SlowLogReader.pm" 644 \
         broker_fleet_inventory "$ORM_REPO_ROOT/src/Orm/Broker/FleetInventory.pm" "$ORM_BROKER_LIB/FleetInventory.pm" 644 \
         broker_peer_credentials "$ORM_REPO_ROOT/src/Orm/Broker/PeerCredentials.pm" "$ORM_BROKER_LIB/PeerCredentials.pm" 644 \
         broker_protocol "$ORM_REPO_ROOT/src/Orm/Broker/Protocol.pm" "$ORM_BROKER_LIB/Protocol.pm" 644 \

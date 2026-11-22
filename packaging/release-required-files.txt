@@ -43,6 +43,7 @@ src/Orm/Broker/AccountResolver.pm
 src/Orm/Broker/BackendPolicy.pm
 src/Orm/Broker/Handler.pm
 src/Orm/Broker/InstanceManager.pm
+src/Orm/Broker/SlowLogReader.pm
 src/Orm/Broker/FleetInventory.pm
 src/Orm/Broker/PeerCredentials.pm
 src/Orm/Broker/Protocol.pm
