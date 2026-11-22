@@ -1765,6 +1765,25 @@ ok(Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.1, 1, 1, 1, 1),
 ok(!Orm::Broker::Server::_rate_allowed(\%root_rates, 0, 2.2, 1, 1, 1, 'fleet.control'),
     'rate-limit repeated fleet control actions independently');
 my %root_read_rates;
+my $setup_status_bucket = Orm::Broker::Server::_rate_bucket_for(
+    { operation => 'instance.status', username => 'ormsetup' }, 1);
+is($setup_status_bucket, 'instance.status:ormsetup',
+    'keep account status reads in a dedicated per-account rate bucket');
+my %setup_page_rates;
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10, 4, 0, 1, $setup_status_bucket),
+    'allow the initial setup page status read');
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10, 2, 0, 1, 'provider.exposure'),
+    'keep provider exposure reads separate from setup status');
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10, 2, 0, 1, 'provider.branding'),
+    'keep provider branding reads separate from setup status');
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10.1, 4, 0, 1, $setup_status_bucket),
+    'allow an immediate native or Podman setup page status read');
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10.2, 4, 0, 1, $setup_status_bucket),
+    'allow repeated setup page status reads up to the explicit page limit');
+ok(Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10.3, 4, 0, 1, $setup_status_bucket),
+    'allow a fourth setup page status read within one second');
+ok(!Orm::Broker::Server::_rate_allowed(\%setup_page_rates, 43210, 10.4, 4, 0, 1, $setup_status_bucket),
+    'retain a bounded per-account status read limit');
 ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10, 1, 1, 1, 'fleet.list'),
     'allow the fleet page read in its operation-specific bucket');
 ok(Orm::Broker::Server::_rate_allowed(\%root_read_rates, 0, 10, 1, 1, 1, 'provider.resellers'),
