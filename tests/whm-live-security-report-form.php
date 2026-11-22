@@ -279,6 +279,7 @@ try {
     $reportBody = $report['body'];
     $requireValkeyEvidence = getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1';
     $requirePodmanEvidence = getenv('ORM_LIVE_REQUIRE_PODMAN_EVIDENCE') === '1';
+    $requirePartialPodmanEvidence = getenv('ORM_LIVE_REQUIRE_PARTIAL_PODMAN_EVIDENCE') === '1';
     $valkeyFindingsRendered = !$requireValkeyEvidence || (
         str_contains($reportBody, '<strong>Eviction Rate</strong>')
         && str_contains($reportBody, '<strong>Operation Rate</strong>')
@@ -289,10 +290,18 @@ try {
         && str_contains($reportBody, '<strong>Podman Operation Rate</strong>')
         && str_contains($reportBody, '<strong>Podman Authentication Failures</strong>')
     );
+    $partialPodmanFindingsRendered = !$requirePartialPodmanEvidence || (
+        str_contains($reportBody, '1 EA Podman containers discovered (1 Redis, 0 Valkey); 1 were probed, 0 responded, 1 could not be measured, and 0 were skipped by scan bounds; 0 accounts could not be verified.')
+        && str_contains($reportBody, 'Podman metrics are separate from ORM-managed accounts.')
+        && str_contains($reportBody, 'Treat skipped, unmeasured, or partial Podman coverage as unknown;')
+        && str_contains($reportBody, '<strong>Podman Metrics Coverage</strong> (unknown)')
+        && str_contains($reportBody, '<strong>Podman Counter Rates Unknown</strong> (unknown)')
+        && str_contains($reportBody, '(incomplete_scan)')
+    );
     $result['rendered'] = $report['code'] === 200
         && str_contains($reportBody, 'Security and abuse review')
         && preg_match('/Generated [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/', $reportBody) === 1
-        && $valkeyFindingsRendered && $podmanFindingsRendered;
+        && $valkeyFindingsRendered && $podmanFindingsRendered && $partialPodmanFindingsRendered;
     $audit = (new \Orm\Security\WhmAuditLog())->read(max(0, $reportStartedAt - 2), time() + 1, [
         'action' => 'security.report', 'result' => 'success',
     ]);
@@ -334,6 +343,9 @@ try {
             . '; audit_event=' . ($result['audit'] ? 'yes' : 'no');
         if ($requirePodmanEvidence) {
             $diagnostics .= '; podman_findings=' . ($podmanFindingsRendered ? 'yes' : 'no');
+        }
+        if ($requirePartialPodmanEvidence) {
+            $diagnostics .= '; partial_podman_findings=' . ($partialPodmanFindingsRendered ? 'yes' : 'no');
         }
         throw new RuntimeException('WHM POST did not render a generated report (' . $diagnostics . ')');
     }
@@ -405,6 +417,8 @@ if ($fleetSummaryOnly) {
     fwrite(STDOUT, "Live WHM threshold roundtrip passed: authenticated SSO; temporary advisory threshold update verified; original thresholds restored.\n");
 } elseif (getenv('ORM_LIVE_REQUIRE_PODMAN_EVIDENCE') === '1') {
     fwrite(STDOUT, "Live WHM Podman report form passed: authenticated SSO; Podman eviction, operation, and optional authentication findings rendered; audit event verified.\n");
+} elseif (getenv('ORM_LIVE_REQUIRE_PARTIAL_PODMAN_EVIDENCE') === '1') {
+    fwrite(STDOUT, "Live WHM partial Podman report passed: authenticated SSO; synthetic incomplete-scan coverage rendered as unknown; audit event verified.\n");
 } elseif (getenv('ORM_LIVE_REQUIRE_VALKEY_EVIDENCE') === '1') {
     fwrite(STDOUT, "Live WHM Valkey report form passed: authenticated SSO; eviction, operation, and optional authentication findings rendered; audit event verified.\n");
 } else {
