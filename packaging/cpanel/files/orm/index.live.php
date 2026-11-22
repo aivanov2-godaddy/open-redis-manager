@@ -124,9 +124,11 @@ $setupMode = $_GET['orm_setup'] ?? 'choose';
 if (!is_string($setupMode) || !in_array($setupMode, ['choose', 'native', 'podman'], true)) {
     $setupMode = 'choose';
 }
+$podmanInventoryStatus = $podmanInventory['status'] ?? null;
+$podmanInventoryVerifiedAbsent = $podmanInventoryStatus === 'not-installed';
 $showSetupWizard = $brokerVerified && is_array($instanceStatus)
     && ($instanceStatus['success'] ?? false) === true && ($instanceStatus['state'] ?? null) === 'not_configured'
-    && ($podmanInventory['status'] ?? null) === 'not-installed';
+    && in_array($podmanInventoryStatus, ['not-installed', 'unavailable'], true);
 $podmanSetup = $showSetupWizard && $setupMode === 'podman'
     ? \Orm\Cpanel\PodmanLifecycleManager::inspectSetup($account->username()) : null;
 $nativeDiscovery = $showSetupWizard && $setupMode === 'native'
@@ -678,6 +680,9 @@ try {
                 <section class="orm-card" aria-labelledby="orm-setup-title">
                   <h3 id="orm-setup-title">First-time setup</h3>
                   <p>Choose where this account’s Redis-compatible cache should run. ORM checks the selected path and guides you through the required setup.</p>
+                  <?php if (!$podmanInventoryVerifiedAbsent): ?>
+                    <p class="orm-setup-status" role="status">ORM could not safely verify whether this account already has an EA Podman cache. You can check native Redis/Valkey, but do not install another Podman cache until your hosting administrator confirms the account inventory.</p>
+                  <?php endif; ?>
                   <?php if ($setupMode === 'choose'): ?>
                     <div class="orm-setup-options">
                       <a class="orm-setup-choice" href="?orm_setup=native" aria-label="Choose a native Redis or Valkey service">
@@ -752,7 +757,9 @@ try {
                     <div class="orm-setup-links"><a href="?orm_setup=choose">Back to setup choices</a></div>
                   <?php else: ?>
                     <h4>cPanel EA Podman readiness</h4>
-                    <?php if (($podmanSetup['status'] ?? null) === 'ea-podman-unavailable'): ?>
+                    <?php if (!$podmanInventoryVerifiedAbsent): ?>
+                      <p class="orm-setup-status" role="status">ORM cannot verify whether this account already has an EA Podman cache, so it will not recommend installing another one. Ask your hosting administrator to verify the account inventory, then choose <a href="?orm_setup=podman">Check again</a>.</p>
+                    <?php elseif (($podmanSetup['status'] ?? null) === 'ea-podman-unavailable'): ?>
                       <p class="orm-setup-status" role="status">The cPanel EA Podman tool is not available to this account. Ask your hosting administrator to enable EasyApache 4 containers, confirm the server is supported, and enable user namespaces. CloudLinux/CageFS container setups are not supported by cPanel’s EA Podman integration.</p>
                     <?php elseif (($podmanSetup['status'] ?? null) === 'unsupported-host'): ?>
                       <p class="orm-setup-status" role="status">This host is identified as <?= htmlspecialchars($podmanSetup['host_platform'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>, which cPanel does not support for EA Podman Redis/Valkey containers. Choose the native service option or ask your administrator about supported host alternatives.</p>

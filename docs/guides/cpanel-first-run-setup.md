@@ -1,6 +1,6 @@
 # cPanel first-run backend setup
 
-The authenticated cPanel page shows this wizard when the account has no ORM-managed instance and no verified account-owned cPanel EA Podman cache. ORM distinguishes an empty account inventory from a missing, unsafe, or unreadable inventory; it does not treat an unknown result as “not installed.”
+The authenticated cPanel page shows this wizard when the account has no ORM-managed instance and no verified account-owned cPanel EA Podman cache. ORM distinguishes an empty account inventory from a missing, unsafe, or unreadable inventory; it does not treat an unknown result as “not installed.” If the Podman inventory is unknown, the wizard remains available so the user can check the native backend, but it withholds Podman install steps until an administrator verifies the account inventory.
 
 Static previews: [backend choice](../../screenshots/cpanel-backend-setup.png) and [EA Podman package steps](../../screenshots/cpanel-podman-setup-wizard.png). They use synthetic data and are not live cPanel captures.
 
