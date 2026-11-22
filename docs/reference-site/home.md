@@ -1,7 +1,7 @@
 # Reference site: home page
 
 **Source:** [cpanelredismanager.com/index.php](https://cpanelredismanager.com/index.php)
-**Observed:** 2026-11-21; the page displayed v2.6.11. See the [capture record](../rea-evidence.md#read-only-recheck-on-2026-11-21).
+**Observed:** 2026-11-22; the page displayed v2.6.11. The later recheck found no material content change. See the [capture record](../rea-evidence.md#read-only-page-recheck-on-2026-11-22).
 
 ## Positioning and audiences
 
