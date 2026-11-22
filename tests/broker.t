@@ -934,7 +934,7 @@ ok($manager->start($account)->{success}, 'start the instance again after config 
         is_deeply($probe->{result}, $expected_diagnostic_results{$command_class},
             "return only the normalized $command_class result fields");
     }
-    is_deeply([map { [@{$_}[0 .. 1]] } @slowlog_calls], [['redis', '/var/lib/orm-instances/ormtest/redis.sock']],
+    is_deeply([map { [@{$_}[0 .. 1]] } @slowlog_calls], [['redis', "$data_instances/ormtest/redis.sock"]],
         'read the slow log only from the trusted manifest socket');
     my $slowlog_json = JSON::PP->new->canonical->encode($expected_diagnostic_results{slowlog});
     unlike($slowlog_json, qr/secret-key|192\.0\.2\.44|private-client-name/,

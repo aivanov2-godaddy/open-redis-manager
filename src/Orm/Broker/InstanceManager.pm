@@ -1972,7 +1972,7 @@ sub _read_slowlog {
     my ($self, $backend, $socket) = @_;
     return undef if !defined($backend) || $backend !~ /\A(?:redis|valkey)\z/
         || !defined($socket) || ref($socket)
-        || $socket !~ m{\A/var/lib/orm-instances/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
+        || $socket !~ m{\A\Q$self->{data_root}\E/[a-zA-Z0-9_-]{1,16}/redis\.sock\z};
 
     if (ref($self->{slowlog_reply_call}) eq 'CODE') {
         my $reply = eval { $self->{slowlog_reply_call}->($backend, $socket) };
