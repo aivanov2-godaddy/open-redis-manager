@@ -17,4 +17,10 @@ Add a scan-guided WHM repair for restoring ownership metadata on an ORM-managed 
 
 ## Current implementation scope
 
-The repair supports directories, single-link regular files, and the canonical `redis.sock` socket entry under the account data directory. It normalizes directories to `0700` and files/socket to `0600`, examines at most 10,000 entries and 64 directory levels, reads no file contents, and leaves the service stopped. Disposable cPanel validation remains open.
+The repair supports directories, single-link regular files, and the canonical `redis.sock` socket entry under the account data directory. It normalizes directories to `0700` and files/socket to `0600`, examines at most 10,000 entries and 64 directory levels, reads no file contents, and leaves the service stopped.
+
+## Live validation
+
+Merged [PR #247](https://github.com/aivanov2-godaddy/open-redis-manager/pull/247) validated a current-source cPanel provisioning and stop flow followed by authenticated WHM scan and ownership repair on one AlmaLinux 10.3 / cPanel & WHM 138.0 RELEASE test host. The repair preserved the sentinel file bytes, restored account ownership and mode `0600`, left the service stopped, and emitted the expected audit event. The separate EA Podman Redis inventory remained unchanged. See the [sanitized live record](../../docs/validation/records/2026-11-22-whm-ownership-recovery-installed-live.md) and [host fixture record](../../docs/validation/records/2026-11-22-whm-ownership-recovery-host-fixtures.md).
+
+This confirms one host and one live repair scenario only. Broader operating-system, cPanel/WHM version, PHP runtime, and browser coverage remain open.
