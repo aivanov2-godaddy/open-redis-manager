@@ -1,6 +1,6 @@
 # Installation, upgrade and uninstall
 
-> **Development stage:** a manual install/uninstall script exists under [`packaging/`](../../packaging/README.md). It now installs backend selection and account-scoped lifecycle support, but has not been validated end-to-end on a disposable cPanel host and is not a production installer.
+> **Development stage:** a manual install/uninstall script exists under [`packaging/`](../../packaging/README.md). Source-matched fresh install, repeated install, uninstall, repeated uninstall, and reinstall passed on one disposable cPanel host; the broader supported-host matrix, upgrades, and full account lifecycle remain unvalidated. This is not a production installer. See the [sanitized lifecycle record](../validation/records/2026-11-22-current-source-install-lifecycle.md).
 
 ## Installation flow
 
