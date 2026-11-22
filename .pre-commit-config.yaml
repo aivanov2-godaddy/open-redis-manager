@@ -101,6 +101,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: cpanel-live-smoke-checks
+        name: cPanel live smoke assertions
+        entry: python tests/cpanel-live-smoke-checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: cpanel-live-podman-lifecycle-smoke-checks
         name: cPanel live Podman lifecycle smoke assertions
         entry: python tests/cpanel-live-podman-lifecycle-smoke-checks.py

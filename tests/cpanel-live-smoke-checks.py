@@ -52,6 +52,48 @@ check(
     not SMOKE.page_has_verified_account("<p>Other text: <code>tester</code></p>", "tester"),
     "require the verified account label",
 )
+first_run_page = '''
+<h3 id="orm-setup-title">First-time setup</h3>
+<a href="?orm_setup=native">Native service</a>
+<a href="?orm_setup=podman">cPanel EA Podman</a>
+'''
+setup_page_url = "https://example.invalid/cpsess123/frontend/jupiter/orm/index.live.php"
+check(SMOKE.page_has_first_run_setup(first_run_page), "accept both first-run backend choices")
+check(
+    not SMOKE.page_has_first_run_setup(first_run_page.replace('href="?orm_setup=podman"', "")),
+    "require the Podman setup choice alongside native",
+)
+check(
+    SMOKE.page_has_setup_route("<h4>Native service readiness</h4><a>Back to setup choices</a>", "native"),
+    "recognize the native setup route",
+)
+check(
+    SMOKE.page_has_setup_route("<h4>cPanel EA Podman readiness</h4><a>Back to setup choices</a>", "podman"),
+    "recognize the Podman setup route",
+)
+check(
+    not SMOKE.page_has_setup_route("<h4>Native service readiness</h4>", "podman"),
+    "do not confuse setup-route result types",
+)
+for mode in ("native", "podman"):
+    check(
+        parse_qs(urlsplit(SMOKE.setup_route_url(setup_page_url, mode)).query) == {"orm_setup": [mode]},
+        f"build only the fixed {mode} query route",
+    )
+    check(
+        SMOKE.url_has_setup_mode(SMOKE.setup_route_url(setup_page_url, mode), mode),
+        f"recognize a preserved {mode} selector",
+    )
+check(
+    not SMOKE.url_has_setup_mode(setup_page_url, "native"),
+    "reject a redirect that drops the setup selector",
+)
+try:
+    SMOKE.setup_route_url(setup_page_url, "start")
+except ValueError as error:
+    check(str(error) == "invalid-setup-mode", "reject an unsupported setup mode")
+else:
+    check(False, "reject an unsupported setup mode")
 check(
     SMOKE.page_has_verified_account("<p>Verified cPanel account: <code>test&#101;r</code></p>", "tester"),
     "decode escaped account text before comparison",
@@ -113,4 +155,26 @@ for index, expected_user in enumerate(("other", "third")):
     for call, parameter in zip(read_page.call_args_list[2 + index * 3 : 5 + index * 3], ("user", "username", "account")):
         check(parse_qs(urlsplit(call.args[1]).query) == {parameter: [expected_user]}, "use each requested spoof identity")
 
-print("Live cPanel smoke assertions passed: 19 checks.")
+native_setup_page = "<h4>Native service readiness</h4><a>Back to setup choices</a>"
+podman_setup_page = "<h4>cPanel EA Podman readiness</h4><a>Back to setup choices</a>"
+with (
+    patch.object(SMOKE.os, "geteuid", return_value=0, create=True),
+    patch.object(SMOKE, "select_account", return_value="tester"),
+    patch.object(SMOKE, "create_session_url", return_value="https://example.invalid/cpsess123/login"),
+    patch.object(
+        SMOKE,
+        "read_page",
+        side_effect=[
+            (200, "", landing_url),
+            (200, verified_page + first_run_page, page_url),
+            (200, native_setup_page, SMOKE.setup_route_url(page_url, "native")),
+            (200, podman_setup_page, SMOKE.setup_route_url(page_url, "podman")),
+        ],
+    ) as read_page,
+    redirect_stdout(io.StringIO()),
+):
+    smoke_result = SMOKE.run(None, require_first_run_setup=True)
+check(smoke_result == 0, "GET the default, native, and Podman first-run pages")
+check(read_page.call_count == 4, "read the authenticated landing and three first-run setup pages")
+
+print("Live cPanel smoke assertions passed: 32 checks.")
