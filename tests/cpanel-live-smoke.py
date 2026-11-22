@@ -110,6 +110,46 @@ def page_has_verified_account(body: str, expected_user: str) -> bool:
     return match is not None and html.unescape(match.group(1)) == expected_user
 
 
+def page_has_first_run_setup(body: str) -> bool:
+    """Require the default first-run page to offer both backend choices."""
+    return all(
+        marker in body
+        for marker in (
+            'id="orm-setup-title">First-time setup',
+            'href="?orm_setup=native"',
+            'href="?orm_setup=podman"',
+            "Native service",
+            "cPanel EA Podman",
+        )
+    )
+
+
+def setup_route_url(plugin_page_url: str, mode: str) -> str:
+    """Build a fixed same-page GET route from the authenticated session URL."""
+    if mode not in {"native", "podman"}:
+        raise ValueError("invalid-setup-mode")
+    parts = urllib.parse.urlsplit(plugin_page_url)
+    if parts.scheme != "https" or not parts.netloc or "/frontend/jupiter/orm/index.live.php" not in parts.path:
+        raise RuntimeError("setup-page-url-invalid")
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode({"orm_setup": mode}), "")
+    )
+
+
+def url_has_setup_mode(url: str, mode: str) -> bool:
+    """Check that cPanel redirects preserve only the requested setup selector."""
+    return urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("orm_setup") == [mode]
+
+
+def page_has_setup_route(body: str, mode: str) -> bool:
+    """Recognize a selected setup view without retaining its runtime findings."""
+    if mode == "native":
+        return "Native service readiness" in body and "Back to setup choices" in body
+    if mode == "podman":
+        return "cPanel EA Podman readiness" in body and "Back to setup choices" in body
+    return False
+
+
 def validate_spoof_accounts(accounts: list[str] | None, authenticated_user: str) -> list[str]:
     """Return distinct, safe account values that must not change SSO identity."""
     candidates = accounts if accounts else ["root"]
@@ -123,10 +163,14 @@ def validate_spoof_accounts(accounts: list[str] | None, authenticated_user: str)
 def run(
     user: str | None,
     require_podman_cache: bool = False,
+    require_first_run_setup: bool = False,
     spoof_accounts: list[str] | None = None,
 ) -> int:
     if os.geteuid() != 0:
         print("Run this check as root on the cPanel host.")
+        return 2
+    if require_podman_cache and require_first_run_setup:
+        print("Choose either the existing Podman-cache check or the first-run setup check.")
         return 2
 
     try:
@@ -138,17 +182,18 @@ def run(
         _, _, landing_url = read_page(opener, login_url)
         target_url = plugin_url(landing_url)
         status, body, _ = read_page(opener, target_url)
-        parts = urllib.parse.urlsplit(target_url)
-        for spoof_account in validate_spoof_accounts(spoof_accounts, account):
-            for parameter in ("user", "username", "account"):
-                spoofed_query = urllib.parse.urlencode({parameter: spoof_account})
-                spoofed_url = urllib.parse.urlunsplit(
-                    (parts.scheme, parts.netloc, parts.path, spoofed_query, parts.fragment)
-                )
-                spoofed_status, spoofed_body, _ = read_page(opener, spoofed_url)
-                if spoofed_status != 200 or not page_has_verified_account(spoofed_body, account):
-                    print("The cPanel page identity changed or failed under account query-parameter spoofing.")
-                    return 1
+        if not require_first_run_setup:
+            parts = urllib.parse.urlsplit(target_url)
+            for spoof_account in validate_spoof_accounts(spoof_accounts, account):
+                for parameter in ("user", "username", "account"):
+                    spoofed_query = urllib.parse.urlencode({parameter: spoof_account})
+                    spoofed_url = urllib.parse.urlunsplit(
+                        (parts.scheme, parts.netloc, parts.path, spoofed_query, parts.fragment)
+                    )
+                    spoofed_status, spoofed_body, _ = read_page(opener, spoofed_url)
+                    if spoofed_status != 200 or not page_has_verified_account(spoofed_body, account):
+                        print("The cPanel page identity changed or failed under account query-parameter spoofing.")
+                        return 1
     except Exception as error:  # Keep URLs and account data out of diagnostics.
         print(f"Live cPanel smoke test failed ({type(error).__name__}).")
         return 1
@@ -162,6 +207,37 @@ def run(
     if require_podman_cache and not page_has_reachable_podman_cache(body):
         print("The cPanel identity check passed, but no reachable Podman cache was shown.")
         return 1
+    if require_first_run_setup:
+        if not page_has_first_run_setup(body):
+            print("The authenticated account did not show both first-run backend choices.")
+            return 1
+        try:
+            for mode in ("native", "podman"):
+                route_status, route_body, final_url = read_page(opener, setup_route_url(target_url, mode))
+                if route_status != 200:
+                    print(f"The authenticated {mode} setup view returned HTTP {route_status}.")
+                    return 1
+                if not page_has_setup_route(route_body, mode):
+                    query_preserved = url_has_setup_mode(final_url, mode)
+                    choices_still_visible = page_has_first_run_setup(route_body)
+                    identity_verified = page_has_verified_account(route_body, account)
+                    section_heading = "Native service readiness" if mode == "native" else "cPanel EA Podman readiness"
+                    heading_present = section_heading in route_body
+                    back_link_present = "Back to setup choices" in route_body
+                    print(
+                        f"The authenticated {mode} setup view returned HTTP 200 without all expected markers "
+                        f"(setup selector preserved: {'yes' if query_preserved else 'no'}; "
+                        f"section heading: {'yes' if heading_present else 'no'}; "
+                        f"back link: {'yes' if back_link_present else 'no'}; "
+                        f"choice page still visible: {'yes' if choices_still_visible else 'no'}; "
+                        f"account identity still rendered: {'yes' if identity_verified else 'no'})."
+                    )
+                    return 1
+        except Exception as error:
+            print(f"Live cPanel setup-route check failed ({type(error).__name__}).")
+            return 1
+        print("Live cPanel first-run choices and native/Podman setup views passed (GET only).")
+        return 0
     if require_podman_cache:
         print("Live cPanel account identity, query-spoof, and Podman cache checks passed.")
         return 0
@@ -178,6 +254,11 @@ def main() -> int:
         help="also require the authenticated page to show a reachable cPanel-managed Redis/Valkey socket",
     )
     parser.add_argument(
+        "--require-first-run-setup",
+        action="store_true",
+        help="also GET the first-run choice, native, and Podman setup views for an unconfigured account with verified empty Podman inventory",
+    )
+    parser.add_argument(
         "--spoof-account",
         action="append",
         help="also try this account in each identity query parameter; may be repeated",
@@ -187,6 +268,7 @@ def main() -> int:
         return run(
             args.user,
             require_podman_cache=args.require_podman_cache,
+            require_first_run_setup=args.require_first_run_setup,
             spoof_accounts=args.spoof_account,
         )
     except ValueError as error:

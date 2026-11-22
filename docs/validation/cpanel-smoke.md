@@ -30,6 +30,8 @@ python3 tests/cpanel-live-smoke.py --user example --require-podman-cache
 
 The check requires an installed ORM cPanel entry point, an active `orm-broker.service`, valid HTTPS for the temporary session URL, and WHM API access to `create_user_session`. It reads the session URL and account name only in memory and prints only a pass/fail result. The query-spoof probe is a read-only GET. The optional Podman assertion exercises the account page's existing read-only socket probe. cPanel expires unused temporary sessions; the smoke test does not save credentials, tokens, hostnames, account names, page content, or session URLs.
 
+For a newly created, unconfigured disposable cPanel account with verified empty Podman inventory, run `python3 tests/cpanel-live-smoke.py --user USER --require-first-run-setup`. This mode GETs the backend-choice page and both fixed `orm_setup=native` and `orm_setup=podman` views. It prints only pass/fail status, does not retain response bodies or account details, and does not submit a mutation or run the displayed installation command.
+
 ## Authenticated EA Podman lifecycle form
 
 The opt-in lifecycle smoke exercises the cPanel page's actual SSO POST path for an existing account-owned EA Podman Redis/Valkey container. Run it as root on a disposable host, naming the account that owns the disposable cache:
