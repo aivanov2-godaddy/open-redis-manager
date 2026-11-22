@@ -27,6 +27,6 @@ The live engine was run with `ORM_LIVE_REQUIRE_VALKEY_EVIDENCE=1`; the authentic
 
 ## Scope and limits
 
-This validates ORM-managed direct Valkey collection and report rendering on one cPanel host. cPanel EA Podman Valkey lifecycle has separate one-host evidence; EA Podman counters are not included in ORM security reports. The test does not establish a production support claim, browser visual review, another Valkey release, broader host coverage, cross-account authorization, or every report category. ORM support remains **NOT ESTABLISHED**.
+This validates ORM-managed direct Valkey collection and report rendering on one cPanel host. cPanel EA Podman Valkey lifecycle has separate one-host evidence; at the time of this 2026-11-21 test, EA Podman counters were not yet verified in ORM security reports. The later Podman continuity-to-report validation is documented in the [2026-11-22 integration record](2026-11-22-ea-podman-security-report-live.md). This test does not establish a production support claim, browser visual review, another Valkey release, broader host coverage, cross-account authorization, or every report category. ORM support remains **NOT ESTABLISHED**.
 
 The record omits hostnames, IP addresses, domains, account names, socket paths, counter values, report contents, credentials, SSO URLs/cookies, and raw operational logs.
